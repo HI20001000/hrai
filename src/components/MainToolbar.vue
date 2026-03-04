@@ -14,6 +14,8 @@ const pageItems = [
   { key: 'files', label: '檔案', icon: '📁' },
 ]
 
+const settingsItem = { key: 'settings', label: '設定', icon: '⚙️' }
+
 const selectPage = (key) => {
   emit('change-page', key)
 }
@@ -42,8 +44,14 @@ const selectPage = (key) => {
     </nav>
 
     <div class="toolbar-bottom">
-      <button class="icon-button" type="button" aria-label="設定">
-        <span aria-hidden="true">⚙️</span>
+      <button
+        class="icon-button"
+        :class="{ active: props.activePage === settingsItem.key }"
+        type="button"
+        :aria-label="settingsItem.label"
+        @click="selectPage(settingsItem.key)"
+      >
+        <span aria-hidden="true">{{ settingsItem.icon }}</span>
       </button>
     </div>
   </aside>

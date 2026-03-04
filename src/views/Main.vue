@@ -7,6 +7,7 @@ const activePage = ref('home')
 const pageTitle = computed(() => {
   if (activePage.value === 'reports') return '報表頁'
   if (activePage.value === 'files') return '檔案頁'
+  if (activePage.value === 'settings') return '設定頁'
   return '首頁'
 })
 </script>
