@@ -1,62 +1,27 @@
 <script setup>
-import { getCurrentInstance, onMounted, onUnmounted, ref } from 'vue'
-import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
+import { onMounted, onUnmounted, ref } from 'vue'
+import { useLoginForm } from '../scripts/useLoginForm.js'
 
 const heroRef = ref(null)
 const canvasRef = ref(null)
-const router = getCurrentInstance().appContext.config.globalProperties.$router
-const loginEmail = ref('')
-const loginPassword = ref('')
-const rememberMe = ref(false)
-const authMessage = ref('')
-const rememberEmailKey = 'innerai_remember_email'
 let cleanupAnimation = null
 
-const parseJsonSafe = async (response) => {
-  try {
-    return await response.json()
-  } catch {
-    return {}
-  }
-}
-
-const handleLogin = async () => {
-  authMessage.value = ''
-  if (!/^[^@]+@[^@]+\.[^@]+$/.test(loginEmail.value)) {
-    authMessage.value = '請輸入有效的電子郵件格式'
-    return
-  }
-  try {
-    const response = await fetch(`${apiBaseUrl}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: loginEmail.value, password: loginPassword.value }),
-    })
-    const data = await parseJsonSafe(response)
-    if (!response.ok) {
-      authMessage.value = data.message || '登入失敗'
-      return
-    }
-    if (data?.user) {
-      window.localStorage.setItem('innerai_user', JSON.stringify(data.user))
-    }
-    if (data?.token && data?.expiresAt) {
-      window.localStorage.setItem(
-        'innerai_auth',
-        JSON.stringify({ token: data.token, expiresAt: data.expiresAt })
-      )
-    }
-    if (rememberMe.value && loginEmail.value) {
-      window.localStorage.setItem(rememberEmailKey, loginEmail.value)
-    } else {
-      window.localStorage.removeItem(rememberEmailKey)
-    }
-    router?.push('/blank')
-  } catch (error) {
-    console.error(error)
-    authMessage.value = '登入失敗'
-  }
-}
+const {
+  activeTab,
+  loginEmail,
+  loginPassword,
+  rememberMe,
+  registerEmail,
+  registerPassword,
+  registerPasswordConfirm,
+  registerCode,
+  authMessage,
+  resendCooldown,
+  switchTab,
+  handleLogin,
+  requestCode,
+  handleRegister,
+} = useLoginForm()
 
 const mouse = {
   x: 0,
@@ -96,36 +61,19 @@ const createParticle = (width, height, { edge = false } = {}) => {
     }
   }
 
-  return {
-    x,
-    y,
-    vx: baseVx,
-    vy: baseVy,
-    baseVx,
-    baseVy,
-    radius,
-  }
+  return { x, y, vx: baseVx, vy: baseVy, baseVx, baseVy, radius }
 }
 
 const createParticles = (count, width, height) =>
   Array.from({ length: count }, () => createParticle(width, height))
 
 onMounted(() => {
-  const rememberedEmail = window.localStorage.getItem(rememberEmailKey)
-  if (rememberedEmail) {
-    loginEmail.value = rememberedEmail
-    rememberMe.value = true
-  }
   const heroEl = heroRef.value
   const canvas = canvasRef.value
-  if (!heroEl || !canvas) {
-    return
-  }
+  if (!heroEl || !canvas) return
 
   const ctx = canvas.getContext('2d')
-  if (!ctx) {
-    return
-  }
+  if (!ctx) return
 
   const state = {
     animationId: 0,
@@ -309,10 +257,7 @@ onUnmounted(() => {
     <aside class="login-hero" ref="heroRef">
       <canvas class="hero-canvas" ref="canvasRef" aria-hidden="true"></canvas>
       <div class="hero-content">
-        <div class="hero-title-row">
-          <img class="logo-image" src="/src/imgs/web_icon.png" alt="InnerAI" />
-          <p class="hero-title">AI 業務平台</p>
-        </div>
+        <p class="hero-title">AI 業務平台</p>
         <p class="hero-subtitle">請使用您的帳號登入系統。</p>
       </div>
     </aside>
@@ -323,15 +268,16 @@ onUnmounted(() => {
         <p class="panel-subtitle">請輸入你的帳號資訊以繼續。</p>
       </header>
 
-      <form class="login-form" @submit.prevent="handleLogin">
+      <div class="auth-tabs">
+        <button :class="{ active: activeTab === 'login' }" @click="switchTab('login')">登入</button>
+        <button :class="{ active: activeTab === 'register' }" @click="switchTab('register')">註冊</button>
+      </div>
+
+      <form v-if="activeTab === 'login'" class="login-form" @submit.prevent="handleLogin">
         <div class="form-grid">
           <label class="field">
             <span>電子郵件</span>
-            <input
-              v-model="loginEmail"
-              type="email"
-              placeholder="name@company.com"
-            />
+            <input v-model="loginEmail" type="email" placeholder="name@company.com" />
           </label>
 
           <label class="field">
@@ -345,10 +291,37 @@ onUnmounted(() => {
             <input v-model="rememberMe" type="checkbox" />
             <span>記住我</span>
           </label>
-          <a class="link" href="#">忘記密碼？</a>
         </div>
 
         <button class="primary-button" type="submit">登入帳號</button>
+      </form>
+
+      <form v-else class="login-form" @submit.prevent="handleRegister">
+        <div class="form-grid">
+          <label class="field">
+            <span>電子郵件</span>
+            <input v-model="registerEmail" type="email" placeholder="name@company.com" />
+          </label>
+          <label class="field">
+            <span>驗證碼</span>
+            <div class="code-row">
+              <input v-model="registerCode" type="text" placeholder="請輸入驗證碼" />
+              <button class="secondary-button" type="button" @click="requestCode" :disabled="resendCooldown > 0">
+                {{ resendCooldown > 0 ? `${resendCooldown}s` : '發送' }}
+              </button>
+            </div>
+          </label>
+          <label class="field">
+            <span>密碼</span>
+            <input v-model="registerPassword" type="password" placeholder="••••••••" />
+          </label>
+          <label class="field">
+            <span>確認密碼</span>
+            <input v-model="registerPasswordConfirm" type="password" placeholder="••••••••" />
+          </label>
+        </div>
+
+        <button class="primary-button" type="submit">建立帳號</button>
       </form>
 
       <p v-if="authMessage" class="auth-message">{{ authMessage }}</p>
@@ -363,191 +336,32 @@ onUnmounted(() => {
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
   background: #f6f7fb;
 }
-
-.login-hero {
-  position: relative;
-  background: #0b1220;
-  color: #fff;
-  padding: 5rem 8vw;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  overflow: hidden;
-}
-
-.hero-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  opacity: 0.9;
-}
-
-.hero-content {
-  max-width: 520px;
-  display: grid;
-  gap: 1.25rem;
-  text-align: left;
-  position: relative;
-  z-index: 2;
-}
-
-.hero-title-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.85rem;
-}
-
-.logo-image {
-  width: 52px;
-  height: 52px;
-  border-radius: 18px;
-  object-fit: cover;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.35);
-}
-
-.hero-title {
-  font-size: 2.4rem;
-  font-weight: 600;
-  margin: 0;
-}
-
-.hero-subtitle {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 1rem;
-  line-height: 1.6;
-}
-
-.login-panel {
-  background: #ffffff;
-  padding: 4.5rem 10vw;
-  display: grid;
-  align-content: center;
-}
-
-.panel-header {
-  margin-bottom: 2rem;
-}
-
-.panel-title {
-  font-size: 1.7rem;
-  font-weight: 600;
-  margin: 0;
-  color: #0f172a;
-}
-
-.panel-subtitle {
-  margin: 0.5rem 0 0;
-  color: #64748b;
-}
-
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1.75rem;
-}
-
-.form-grid {
-  display: grid;
-  gap: 1.1rem;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  font-weight: 500;
-  color: #111827;
-}
-
-.field span {
-  font-size: 0.9rem;
-  color: #475569;
-}
-
-.field input {
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 0.85rem 1rem;
-  font-size: 0.95rem;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  background: #fff;
-}
-
-.field input::placeholder {
-  color: #94a3b8;
-}
-
-.field input:focus {
-  outline: none;
-  border-color: #5b8cff;
-  box-shadow: 0 0 0 4px rgba(91, 140, 255, 0.15);
-  background: #fff;
-}
-
-.helper-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.9rem;
-  color: #6b7280;
-}
-
-.checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.link {
-  color: #5b8cff;
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.primary-button {
-  background: #1f2937;
-  color: #fff;
-  border: none;
-  border-radius: 12px;
-  padding: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.primary-button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 18px 30px rgba(15, 23, 42, 0.25);
-}
-
-.auth-message {
-  margin-top: 1.5rem;
-  text-align: center;
-  color: #2563eb;
-  font-weight: 500;
-}
-
-@media (min-width: 960px) {
-  .login-page {
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  }
-}
-
+.login-hero { position: relative; background: #0b1220; color: #fff; padding: 5rem 8vw; display: flex; align-items: center; overflow: hidden; }
+.hero-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0.9; }
+.hero-content { max-width: 520px; display: grid; gap: 1.25rem; position: relative; z-index: 2; }
+.hero-title { font-size: 2.4rem; font-weight: 600; margin: 0; }
+.hero-subtitle { margin: 0; color: rgba(255, 255, 255, 0.7); font-size: 1rem; line-height: 1.6; }
+.login-panel { background: #fff; padding: 4.5rem 10vw; display: grid; align-content: center; }
+.panel-header { margin-bottom: 1.5rem; }
+.panel-title { font-size: 1.7rem; font-weight: 600; margin: 0; color: #0f172a; }
+.panel-subtitle { margin: 0.5rem 0 0; color: #64748b; }
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-bottom: 1.25rem; }
+.auth-tabs button { border: 1px solid #e5e7eb; border-radius: 10px; padding: .7rem; background: #fff; cursor: pointer; }
+.auth-tabs .active { background: #1f2937; color: #fff; border-color: #1f2937; }
+.login-form { display: flex; flex-direction: column; gap: 1.1rem; }
+.form-grid { display: grid; gap: 1rem; }
+.field { display: flex; flex-direction: column; gap: .5rem; }
+.field span { font-size: .9rem; color: #475569; }
+.field input { border: 1px solid #e5e7eb; border-radius: 12px; padding: .85rem 1rem; }
+.helper-row { display: flex; justify-content: space-between; align-items: center; font-size: .9rem; color: #6b7280; }
+.checkbox { display: inline-flex; align-items: center; gap: .5rem; }
+.code-row { display: grid; grid-template-columns: 1fr auto; gap: .5rem; }
+.secondary-button { border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; padding: 0 .9rem; }
+.primary-button { background: #1f2937; color: #fff; border: none; border-radius: 12px; padding: .95rem; font-weight: 600; cursor: pointer; }
+.auth-message { margin-top: 1rem; text-align: center; color: #2563eb; font-weight: 500; }
 @media (max-width: 640px) {
-  .login-page {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .login-hero {
-    padding: 3rem 8vw 2.5rem;
-  }
-
-  .login-panel {
-    padding: 2.5rem 8vw 3rem;
-  }
+  .login-page { grid-template-columns: minmax(0, 1fr); }
+  .login-hero { padding: 3rem 8vw 2.5rem; }
+  .login-panel { padding: 2.5rem 8vw 3rem; }
 }
 </style>
