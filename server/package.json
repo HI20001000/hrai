@@ -6,5 +6,7 @@
   "scripts": {
     "dev": "node index.js"
   },
-  "dependencies": {}
+  "dependencies": {
+    "mysql2": "^3.11.3"
+  }
 }
