@@ -304,6 +304,14 @@ onUnmounted(() => {
             <input v-model="registerEmail" type="email" placeholder="name@company.com" />
           </label>
           <label class="field">
+            <span>密碼</span>
+            <input v-model="registerPassword" type="password" placeholder="••••••••" />
+          </label>
+          <label class="field">
+            <span>確認密碼</span>
+            <input v-model="registerPasswordConfirm" type="password" placeholder="••••••••" />
+          </label>
+          <label class="field">
             <span>驗證碼</span>
             <div class="code-row">
               <input v-model="registerCode" type="text" placeholder="請輸入驗證碼" />
@@ -311,14 +319,6 @@ onUnmounted(() => {
                 {{ resendCooldown > 0 ? `${resendCooldown}s` : '發送' }}
               </button>
             </div>
-          </label>
-          <label class="field">
-            <span>密碼</span>
-            <input v-model="registerPassword" type="password" placeholder="••••••••" />
-          </label>
-          <label class="field">
-            <span>確認密碼</span>
-            <input v-model="registerPasswordConfirm" type="password" placeholder="••••••••" />
           </label>
         </div>
 
