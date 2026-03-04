@@ -3,6 +3,32 @@ import crypto from 'node:crypto'
 import { URL } from 'node:url'
 import mysql from 'mysql2/promise'
 
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+const loadEnvFile = (filePath) => {
+  if (!fs.existsSync(filePath)) return
+  const content = fs.readFileSync(filePath, 'utf8')
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    const index = line.indexOf('=')
+    if (index <= 0) continue
+    const key = line.slice(0, index).trim()
+    const value = line.slice(index + 1).trim()
+    if (!(key in process.env)) {
+      process.env[key] = value
+    }
+  }
+}
+
+loadEnvFile(path.resolve(__dirname, '../.env'))
+loadEnvFile(path.resolve(__dirname, '.env'))
+
 const TOKEN_TTL_MS = 60 * 60 * 1000
 const CODE_TTL_MS = 60 * 1000
 const verificationCodes = new Map()
