@@ -291,9 +291,8 @@ onUnmounted(() => {
             <span>記住我</span>
           </label>
         </div>
-        <input v-model="registerPassword" type="password" placeholder="密碼" required />
-        <input v-model="registerPasswordConfirm" type="password" placeholder="確認密碼" required />
-        <button type="submit">註冊</button>
+
+        <button class="primary-button" type="submit">建立帳號</button>
       </form>
 
       <form v-else class="login-form" @submit.prevent="handleRegister">

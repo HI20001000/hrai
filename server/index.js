@@ -1,11 +1,15 @@
 import http from 'node:http'
 import crypto from 'node:crypto'
 import { URL } from 'node:url'
-import mysql from 'mysql2/promise'
-
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  createDatabasePool,
+  ensureAuthTables,
+  ensureDatabaseExists,
+  getDatabaseName,
+} from './scripts/database/index.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -33,15 +37,7 @@ const TOKEN_TTL_MS = 60 * 60 * 1000
 const CODE_TTL_MS = 60 * 1000
 const verificationCodes = new Map()
 
-const DB_NAME = process.env.HRAI_DATABASE || process.env.MYSQL_DATABASE || 'hrai'
-
-const dbConfig = {
-  host: process.env.MYSQL_HOST || '127.0.0.1',
-  port: Number(process.env.MYSQL_PORT || 3306),
-  user: process.env.MYSQL_USER || 'root',
-  password: process.env.MYSQL_PASSWORD || '',
-  database: DB_NAME,
-}
+const DB_NAME = getDatabaseName()
 
 const withCors = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -77,29 +73,6 @@ const hashPassword = (password, salt) =>
 const createAuthToken = () => crypto.randomBytes(32).toString('hex')
 const tokenDigest = (token) => crypto.createHash('sha256').update(token).digest('hex')
 
-const ensureTables = async (pool) => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      id BIGINT PRIMARY KEY AUTO_INCREMENT,
-      email VARCHAR(255) NOT NULL UNIQUE,
-      password_hash VARCHAR(255) NOT NULL,
-      password_salt VARCHAR(255) NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-  `)
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS auth_tokens (
-      id BIGINT PRIMARY KEY AUTO_INCREMENT,
-      user_id BIGINT NOT NULL,
-      token_hash VARCHAR(255) NOT NULL,
-      expires_at DATETIME NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_user_id (user_id),
-      INDEX idx_expires_at (expires_at),
-      CONSTRAINT fk_auth_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-  `)
-}
 
 const requestCode = async (req, res) => {
   const body = await parseBody(req)
@@ -186,8 +159,9 @@ const loginUser = async (pool, req, res) => {
 }
 
 const start = async () => {
-  const pool = mysql.createPool({ ...dbConfig, connectionLimit: 5 })
-  await ensureTables(pool)
+  await ensureDatabaseExists()
+  const pool = createDatabasePool()
+  await ensureAuthTables(pool)
 
   const port = process.env.PORT || 3001
   const server = http.createServer(async (req, res) => {
