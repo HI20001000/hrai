@@ -260,7 +260,6 @@ onUnmounted(() => {
         <p class="hero-title">AI 業務平台</p>
         <p class="hero-subtitle">請使用您的帳號登入系統。</p>
       </div>
-    </aside>
 
     <section class="login-panel">
       <header class="panel-header">
@@ -292,8 +291,9 @@ onUnmounted(() => {
             <span>記住我</span>
           </label>
         </div>
-
-        <button class="primary-button" type="submit">登入帳號</button>
+        <input v-model="registerPassword" type="password" placeholder="密碼" required />
+        <input v-model="registerPasswordConfirm" type="password" placeholder="確認密碼" required />
+        <button type="submit">註冊</button>
       </form>
 
       <form v-else class="login-form" @submit.prevent="handleRegister">
@@ -326,7 +326,7 @@ onUnmounted(() => {
 
       <p v-if="authMessage" class="auth-message">{{ authMessage }}</p>
     </section>
-  </div>
+  </main>
 </template>
 
 <style scoped>
