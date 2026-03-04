@@ -17,6 +17,7 @@ const {
   registerCode,
   authMessage,
   resendCooldown,
+  canRequestCode,
   switchTab,
   handleLogin,
   requestCode,
@@ -306,7 +307,7 @@ onUnmounted(() => {
             <span>驗證碼</span>
             <div class="code-row">
               <input v-model="registerCode" type="text" placeholder="請輸入驗證碼" />
-              <button class="secondary-button" type="button" @click="requestCode" :disabled="resendCooldown > 0">
+              <button class="secondary-button" type="button" @click="requestCode" :disabled="!canRequestCode">
                 {{ resendCooldown > 0 ? `${resendCooldown}s` : '發送' }}
               </button>
             </div>
