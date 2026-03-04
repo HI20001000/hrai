@@ -1,0 +1,18 @@
+.docx-wrapper {
+  display: block;
+  width: 100%;
+}
+
+.docx {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.docx-body {
+  margin: 0;
+}
+
+.docx-page {
+  box-sizing: border-box;
+  width: 100%;
+}
