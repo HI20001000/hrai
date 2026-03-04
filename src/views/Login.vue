@@ -17,6 +17,7 @@ const {
   registerCode,
   authMessage,
   resendCooldown,
+  canRequestCode,
   switchTab,
   handleLogin,
   requestCode,
@@ -260,6 +261,7 @@ onUnmounted(() => {
         <p class="hero-title">AI 業務平台</p>
         <p class="hero-subtitle">請使用您的帳號登入系統。</p>
       </div>
+    </aside>
 
     <section class="login-panel">
       <header class="panel-header">
@@ -305,35 +307,7 @@ onUnmounted(() => {
             <span>驗證碼</span>
             <div class="code-row">
               <input v-model="registerCode" type="text" placeholder="請輸入驗證碼" />
-              <button class="secondary-button" type="button" @click="requestCode" :disabled="resendCooldown > 0">
-                {{ resendCooldown > 0 ? `${resendCooldown}s` : '發送' }}
-              </button>
-            </div>
-          </label>
-          <label class="field">
-            <span>密碼</span>
-            <input v-model="registerPassword" type="password" placeholder="••••••••" />
-          </label>
-          <label class="field">
-            <span>確認密碼</span>
-            <input v-model="registerPasswordConfirm" type="password" placeholder="••••••••" />
-          </label>
-        </div>
-
-        <button class="primary-button" type="submit">建立帳號</button>
-      </form>
-
-      <form v-else class="login-form" @submit.prevent="handleRegister">
-        <div class="form-grid">
-          <label class="field">
-            <span>電子郵件</span>
-            <input v-model="registerEmail" type="email" placeholder="name@company.com" />
-          </label>
-          <label class="field">
-            <span>驗證碼</span>
-            <div class="code-row">
-              <input v-model="registerCode" type="text" placeholder="請輸入驗證碼" />
-              <button class="secondary-button" type="button" @click="requestCode" :disabled="resendCooldown > 0">
+              <button class="secondary-button" type="button" @click="requestCode" :disabled="!canRequestCode">
                 {{ resendCooldown > 0 ? `${resendCooldown}s` : '發送' }}
               </button>
             </div>
@@ -353,7 +327,7 @@ onUnmounted(() => {
 
       <p v-if="authMessage" class="auth-message">{{ authMessage }}</p>
     </section>
-  </main>
+  </div>
 </template>
 
 <style scoped>
