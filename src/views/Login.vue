@@ -1,10 +1,11 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { getCurrentInstance, onMounted, onUnmounted, ref } from 'vue'
 import { useLoginForm } from '../scripts/useLoginForm.js'
 
 const heroRef = ref(null)
 const canvasRef = ref(null)
 let cleanupAnimation = null
+const instance = getCurrentInstance()
 
 const {
   activeTab,
@@ -22,7 +23,9 @@ const {
   handleLogin,
   requestCode,
   handleRegister,
-} = useLoginForm()
+} = useLoginForm({
+  onLoginSuccess: () => instance?.proxy?.$router?.push('/main'),
+})
 
 const mouse = {
   x: 0,

@@ -12,7 +12,7 @@ const parseJsonSafe = async (response) => {
   }
 }
 
-export const useLoginForm = () => {
+export const useLoginForm = ({ onLoginSuccess } = {}) => {
   const activeTab = ref('login')
   const loginEmail = ref('')
   const loginPassword = ref('')
@@ -71,6 +71,7 @@ export const useLoginForm = () => {
         window.localStorage.removeItem(rememberEmailKey)
       }
       authMessage.value = '登入成功'
+      onLoginSuccess?.()
     } catch {
       authMessage.value = '登入失敗'
     }
