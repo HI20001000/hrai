@@ -1,7 +1,8 @@
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { apiBaseUrl } from './apiBaseUrl.js'
 
 const rememberEmailKey = 'innerai_remember_email'
+const emailPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
 const parseJsonSafe = async (response) => {
   try {
@@ -11,7 +12,7 @@ const parseJsonSafe = async (response) => {
   }
 }
 
-export const useLoginForm = () => {
+export const useLoginForm = ({ onLoginSuccess } = {}) => {
   const activeTab = ref('login')
   const loginEmail = ref('')
   const loginPassword = ref('')
@@ -24,6 +25,20 @@ export const useLoginForm = () => {
   const resendCooldown = ref(0)
   let resendTimer = null
 
+  const isRegisterEmailValid = computed(() => emailPattern.test(registerEmail.value.trim()))
+  const isRegisterPasswordValid = computed(() => registerPassword.value.trim().length > 0)
+  const isRegisterPasswordConfirmValid = computed(() => registerPasswordConfirm.value.trim().length > 0)
+  const isRegisterPasswordMatched = computed(
+    () =>
+      isRegisterPasswordValid.value &&
+      isRegisterPasswordConfirmValid.value &&
+      registerPassword.value === registerPasswordConfirm.value
+  )
+
+  const canRequestCode = computed(
+    () => isRegisterEmailValid.value && isRegisterPasswordMatched.value && resendCooldown.value <= 0
+  )
+
   const switchTab = (tab) => {
     activeTab.value = tab
     authMessage.value = ''
@@ -31,7 +46,7 @@ export const useLoginForm = () => {
 
   const handleLogin = async () => {
     authMessage.value = ''
-    if (!/^[^@]+@[^@]+\.[^@]+$/.test(loginEmail.value)) {
+    if (!emailPattern.test(loginEmail.value)) {
       authMessage.value = '請輸入有效的電子郵件格式'
       return
     }
@@ -56,6 +71,7 @@ export const useLoginForm = () => {
         window.localStorage.removeItem(rememberEmailKey)
       }
       authMessage.value = '登入成功'
+      onLoginSuccess?.()
     } catch {
       authMessage.value = '登入失敗'
     }
@@ -63,8 +79,16 @@ export const useLoginForm = () => {
 
   const requestCode = async () => {
     authMessage.value = ''
-    if (!/^[^@]+@[^@]+\.[^@]+$/.test(registerEmail.value)) {
+    if (!isRegisterEmailValid.value) {
       authMessage.value = '請輸入有效的電子郵件格式'
+      return
+    }
+    if (!isRegisterPasswordValid.value || !isRegisterPasswordConfirmValid.value) {
+      authMessage.value = '請先輸入密碼與確認密碼'
+      return
+    }
+    if (!isRegisterPasswordMatched.value) {
+      authMessage.value = '密碼與確認密碼不一致'
       return
     }
     if (resendCooldown.value > 0) return
@@ -93,7 +117,11 @@ export const useLoginForm = () => {
 
   const handleRegister = async () => {
     authMessage.value = ''
-    if (registerPassword.value !== registerPasswordConfirm.value) {
+    if (!isRegisterEmailValid.value) {
+      authMessage.value = '請輸入有效的電子郵件格式'
+      return
+    }
+    if (!isRegisterPasswordMatched.value) {
       authMessage.value = '密碼與確認密碼不一致'
       return
     }
@@ -139,6 +167,7 @@ export const useLoginForm = () => {
     registerCode,
     authMessage,
     resendCooldown,
+    canRequestCode,
     switchTab,
     handleLogin,
     requestCode,
