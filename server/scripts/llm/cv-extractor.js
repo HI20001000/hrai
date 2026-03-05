@@ -14,6 +14,7 @@ export const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType
   const isDocx = normalizedName.endsWith('.docx') || normalizedType.includes('wordprocessingml')
 
   if (isDocx) {
+    console.log('[CV] DOCX extraction debug:', { fileName, mimeType, size: buffer.length, extractedLength: cvText.length })
     console.log('[CV] DOCX extracted text:')
     console.log(cvText || '(empty)')
   }
