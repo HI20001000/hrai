@@ -4,7 +4,6 @@ import { URL } from 'node:url'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawn } from 'node:child_process'
 import {
   createDatabasePool,
   ensureAuthTables,
@@ -13,6 +12,7 @@ import {
   getDatabaseName,
 } from './scripts/database/index.js'
 import { extractCandidateInfoFromCv } from './scripts/llm/cv-extractor.js'
+import { extractTextFromBuffer } from './scripts/llm/text-extractors.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -39,9 +39,10 @@ loadEnvFile(path.resolve(__dirname, '.env'))
 const TOKEN_TTL_MS = 60 * 60 * 1000
 const CODE_TTL_MS = 60 * 1000
 const verificationCodes = new Map()
+const CV_CACHE_TTL_MS = 10 * 60 * 1000
+const cvUploadCache = new Map()
 
 const DB_NAME = getDatabaseName()
-const cvStorageDir = path.resolve(__dirname, './storage/cv')
 const withCors = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
@@ -76,14 +77,34 @@ const hashPassword = (password, salt) =>
 const createAuthToken = () => crypto.randomBytes(32).toString('hex')
 const tokenDigest = (token) => crypto.createHash('sha256').update(token).digest('hex')
 
-const ensureCvStorageDir = () => {
-  if (!fs.existsSync(cvStorageDir)) {
-    fs.mkdirSync(cvStorageDir, { recursive: true })
+const sanitizeFileName = (name) => String(name || 'cv-upload').replace(/[^a-zA-Z0-9._-]/g, '_')
+const sha256Buffer = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex')
+
+const cleanupExpiredCvCache = () => {
+  const now = Date.now()
+  for (const [cacheId, item] of cvUploadCache.entries()) {
+    if (!item || item.expiresAt <= now) cvUploadCache.delete(cacheId)
   }
 }
 
-const sanitizeFileName = (name) => String(name || 'cv-upload').replace(/[^a-zA-Z0-9._-]/g, '_')
-const sha256Buffer = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex')
+const putCvIntoCache = ({ fileName, mimeType, buffer }) => {
+  cleanupExpiredCvCache()
+  const cacheId = crypto.randomBytes(16).toString('hex')
+  const expiresAt = Date.now() + CV_CACHE_TTL_MS
+  cvUploadCache.set(cacheId, { fileName, mimeType, buffer, expiresAt })
+  return { cacheId, expiresAt }
+}
+
+const readCvFromCache = (cacheId) => {
+  cleanupExpiredCvCache()
+  const cached = cvUploadCache.get(cacheId)
+  if (!cached) return null
+  if (cached.expiresAt <= Date.now()) {
+    cvUploadCache.delete(cacheId)
+    return null
+  }
+  return cached
+}
 
 const requestCode = async (req, res) => {
   const body = await parseBody(req)
@@ -223,23 +244,20 @@ const listCandidates = async (pool, _req, res) => {
 }
 
 const insertCandidateCv = async (pool, candidateId, fileName, mimeType, buffer) => {
-  ensureCvStorageDir()
-  const savedName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${sanitizeFileName(fileName)}`
-  const savePath = path.join(cvStorageDir, savedName)
-  fs.writeFileSync(savePath, buffer)
-
+  const safeFileName = sanitizeFileName(fileName)
   const [versionRows] = await pool.query(
     'SELECT COALESCE(MAX(version_no), 0) AS maxVersion FROM candidate_cvs WHERE candidate_id = ?',
     [candidateId]
   )
   const nextVersion = Number(versionRows[0]?.maxVersion || 0) + 1
   const fileHash = sha256Buffer(buffer)
+  const virtualStorageKey = `frontend-only/${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${safeFileName}`
 
   const [result] = await pool.query(
     `INSERT INTO candidate_cvs
       (candidate_id, version_no, storage_provider, storage_key, original_filename, mime_type, file_size, sha256)
-     VALUES (?, ?, 'local', ?, ?, ?, ?, ?)`,
-    [candidateId, nextVersion, savedName, fileName, mimeType || 'application/octet-stream', buffer.length, fileHash]
+     VALUES (?, ?, 'frontend', ?, ?, ?, ?, ?)`,
+    [candidateId, nextVersion, virtualStorageKey, fileName, mimeType || 'application/octet-stream', buffer.length, fileHash]
   )
 
   return {
@@ -248,15 +266,16 @@ const insertCandidateCv = async (pool, candidateId, fileName, mimeType, buffer) 
     versionNo: nextVersion,
     originalFileName: fileName,
     size: buffer.length,
-    storagePath: `server/storage/cv/${savedName}`,
+    storagePath: null,
   }
 }
 
-const intakeCv = async (pool, req, res) => {
+const cacheCvUpload = async (req, res) => {
   const body = await parseBody(req)
   const fileName = body?.fileName
   const contentBase64 = body?.contentBase64
   const mimeType = body?.mimeType || 'application/octet-stream'
+
   if (!fileName || !contentBase64) {
     sendJson(res, 400, { message: 'fileName and contentBase64 are required' })
     return
@@ -267,6 +286,38 @@ const intakeCv = async (pool, req, res) => {
     sendJson(res, 400, { message: 'Invalid file content' })
     return
   }
+
+  const cached = putCvIntoCache({ fileName, mimeType, buffer })
+  sendJson(res, 201, {
+    message: 'CV cached',
+    cacheId: cached.cacheId,
+    expiresAt: new Date(cached.expiresAt).toISOString(),
+    fileName,
+    mimeType,
+    size: buffer.length,
+  })
+}
+
+
+const intakeCv = async (pool, req, res) => {
+  const body = await parseBody(req)
+  const cacheId = String(body?.cacheId || '').trim()
+  if (!cacheId) {
+    sendJson(res, 400, { message: 'cacheId is required, please cache file before intake' })
+    return
+  }
+
+  const cached = readCvFromCache(cacheId)
+  if (!cached) {
+    sendJson(res, 404, { message: 'Cached CV not found or expired, please upload again' })
+    return
+  }
+
+  const { fileName, mimeType, buffer } = cached
+  const cvText = await extractTextFromBuffer(buffer, fileName, mimeType)
+  console.log('[CV] Cached extraction debug:', { cacheId, fileName, mimeType, size: buffer.length, extractedLength: cvText.length })
+  console.log('[CV] Cached CV extracted text:')
+  console.log(cvText || '(empty)')
 
   const extraction = await extractCandidateInfoFromCv(buffer, fileName, mimeType)
   const derivedName = extraction.extracted.fullName || '待補候選人姓名'
@@ -361,6 +412,7 @@ const start = async () => {
 
       if (url.pathname === '/api/candidates' && req.method === 'POST') return createCandidate(pool, req, res)
       if (url.pathname === '/api/candidates' && req.method === 'GET') return listCandidates(pool, req, res)
+      if (url.pathname === '/api/cv/cache' && req.method === 'POST') return cacheCvUpload(req, res)
       if (url.pathname === '/api/cv/intake' && req.method === 'POST') return intakeCv(pool, req, res)
 
       const uploadMatch = url.pathname.match(/^\/api\/candidates\/(\d+)\/cvs$/)

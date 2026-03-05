@@ -5,9 +5,12 @@ import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 const selectedFile = ref(null)
 const message = ref('')
 const isUploading = ref(false)
+const isCaching = ref(false)
 const candidates = ref([])
 const selectedCandidateId = ref('')
 const uploadedFiles = ref([])
+const cachedCvId = ref('')
+const cachedCvName = ref('')
 
 const extractedCandidate = ref(null)
 const missingFields = ref([])
@@ -42,8 +45,10 @@ const loadCandidateFiles = async () => {
   uploadedFiles.value = data.files || []
 }
 
-const handleFileChange = (event) => {
+const handleFileChange = async (event) => {
   selectedFile.value = event.target.files?.[0] || null
+  message.value = ''
+  await cacheCvFile(selectedFile.value)
 }
 
 const fileToBase64 = (file) =>
@@ -57,6 +62,41 @@ const fileToBase64 = (file) =>
     reader.onerror = () => reject(new Error('read-failed'))
     reader.readAsDataURL(file)
   })
+
+const cacheCvFile = async (file) => {
+  if (!file) {
+    cachedCvId.value = ''
+    cachedCvName.value = ''
+    return
+  }
+
+  isCaching.value = true
+  try {
+    const contentBase64 = await fileToBase64(file)
+    const response = await fetch(`${apiBaseUrl}/api/cv/cache`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        contentBase64,
+      }),
+    })
+
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.message || 'CV 快取失敗')
+
+    cachedCvId.value = data.cacheId || ''
+    cachedCvName.value = data.fileName || file.name
+    message.value = `CV 已快取：${cachedCvName.value}`
+  } catch (error) {
+    cachedCvId.value = ''
+    cachedCvName.value = ''
+    message.value = error?.message || 'CV 快取失敗'
+  } finally {
+    isCaching.value = false
+  }
+}
 
 const syncManualForm = (candidate) => {
   manualFullName.value = candidate?.fullName || ''
@@ -92,16 +132,21 @@ const intakeCv = async () => {
     return
   }
 
+  if (!cachedCvId.value) {
+    await cacheCvFile(selectedFile.value)
+  }
+  if (!cachedCvId.value) {
+    message.value = 'CV 尚未成功快取，請重新選擇檔案'
+    return
+  }
+
   isUploading.value = true
   try {
-    const contentBase64 = await fileToBase64(selectedFile.value)
     const response = await fetch(`${apiBaseUrl}/api/cv/intake`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        fileName: selectedFile.value.name,
-        mimeType: selectedFile.value.type || 'application/octet-stream',
-        contentBase64,
+        cacheId: cachedCvId.value,
       }),
     })
 
@@ -194,7 +239,8 @@ onMounted(async () => {
     <div class="card">
       <h3>第一步：上傳 CV</h3>
       <input type="file" accept=".pdf,.doc,.docx,.txt" @change="handleFileChange" />
-      <button type="button" :disabled="isUploading" @click="intakeCv">{{ isUploading ? '上傳與解析中...' : '上傳 CV 並解析' }}</button>
+      <button type="button" :disabled="isUploading || isCaching || !selectedFile" @click="intakeCv">{{ isUploading ? '上傳與解析中...' : '上傳 CV 並解析' }}</button>
+      <p v-if="cachedCvId" class="info-line">已快取檔案：{{ cachedCvName }}（ID: {{ cachedCvId.slice(0, 8) }}...）</p>
       <p v-if="message" class="message">{{ message }}</p>
     </div>
 
