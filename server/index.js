@@ -235,9 +235,21 @@ const extractTextFromBuffer = async (buffer, fileName = '', mimeType = '') => {
   return buffer.toString('utf8')
 }
 
+
+const buildLlmChatCompletionsUrl = (baseUrl) => {
+  const normalized = String(baseUrl || '').trim().replace(/\/$/, '')
+  if (!normalized) return ''
+  if (normalized.endsWith('/chat/completions')) return normalized
+  if (normalized.endsWith('/v1')) return `${normalized}/chat/completions`
+  return `${normalized}/chat/completions`
+}
+
 const extractCandidateInfoByLlm = async (cvText) => {
   if (!llmApiUrl || !llmModel) return null
-  const response = await fetch(llmApiUrl, {
+  const llmEndpoint = buildLlmChatCompletionsUrl(llmApiUrl)
+  if (!llmEndpoint) return null
+
+  const response = await fetch(llmEndpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -245,15 +257,20 @@ const extractCandidateInfoByLlm = async (cvText) => {
     },
     body: JSON.stringify({
       model: llmModel,
-      response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: cvLlmPrompt },
         { role: 'user', content: `履歷文字內容：\n${cvText}` },
       ],
-      temperature: 0,
+      max_tokens: 1000,
+      temperature: 0.7,
     }),
   })
-  if (!response.ok) return null
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.warn('[CV] LLM API request failed:', response.status, llmEndpoint, errorText)
+    return null
+  }
+
   const data = await response.json()
   return data?.choices?.[0]?.message?.content || null
 }
