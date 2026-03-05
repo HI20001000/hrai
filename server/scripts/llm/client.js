@@ -24,8 +24,10 @@ export const extractCandidateInfoByLlm = async (cvText) => {
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: getCvLlmPrompt() },
-        { role: 'user', content: `履歷文字內容：\n${cvText}` },
+        {
+          role: 'user',
+          content: `${getCvLlmPrompt()}\n\n履歷文字內容：\n${cvText}`,
+        },
       ],
       max_tokens: 1000,
       temperature: 0.7,
