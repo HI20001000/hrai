@@ -161,8 +161,10 @@ onMounted(async () => {
 
 <template>
   <section class="cv-page">
-    <h2>CV 管理</h2>
-    <p>流程：先上傳 CV → 系統擷取候選人關鍵資訊 → 若有缺漏再手動補齊。</p>
+    <header class="page-header">
+      <h2>CV 管理</h2>
+      <p>流程：先上傳 CV → 系統擷取候選人關鍵資訊 → 若有缺漏再手動補齊。</p>
+    </header>
 
     <div class="card">
       <h3>第一步：上傳 CV</h3>
@@ -173,9 +175,9 @@ onMounted(async () => {
 
     <div v-if="extractedCandidate" class="card">
       <h3>LLM 擷取結果</h3>
-      <p>姓名：{{ extractedCandidate.fullName || '（未擷取）' }}</p>
-      <p>Email：{{ extractedCandidate.email || '（未擷取）' }}</p>
-      <p>電話：{{ extractedCandidate.phone || '（未擷取）' }}</p>
+      <p class="info-line">姓名：{{ extractedCandidate.fullName || '（未擷取）' }}</p>
+      <p class="info-line">Email：{{ extractedCandidate.email || '（未擷取）' }}</p>
+      <p class="info-line">電話：{{ extractedCandidate.phone || '（未擷取）' }}</p>
       <p v-if="missingFields.length" class="warning">缺漏欄位：{{ missingFields.join('、') }}</p>
     </div>
 
@@ -210,14 +212,115 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.cv-page { display: grid; gap: 1rem; }
-.card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1rem; display: grid; gap: .6rem; }
-.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; }
-.message { color: #2563eb; margin: 0; }
-.warning { color: #b45309; margin: 0; }
-ul { margin: .5rem 0 0; padding: 0; list-style: none; display: grid; gap: .4rem; }
-li { display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding-bottom: .4rem; }
+.cv-page {
+  display: grid;
+  gap: 1rem;
+  color: #0f172a;
+}
+
+.page-header {
+  background: #ffffff;
+  border: 1px solid #dbe3f0;
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.page-header h2 {
+  margin: 0;
+  color: #0b1220;
+}
+
+.page-header p {
+  margin: .5rem 0 0;
+  color: #334155;
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #dbe3f0;
+  border-radius: 12px;
+  padding: 1rem;
+  display: grid;
+  gap: .7rem;
+}
+
+.card h3 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .6rem;
+}
+
+input,
+select {
+  border: 1px solid #94a3b8;
+  border-radius: 10px;
+  padding: .65rem .75rem;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+button {
+  border: none;
+  border-radius: 10px;
+  background: #1d4ed8;
+  color: #ffffff;
+  font-weight: 600;
+  padding: .7rem 1rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: #64748b;
+  cursor: not-allowed;
+}
+
+.message {
+  color: #1e3a8a;
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+  padding: .5rem .75rem;
+  border-radius: 8px;
+  margin: 0;
+}
+
+.warning {
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  padding: .5rem .75rem;
+  border-radius: 8px;
+  margin: 0;
+}
+
+.info-line {
+  margin: 0;
+  color: #1e293b;
+}
+
+ul {
+  margin: .5rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: .5rem;
+}
+
+li {
+  display: flex;
+  justify-content: space-between;
+  color: #0f172a;
+  border-bottom: 1px dashed #cbd5e1;
+  padding-bottom: .5rem;
+}
+
 @media (max-width: 900px) {
-  .grid { grid-template-columns: minmax(0, 1fr); }
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>
