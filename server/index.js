@@ -4,6 +4,7 @@ import { URL } from 'node:url'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { spawn } from 'node:child_process'
 import {
   createDatabasePool,
   ensureAuthTables,
@@ -44,6 +45,11 @@ const cvStorageDir = path.resolve(__dirname, './storage/cv')
 const llmApiUrl = process.env.CV_LLM_API_URL || process.env.LLM_API_URL || ''
 const llmApiKey = process.env.CV_LLM_API_KEY || process.env.LLM_API_KEY || ''
 const llmModel = process.env.CV_LLM_MODEL || process.env.LLM_MODEL || ''
+const difyApiUrl = process.env.CV_DIFY_URL || process.env.DIFY_URL || ''
+const difyApiKey = process.env.CV_DIFY_API_KEY || process.env.DIFY_API_KEY || ''
+const cvLlmPrompt =
+  process.env.CV_LLM_PROMPT ||
+  '你是資深 HR 履歷解析助理。請從履歷文字中提取 fullName、email、phone、keywords，並只輸出 JSON 物件。'
 
 const withCors = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -151,44 +157,133 @@ const extractCandidateInfoByRegex = (buffer) => {
   })
 }
 
-const extractCandidateInfoFromCv = async (buffer) => {
-  if (!llmApiUrl || !llmModel) {
-    return extractCandidateInfoByRegex(buffer)
+const extractTextFromDocxBuffer = (buffer) =>
+  new Promise((resolve) => {
+    const pythonScript = [
+      'import sys, zipfile, io, re',
+      'from xml.etree import ElementTree as ET',
+      'data = sys.stdin.buffer.read()',
+      'try:',
+      '    z = zipfile.ZipFile(io.BytesIO(data))',
+      "    names = [n for n in z.namelist() if n.startswith('word/') and n.endswith('.xml')]",
+      '    texts = []',
+      '    for name in names:',
+      "        if 'rels' in name: continue",
+      '        try:',
+      '            root = ET.fromstring(z.read(name))',
+      "            for node in root.findall('.//{*}t'):",
+      "                if node.text: texts.append(node.text)",
+      '        except Exception:',
+      '            continue',
+      "    result = '\\n'.join(texts)",
+      '    sys.stdout.write(result)',
+      'except Exception:',
+      "    sys.stdout.write('')",
+    ].join('\n')
+
+    const proc = spawn('python', ['-c', pythonScript])
+    let output = ''
+    proc.stdout.on('data', (chunk) => {
+      output += chunk.toString('utf8')
+    })
+    proc.on('error', () => resolve(''))
+    proc.on('close', () => resolve(output.trim()))
+    proc.stdin.end(buffer)
+  })
+
+const decodePdfTextLiteral = (value) =>
+  value
+    .replace(/\\\\/g, '\\\\')
+    .replace(/\\\(/g, '(')
+    .replace(/\\\)/g, ')')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, ' ')
+    .replace(/\\t/g, ' ')
+
+const extractTextFromPdfBuffer = (buffer) => {
+  const source = buffer.toString('latin1')
+  const pieces = []
+
+  for (const match of source.matchAll(/\(([^()]*)\)\s*Tj/g)) {
+    if (match[1]) pieces.push(decodePdfTextLiteral(match[1]))
   }
 
+  for (const match of source.matchAll(/\[(.*?)\]\s*TJ/gs)) {
+    const segment = match[1] || ''
+    const textParts = [...segment.matchAll(/\(([^()]*)\)/g)].map((part) => decodePdfTextLiteral(part[1]))
+    if (textParts.length) pieces.push(textParts.join(''))
+  }
+
+  return pieces.join('\n').replace(/\s{2,}/g, ' ').trim()
+}
+
+const extractTextFromBuffer = async (buffer, fileName = '', mimeType = '') => {
+  const normalizedName = String(fileName || '').toLowerCase()
+  const normalizedType = String(mimeType || '').toLowerCase()
+
+  if (normalizedName.endsWith('.docx') || normalizedType.includes('wordprocessingml')) {
+    const text = await extractTextFromDocxBuffer(buffer)
+    if (text) return text
+  }
+
+  if (normalizedName.endsWith('.pdf') || normalizedType.includes('pdf')) {
+    const text = extractTextFromPdfBuffer(buffer)
+    if (text) return text
+  }
+
+  return buffer.toString('utf8')
+}
+
+const extractCandidateInfoByLlm = async (cvText) => {
+  if (!llmApiUrl || !llmModel) return null
+  const response = await fetch(llmApiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(llmApiKey ? { Authorization: `Bearer ${llmApiKey}` } : {}),
+    },
+    body: JSON.stringify({
+      model: llmModel,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: cvLlmPrompt },
+        { role: 'user', content: `履歷文字內容：\n${cvText}` },
+      ],
+      temperature: 0,
+    }),
+  })
+  if (!response.ok) return null
+  const data = await response.json()
+  return data?.choices?.[0]?.message?.content || null
+}
+
+const extractCandidateInfoByDify = async (cvText) => {
+  if (!difyApiUrl || !difyApiKey) return null
+  const endpoint = String(difyApiUrl).replace(/\/$/, '') + '/chat-messages'
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${difyApiKey}`,
+    },
+    body: JSON.stringify({
+      inputs: {},
+      query: `${cvLlmPrompt}\n\n履歷文字內容：\n${cvText}`,
+      response_mode: 'blocking',
+      user: 'cv-management',
+    }),
+  })
+  if (!response.ok) return null
+  const data = await response.json()
+  return data?.answer || null
+}
+
+const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType = '') => {
+  const cvText = (await extractTextFromBuffer(buffer, fileName, mimeType)).slice(0, 12000)
+  if (!cvText.trim()) return extractCandidateInfoByRegex(buffer)
+
   try {
-    const cvText = buffer.toString('utf8').slice(0, 12000)
-    const response = await fetch(llmApiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(llmApiKey ? { Authorization: `Bearer ${llmApiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model: llmModel,
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are an HR resume parser. Extract fullName, email, phone, and keywords from resume text. Return strict JSON object with keys: fullName, email, phone, keywords (array of strings).',
-          },
-          {
-            role: 'user',
-            content: `Resume text:\n${cvText}`,
-          },
-        ],
-        temperature: 0,
-      }),
-    })
-
-    if (!response.ok) {
-      console.warn('[CV] LLM parse failed, fallback to regex:', response.status)
-      return extractCandidateInfoByRegex(buffer)
-    }
-
-    const data = await response.json()
-    const content = data?.choices?.[0]?.message?.content
+    const content = (await extractCandidateInfoByLlm(cvText)) || (await extractCandidateInfoByDify(cvText))
     if (!content) return extractCandidateInfoByRegex(buffer)
 
     const parsed = parseLlmContentToJson(content)
@@ -389,7 +484,7 @@ const intakeCv = async (pool, req, res) => {
     return
   }
 
-  const extraction = await extractCandidateInfoFromCv(buffer)
+  const extraction = await extractCandidateInfoFromCv(buffer, fileName, mimeType)
   const derivedName = extraction.extracted.fullName || '待補候選人姓名'
   const derivedEmail = extraction.extracted.email || null
   const derivedPhone = extraction.extracted.phone || null
