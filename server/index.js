@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import {
   createDatabasePool,
   ensureAuthTables,
+  ensureCvTables,
   ensureDatabaseExists,
   getDatabaseName,
 } from './scripts/database/index.js'
@@ -38,10 +39,11 @@ const CODE_TTL_MS = 60 * 1000
 const verificationCodes = new Map()
 
 const DB_NAME = getDatabaseName()
+const cvStorageDir = path.resolve(__dirname, './storage/cv')
 
 const withCors = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 }
 
@@ -73,6 +75,14 @@ const hashPassword = (password, salt) =>
 const createAuthToken = () => crypto.randomBytes(32).toString('hex')
 const tokenDigest = (token) => crypto.createHash('sha256').update(token).digest('hex')
 
+const ensureCvStorageDir = () => {
+  if (!fs.existsSync(cvStorageDir)) {
+    fs.mkdirSync(cvStorageDir, { recursive: true })
+  }
+}
+
+const sanitizeFileName = (name) => String(name || 'cv-upload').replace(/[^a-zA-Z0-9._-]/g, '_')
+const sha256Buffer = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex')
 
 const requestCode = async (req, res) => {
   const body = await parseBody(req)
@@ -158,10 +168,104 @@ const loginUser = async (pool, req, res) => {
   })
 }
 
+const createCandidate = async (pool, req, res) => {
+  const body = await parseBody(req)
+  const fullName = body?.fullName?.trim()
+  const email = body?.email?.trim() || null
+  const phone = body?.phone?.trim() || null
+
+  if (!fullName) {
+    sendJson(res, 400, { message: 'fullName is required' })
+    return
+  }
+
+  const [result] = await pool.query(
+    'INSERT INTO candidates (full_name, email, phone) VALUES (?, ?, ?)',
+    [fullName, email, phone]
+  )
+
+  sendJson(res, 201, {
+    message: 'Candidate created',
+    candidate: { id: result.insertId, fullName, email, phone },
+  })
+}
+
+const listCandidates = async (pool, _req, res) => {
+  const [rows] = await pool.query(
+    'SELECT id, full_name AS fullName, email, phone, created_at AS createdAt FROM candidates ORDER BY created_at DESC'
+  )
+  sendJson(res, 200, { candidates: rows })
+}
+
+const uploadCandidateCv = async (pool, req, res, candidateId) => {
+  const body = await parseBody(req)
+  const fileName = sanitizeFileName(body?.fileName)
+  const contentBase64 = body?.contentBase64
+  const mimeType = body?.mimeType || 'application/octet-stream'
+
+  if (!fileName || !contentBase64) {
+    sendJson(res, 400, { message: 'fileName and contentBase64 are required' })
+    return
+  }
+
+  const [candidateRows] = await pool.query('SELECT id FROM candidates WHERE id = ? LIMIT 1', [candidateId])
+  if (!candidateRows.length) {
+    sendJson(res, 404, { message: 'Candidate not found' })
+    return
+  }
+
+  const buffer = Buffer.from(contentBase64, 'base64')
+  if (!buffer.length) {
+    sendJson(res, 400, { message: 'Invalid file content' })
+    return
+  }
+
+  ensureCvStorageDir()
+  const savedName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${fileName}`
+  const savePath = path.join(cvStorageDir, savedName)
+  fs.writeFileSync(savePath, buffer)
+
+  const [versionRows] = await pool.query('SELECT COALESCE(MAX(version_no), 0) AS maxVersion FROM candidate_cvs WHERE candidate_id = ?', [candidateId])
+  const nextVersion = Number(versionRows[0]?.maxVersion || 0) + 1
+  const fileHash = sha256Buffer(buffer)
+
+  const [result] = await pool.query(
+    `INSERT INTO candidate_cvs
+      (candidate_id, version_no, storage_provider, storage_key, original_filename, mime_type, file_size, sha256)
+     VALUES (?, ?, 'local', ?, ?, ?, ?, ?)`,
+    [candidateId, nextVersion, savedName, fileName, mimeType, buffer.length, fileHash]
+  )
+
+  sendJson(res, 201, {
+    message: 'CV uploaded',
+    cv: {
+      id: result.insertId,
+      candidateId,
+      versionNo: nextVersion,
+      originalFileName: fileName,
+      size: buffer.length,
+      storagePath: `server/storage/cv/${savedName}`,
+    },
+  })
+}
+
+const listCandidateCvs = async (pool, _req, res, candidateId) => {
+  const [rows] = await pool.query(
+    `SELECT id, candidate_id AS candidateId, version_no AS versionNo, original_filename AS originalFileName,
+            mime_type AS mimeType, file_size AS fileSize, uploaded_at AS uploadedAt
+     FROM candidate_cvs
+     WHERE candidate_id = ?
+     ORDER BY version_no DESC`,
+    [candidateId]
+  )
+  sendJson(res, 200, { files: rows })
+}
+
 const start = async () => {
   await ensureDatabaseExists()
   const pool = createDatabasePool()
   await ensureAuthTables(pool)
+  await ensureCvTables(pool)
 
   const port = process.env.PORT || 3001
   const server = http.createServer(async (req, res) => {
@@ -178,6 +282,14 @@ const start = async () => {
       if (url.pathname === '/api/auth/request-code' && req.method === 'POST') return requestCode(req, res)
       if (url.pathname === '/api/auth/register' && req.method === 'POST') return registerUser(pool, req, res)
       if (url.pathname === '/api/auth/login' && req.method === 'POST') return loginUser(pool, req, res)
+
+      if (url.pathname === '/api/candidates' && req.method === 'POST') return createCandidate(pool, req, res)
+      if (url.pathname === '/api/candidates' && req.method === 'GET') return listCandidates(pool, req, res)
+
+      const uploadMatch = url.pathname.match(/^\/api\/candidates\/(\d+)\/cvs$/)
+      if (uploadMatch && req.method === 'POST') return uploadCandidateCv(pool, req, res, Number(uploadMatch[1]))
+      if (uploadMatch && req.method === 'GET') return listCandidateCvs(pool, req, res, Number(uploadMatch[1]))
+
       return sendJson(res, 404, { message: 'Not found' })
     } catch (error) {
       console.error(error)

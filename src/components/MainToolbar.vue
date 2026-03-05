@@ -11,6 +11,7 @@ const emit = defineEmits(['change-page'])
 const pageItems = [
   { key: 'home', label: '首頁', icon: '🏠' },
   { key: 'reports', label: '報表', icon: '📊' },
+  { key: 'cv', label: 'CV 管理', icon: '📄' },
   { key: 'files', label: '檔案', icon: '📁' },
 ]
 

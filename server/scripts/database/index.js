@@ -54,4 +54,38 @@ export const ensureAuthTables = async (pool) => {
   `)
 }
 
+export const ensureCvTables = async (pool) => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS candidates (
+      id BIGINT PRIMARY KEY AUTO_INCREMENT,
+      full_name VARCHAR(120) NOT NULL,
+      email VARCHAR(255) NULL,
+      phone VARCHAR(40) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_candidate_name (full_name),
+      INDEX idx_candidate_email (email)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS candidate_cvs (
+      id BIGINT PRIMARY KEY AUTO_INCREMENT,
+      candidate_id BIGINT NOT NULL,
+      version_no INT NOT NULL,
+      storage_provider VARCHAR(30) NOT NULL DEFAULT 'local',
+      storage_key VARCHAR(500) NOT NULL,
+      original_filename VARCHAR(255) NOT NULL,
+      mime_type VARCHAR(100) NOT NULL,
+      file_size BIGINT NOT NULL,
+      sha256 CHAR(64) NOT NULL,
+      uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_candidate_id (candidate_id),
+      INDEX idx_candidate_uploaded_at (uploaded_at),
+      UNIQUE KEY uniq_candidate_version (candidate_id, version_no),
+      CONSTRAINT fk_candidate_cvs_candidate FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `)
+}
+
 export const getDatabaseName = getDbName
