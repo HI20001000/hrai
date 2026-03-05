@@ -88,6 +88,39 @@ const ensureCvStorageDir = () => {
 const sanitizeFileName = (name) => String(name || 'cv-upload').replace(/[^a-zA-Z0-9._-]/g, '_')
 const sha256Buffer = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex')
 
+const safeJsonParse = (value) => {
+  if (typeof value !== 'string') return null
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+const parseLlmContentToJson = (content) => {
+  if (!content) return null
+  if (typeof content === 'object') return content
+  const direct = safeJsonParse(content)
+  if (direct) return direct
+
+  const fenced = String(content).match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fenced?.[1]) {
+    const parsed = safeJsonParse(fenced[1].trim())
+    if (parsed) return parsed
+  }
+  return null
+}
+
+const extractKeywordsFromLlmJson = (llmJson) => {
+  if (!llmJson || typeof llmJson !== 'object') return []
+  const candidates = [llmJson.keywords, llmJson.skills, llmJson.tags]
+  const flattened = candidates
+    .flatMap((value) => (Array.isArray(value) ? value : []))
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+  return [...new Set(flattened)].slice(0, 20)
+}
+
 const normalizeExtractedFields = (raw = {}) => {
   const extracted = {
     fullName: String(raw.fullName || '').trim(),
@@ -98,7 +131,7 @@ const normalizeExtractedFields = (raw = {}) => {
   if (!extracted.fullName) missingFields.push('fullName')
   if (!extracted.email) missingFields.push('email')
   if (!extracted.phone) missingFields.push('phone')
-  return { extracted, missingFields }
+  return { extracted, missingFields, llmJson: null, keywords: [] }
 }
 
 const extractCandidateInfoByRegex = (buffer) => {
@@ -138,7 +171,7 @@ const extractCandidateInfoFromCv = async (buffer) => {
           {
             role: 'system',
             content:
-              'You are an HR resume parser. Extract candidate fullName, email, phone only. Return strict JSON object with keys: fullName, email, phone.',
+              'You are an HR resume parser. Extract fullName, email, phone, and keywords from resume text. Return strict JSON object with keys: fullName, email, phone, keywords (array of strings).',
           },
           {
             role: 'user',
@@ -158,14 +191,15 @@ const extractCandidateInfoFromCv = async (buffer) => {
     const content = data?.choices?.[0]?.message?.content
     if (!content) return extractCandidateInfoByRegex(buffer)
 
-    let parsed
-    try {
-      parsed = JSON.parse(content)
-    } catch {
-      return extractCandidateInfoByRegex(buffer)
-    }
+    const parsed = parseLlmContentToJson(content)
+    if (!parsed) return extractCandidateInfoByRegex(buffer)
 
-    return normalizeExtractedFields(parsed)
+    const normalized = normalizeExtractedFields(parsed)
+    return {
+      ...normalized,
+      llmJson: parsed,
+      keywords: extractKeywordsFromLlmJson(parsed),
+    }
   } catch (error) {
     console.warn('[CV] LLM parse error, fallback to regex:', error?.message || error)
     return extractCandidateInfoByRegex(buffer)
@@ -377,6 +411,9 @@ const intakeCv = async (pool, req, res) => {
       phone: derivedPhone,
       extracted: extraction.extracted,
       missingFields: extraction.missingFields,
+      llmJson: extraction.llmJson,
+      keywords: extraction.keywords,
+      parser: extraction.llmJson ? 'llm' : 'regex',
     },
     cv,
   })

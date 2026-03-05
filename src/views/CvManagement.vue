@@ -15,6 +15,7 @@ const manualFullName = ref('')
 const manualEmail = ref('')
 const manualPhone = ref('')
 const isSubmittingManual = ref(false)
+const extractedKeywords = ref([])
 
 const formatSize = (bytes) => {
   if (!Number.isFinite(bytes)) return '--'
@@ -63,6 +64,27 @@ const syncManualForm = (candidate) => {
   manualPhone.value = candidate?.phone || ''
 }
 
+
+const parseKeywordsFromLlmJson = (llmJson) => {
+  if (!llmJson) return []
+  const source = typeof llmJson === 'string' ? (() => {
+    try {
+      return JSON.parse(llmJson)
+    } catch {
+      return null
+    }
+  })() : llmJson
+
+  if (!source || typeof source !== 'object') return []
+  const values = [source.keywords, source.skills, source.tags]
+    .flatMap((item) => (Array.isArray(item) ? item : []))
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+
+  return [...new Set(values)].slice(0, 20)
+}
+
+
 const intakeCv = async () => {
   message.value = ''
   if (!selectedFile.value) {
@@ -91,6 +113,9 @@ const intakeCv = async () => {
 
     extractedCandidate.value = data.candidate
     missingFields.value = data.candidate?.missingFields || []
+    extractedKeywords.value = [
+      ...new Set([...(data.candidate?.keywords || []), ...parseKeywordsFromLlmJson(data.candidate?.llmJson)]),
+    ]
     syncManualForm(data.candidate)
 
     await loadCandidates()
@@ -178,6 +203,8 @@ onMounted(async () => {
       <p class="info-line">姓名：{{ extractedCandidate.fullName || '（未擷取）' }}</p>
       <p class="info-line">Email：{{ extractedCandidate.email || '（未擷取）' }}</p>
       <p class="info-line">電話：{{ extractedCandidate.phone || '（未擷取）' }}</p>
+      <p class="info-line">解析來源：{{ extractedCandidate.parser === 'llm' ? 'LLM' : 'Regex Fallback' }}</p>
+      <p v-if="extractedKeywords.length" class="info-line">關鍵字：{{ extractedKeywords.join('、') }}</p>
       <p v-if="missingFields.length" class="warning">缺漏欄位：{{ missingFields.join('、') }}</p>
     </div>
 
