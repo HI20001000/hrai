@@ -1,0 +1,742 @@
+{
+  "retail_banking_relationship_manager": {
+    "title": "客戶經理",
+    "description": "負責零售銀行客戶關係維護、存貸款及理財產品推介，並配合分行業務與合規要求推動客戶經營。",
+    "industry": [
+      "銀行",
+      "金融服務"
+    ],
+    "roleKeywords": [
+      "零售銀行客戶經理",
+      "個人銀行客戶經理",
+      "Retail Banking Relationship Manager"
+    ],
+    "coreResponsibilities": [
+      "客戶關係維護",
+      "存貸款產品推介",
+      "理財產品介紹",
+      "分行業務拓展"
+    ],
+    "requiredSkills": [
+      "客戶管理",
+      "零售銀行產品知識",
+      "銷售與服務",
+      "溝通協調"
+    ],
+    "preferredSkills": [
+      "財富管理基礎",
+      "合規意識",
+      "Excel",
+      "雙語溝通"
+    ],
+    "certifications": [
+      "金融從業資格",
+      "保險中介人資格"
+    ],
+    "minWorkYears": 2,
+    "salaryRange": {
+      "min": 18000,
+      "max": 35000
+    },
+    "weights": {
+      "requiredSkills": 0.22,
+      "projectExperience": 0.18,
+      "industry": 0.15,
+      "coreResponsibilities": 0.1,
+      "certifications": 0.07,
+      "workYears": 0.08,
+      "candidatePreference": 0.2
+    }
+  },
+  "corporate_banking_relationship_manager": {
+    "title": "企業銀行客戶經理",
+    "description": "負責企業客戶開發與維護，提供授信、現金管理、貿易融資及企業銀行服務方案。",
+    "industry": [
+      "銀行",
+      "金融服務"
+    ],
+    "roleKeywords": [
+      "企業銀行客戶經理",
+      "企業金融客戶經理",
+      "Corporate Banking Relationship Manager"
+    ],
+    "coreResponsibilities": [
+      "企業客戶開發",
+      "授信方案建議",
+      "現金管理服務推動",
+      "貿易融資協調"
+    ],
+    "requiredSkills": [
+      "企業金融知識",
+      "客戶關係管理",
+      "授信分析",
+      "方案提案"
+    ],
+    "preferredSkills": [
+      "財務報表閱讀",
+      "貿易融資知識",
+      "合規意識",
+      "PowerPoint"
+    ],
+    "certifications": [
+      "金融從業資格",
+      "CFA"
+    ],
+    "minWorkYears": 3,
+    "salaryRange": {
+      "min": 25000,
+      "max": 50000
+    },
+    "weights": {
+      "requiredSkills": 0.24,
+      "projectExperience": 0.18,
+      "industry": 0.16,
+      "coreResponsibilities": 0.1,
+      "certifications": 0.07,
+      "workYears": 0.1,
+      "candidatePreference": 0.15
+    }
+  },
+  "wealth_management_advisor": {
+    "title": "財富管理顧問",
+    "description": "為個人客戶提供資產配置、保險、基金及理財建議，兼顧客戶適當性與產品銷售合規要求。",
+    "industry": [
+      "銀行",
+      "金融服務"
+    ],
+    "roleKeywords": [
+      "財富管理顧問",
+      "理財顧問",
+      "Wealth Management Advisor"
+    ],
+    "coreResponsibilities": [
+      "客戶需求分析",
+      "資產配置建議",
+      "理財產品推介",
+      "客戶適當性評估"
+    ],
+    "requiredSkills": [
+      "理財規劃",
+      "客戶管理",
+      "金融產品知識",
+      "溝通說服"
+    ],
+    "preferredSkills": [
+      "基金產品知識",
+      "保險規劃",
+      "投資市場基礎",
+      "雙語溝通"
+    ],
+    "certifications": [
+      "CFP",
+      "保險中介人資格",
+      "基金從業資格"
+    ],
+    "minWorkYears": 2,
+    "salaryRange": {
+      "min": 20000,
+      "max": 45000
+    },
+    "weights": {
+      "requiredSkills": 0.22,
+      "projectExperience": 0.18,
+      "industry": 0.15,
+      "coreResponsibilities": 0.1,
+      "certifications": 0.08,
+      "workYears": 0.07,
+      "candidatePreference": 0.2
+    }
+  },
+  "credit_analyst": {
+    "title": "授信分析師",
+    "description": "負責企業或個人授信資料分析、財務評估與風險判斷，支援貸款及授信審批流程。",
+    "industry": [
+      "銀行",
+      "風險管理"
+    ],
+    "roleKeywords": [
+      "授信分析師",
+      "信貸分析師",
+      "Credit Analyst"
+    ],
+    "coreResponsibilities": [
+      "授信資料審閱",
+      "財務報表分析",
+      "信用風險評估",
+      "授信建議撰寫"
+    ],
+    "requiredSkills": [
+      "信用分析",
+      "財務分析",
+      "風險判斷",
+      "報告撰寫"
+    ],
+    "preferredSkills": [
+      "Excel",
+      "貸款產品知識",
+      "文件審核",
+      "雙語書寫"
+    ],
+    "certifications": [
+      "金融從業資格",
+      "FRM"
+    ],
+    "minWorkYears": 2,
+    "salaryRange": {
+      "min": 18000,
+      "max": 32000
+    },
+    "weights": {
+      "requiredSkills": 0.28,
+      "projectExperience": 0.18,
+      "industry": 0.18,
+      "coreResponsibilities": 0.1,
+      "certifications": 0.08,
+      "workYears": 0.12,
+      "candidatePreference": 0.06
+    }
+  },
+  "loan_officer": {
+    "title": "信貸專員",
+    "description": "負責貸款申請受理、文件核對、客戶訪談及貸前貸後流程跟進，確保作業符合內部規範。",
+    "industry": [
+      "銀行",
+      "金融服務"
+    ],
+    "roleKeywords": [
+      "信貸專員",
+      "貸款專員",
+      "Loan Officer"
+    ],
+    "coreResponsibilities": [
+      "貸款申請受理",
+      "文件核對",
+      "客戶訪談",
+      "貸後跟進"
+    ],
+    "requiredSkills": [
+      "文件審核",
+      "客戶溝通",
+      "貸款流程認知",
+      "風險意識"
+    ],
+    "preferredSkills": [
+      "KYC 基礎",
+      "零售銀行產品知識",
+      "Excel",
+      "服務意識"
+    ],
+    "certifications": [
+      "金融從業資格"
+    ],
+    "minWorkYears": 1,
+    "salaryRange": {
+      "min": 15000,
+      "max": 28000
+    },
+    "weights": {
+      "requiredSkills": 0.28,
+      "projectExperience": 0.14,
+      "industry": 0.2,
+      "coreResponsibilities": 0.06,
+      "certifications": 0.08,
+      "workYears": 0.14,
+      "candidatePreference": 0.1
+    }
+  },
+  "treasury_officer": {
+    "title": "財資專員",
+    "description": "負責資金調度、現金流監控、銀行往來及流動性管理，支援機構日常財資運作。",
+    "industry": [
+      "銀行",
+      "企業財務"
+    ],
+    "roleKeywords": [
+      "財資專員",
+      "資金管理專員",
+      "Treasury Officer"
+    ],
+    "coreResponsibilities": [
+      "資金調度",
+      "現金流監控",
+      "銀行往來管理",
+      "流動性分析"
+    ],
+    "requiredSkills": [
+      "資金管理",
+      "現金流分析",
+      "財務基礎",
+      "風險意識"
+    ],
+    "preferredSkills": [
+      "Excel",
+      "銀行系統操作",
+      "對帳能力",
+      "報表整理"
+    ],
+    "certifications": [
+      "CPA",
+      "金融從業資格"
+    ],
+    "minWorkYears": 3,
+    "salaryRange": {
+      "min": 22000,
+      "max": 40000
+    },
+    "weights": {
+      "requiredSkills": 0.26,
+      "projectExperience": 0.18,
+      "industry": 0.18,
+      "coreResponsibilities": 0.1,
+      "certifications": 0.06,
+      "workYears": 0.12,
+      "candidatePreference": 0.1
+    }
+  },
+  "compliance_officer": {
+    "title": "合規專員",
+    "description": "負責監管規定解讀、內部合規審查及制度執行監督，協助機構維持合規管理框架。",
+    "industry": [
+      "合規",
+      "銀行",
+      "金融服務"
+    ],
+    "roleKeywords": [
+      "合規專員",
+      "法遵專員",
+      "Compliance Officer"
+    ],
+    "coreResponsibilities": [
+      "監管規定解讀",
+      "內部合規審查",
+      "制度執行監督",
+      "合規報告整理"
+    ],
+    "requiredSkills": [
+      "法規理解",
+      "合規審查",
+      "風險識別",
+      "文件控管"
+    ],
+    "preferredSkills": [
+      "AML 基礎",
+      "政策撰寫",
+      "Excel",
+      "跨部門溝通"
+    ],
+    "certifications": [
+      "CAMS",
+      "金融從業資格",
+      "FRM"
+    ],
+    "minWorkYears": 3,
+    "salaryRange": {
+      "min": 22000,
+      "max": 42000
+    },
+    "weights": {
+      "requiredSkills": 0.3,
+      "projectExperience": 0.14,
+      "industry": 0.2,
+      "coreResponsibilities": 0.08,
+      "certifications": 0.14,
+      "workYears": 0.1,
+      "candidatePreference": 0.04
+    }
+  },
+  "aml_kyc_analyst": {
+    "title": "反洗錢／認識你的客戶分析師",
+    "description": "負責客戶盡職審查、交易監控及可疑活動分析，支援機構反洗錢及客戶身份識別要求。",
+    "industry": [
+      "合規",
+      "銀行",
+      "金融服務"
+    ],
+    "roleKeywords": [
+      "反洗錢／認識你的客戶分析師",
+      "AML/KYC 分析師",
+      "AML KYC Analyst"
+    ],
+    "coreResponsibilities": [
+      "客戶盡職審查",
+      "交易監控",
+      "可疑活動分析",
+      "合規記錄維護"
+    ],
+    "requiredSkills": [
+      "AML",
+      "KYC",
+      "風險識別",
+      "調查分析"
+    ],
+    "preferredSkills": [
+      "CFT 基礎",
+      "文件審閱",
+      "Excel",
+      "雙語書寫"
+    ],
+    "certifications": [
+      "CAMS",
+      "金融從業資格"
+    ],
+    "minWorkYears": 2,
+    "salaryRange": {
+      "min": 18000,
+      "max": 32000
+    },
+    "weights": {
+      "requiredSkills": 0.32,
+      "projectExperience": 0.14,
+      "industry": 0.18,
+      "coreResponsibilities": 0.06,
+      "certifications": 0.16,
+      "workYears": 0.1,
+      "candidatePreference": 0.04
+    }
+  },
+  "risk_analyst": {
+    "title": "風險分析師",
+    "description": "負責信用、市場或操作風險評估，編製風險報告並支援風險控制措施執行。",
+    "industry": [
+      "風險管理",
+      "銀行",
+      "金融服務"
+    ],
+    "roleKeywords": [
+      "風險分析師",
+      "風險管理分析師",
+      "Risk Analyst"
+    ],
+    "coreResponsibilities": [
+      "風險評估",
+      "風險報告編製",
+      "控制措施跟進",
+      "風險數據分析"
+    ],
+    "requiredSkills": [
+      "風險管理",
+      "數據分析",
+      "報告撰寫",
+      "風險判斷"
+    ],
+    "preferredSkills": [
+      "Excel",
+      "Python",
+      "監管要求理解",
+      "統計基礎"
+    ],
+    "certifications": [
+      "FRM",
+      "金融從業資格"
+    ],
+    "minWorkYears": 2,
+    "salaryRange": {
+      "min": 20000,
+      "max": 38000
+    },
+    "weights": {
+      "requiredSkills": 0.28,
+      "projectExperience": 0.18,
+      "industry": 0.18,
+      "coreResponsibilities": 0.1,
+      "certifications": 0.1,
+      "workYears": 0.12,
+      "candidatePreference": 0.04
+    }
+  },
+  "internal_auditor": {
+    "title": "內部稽核專員",
+    "description": "負責內部稽核計劃執行、流程測試及缺失跟進，支援機構內控與治理要求。",
+    "industry": [
+      "合規",
+      "銀行",
+      "企業財務"
+    ],
+    "roleKeywords": [
+      "內部稽核專員",
+      "內部審計專員",
+      "Internal Auditor"
+    ],
+    "coreResponsibilities": [
+      "稽核計劃執行",
+      "流程測試",
+      "缺失跟進",
+      "稽核報告整理"
+    ],
+    "requiredSkills": [
+      "內部控制",
+      "稽核程序",
+      "風險識別",
+      "報告撰寫"
+    ],
+    "preferredSkills": [
+      "Excel",
+      "流程分析",
+      "文件抽查",
+      "跨部門溝通"
+    ],
+    "certifications": [
+      "CIA",
+      "CPA",
+      "金融從業資格"
+    ],
+    "minWorkYears": 2,
+    "salaryRange": {
+      "min": 18000,
+      "max": 34000
+    },
+    "weights": {
+      "requiredSkills": 0.26,
+      "projectExperience": 0.18,
+      "industry": 0.2,
+      "coreResponsibilities": 0.08,
+      "certifications": 0.1,
+      "workYears": 0.14,
+      "candidatePreference": 0.04
+    }
+  },
+  "financial_reporting_accountant": {
+    "title": "財務報告會計",
+    "description": "負責月結、財務報表編製、監管或管理報表整理，以及會計準則與內部流程的執行。",
+    "industry": [
+      "企業財務",
+      "銀行",
+      "保險"
+    ],
+    "roleKeywords": [
+      "財務報告會計",
+      "財務會計",
+      "Financial Reporting Accountant"
+    ],
+    "coreResponsibilities": [
+      "月結處理",
+      "財務報表編製",
+      "報表分析整理",
+      "會計政策執行"
+    ],
+    "requiredSkills": [
+      "會計準則",
+      "財務報表編製",
+      "月結作業",
+      "數字準確性"
+    ],
+    "preferredSkills": [
+      "Excel",
+      "ERP",
+      "對帳能力",
+      "管理報表整理"
+    ],
+    "certifications": [
+      "CPA",
+      "會計專業資格"
+    ],
+    "minWorkYears": 2,
+    "salaryRange": {
+      "min": 18000,
+      "max": 32000
+    },
+    "weights": {
+      "requiredSkills": 0.28,
+      "projectExperience": 0.16,
+      "industry": 0.18,
+      "coreResponsibilities": 0.08,
+      "certifications": 0.1,
+      "workYears": 0.16,
+      "candidatePreference": 0.04
+    }
+  },
+  "finance_operations_specialist": {
+    "title": "金融營運專員",
+    "description": "負責後台營運、交易對帳、資料錄入、清算結算及日常作業流程維護。",
+    "industry": [
+      "金融服務",
+      "銀行",
+      "保險"
+    ],
+    "roleKeywords": [
+      "金融營運專員",
+      "後台營運專員",
+      "Finance Operations Specialist"
+    ],
+    "coreResponsibilities": [
+      "交易對帳",
+      "資料錄入",
+      "清算結算支援",
+      "異常作業跟進"
+    ],
+    "requiredSkills": [
+      "營運流程執行",
+      "對帳能力",
+      "細節管理",
+      "時效管理"
+    ],
+    "preferredSkills": [
+      "Excel",
+      "銀行系統操作",
+      "文書處理",
+      "跨部門協作"
+    ],
+    "certifications": [
+      "金融從業資格"
+    ],
+    "minWorkYears": 1,
+    "salaryRange": {
+      "min": 14000,
+      "max": 26000
+    },
+    "weights": {
+      "requiredSkills": 0.24,
+      "projectExperience": 0.18,
+      "industry": 0.22,
+      "coreResponsibilities": 0.08,
+      "certifications": 0.06,
+      "workYears": 0.16,
+      "candidatePreference": 0.06
+    }
+  },
+  "insurance_advisor": {
+    "title": "保險顧問",
+    "description": "負責保險產品介紹、客戶需求分析及售後服務，確保銷售過程符合披露及合規要求。",
+    "industry": [
+      "保險",
+      "金融服務"
+    ],
+    "roleKeywords": [
+      "保險顧問",
+      "保險業務顧問",
+      "Insurance Advisor"
+    ],
+    "coreResponsibilities": [
+      "客戶需求分析",
+      "保險產品介紹",
+      "投保方案建議",
+      "售後服務跟進"
+    ],
+    "requiredSkills": [
+      "保險產品知識",
+      "客戶溝通",
+      "需求分析",
+      "銷售服務"
+    ],
+    "preferredSkills": [
+      "理財基礎",
+      "法規披露意識",
+      "雙語溝通",
+      "客戶維護"
+    ],
+    "certifications": [
+      "保險中介人資格"
+    ],
+    "minWorkYears": 1,
+    "salaryRange": {
+      "min": 15000,
+      "max": 35000
+    },
+    "weights": {
+      "requiredSkills": 0.22,
+      "projectExperience": 0.18,
+      "industry": 0.16,
+      "coreResponsibilities": 0.1,
+      "certifications": 0.08,
+      "workYears": 0.06,
+      "candidatePreference": 0.2
+    }
+  },
+  "insurance_underwriter": {
+    "title": "核保專員",
+    "description": "負責保單申請審閱、風險判斷及承保條件評估，確保核保作業符合公司標準與監管要求。",
+    "industry": [
+      "保險",
+      "風險管理"
+    ],
+    "roleKeywords": [
+      "核保專員",
+      "保險核保專員",
+      "Insurance Underwriter"
+    ],
+    "coreResponsibilities": [
+      "保單申請審閱",
+      "風險判斷",
+      "承保條件評估",
+      "核保記錄維護"
+    ],
+    "requiredSkills": [
+      "核保判斷",
+      "風險評估",
+      "資料審閱",
+      "保險產品知識"
+    ],
+    "preferredSkills": [
+      "醫療或壽險基礎",
+      "Excel",
+      "報告整理",
+      "細節管理"
+    ],
+    "certifications": [
+      "保險中介人資格",
+      "LOMA"
+    ],
+    "minWorkYears": 2,
+    "salaryRange": {
+      "min": 18000,
+      "max": 32000
+    },
+    "weights": {
+      "requiredSkills": 0.28,
+      "projectExperience": 0.18,
+      "industry": 0.2,
+      "coreResponsibilities": 0.06,
+      "certifications": 0.1,
+      "workYears": 0.14,
+      "candidatePreference": 0.04
+    }
+  },
+  "claims_officer": {
+    "title": "理賠專員",
+    "description": "負責理賠申請受理、文件核實、案件進度跟進及客戶通知，確保理賠作業合規與時效。",
+    "industry": [
+      "保險",
+      "金融服務"
+    ],
+    "roleKeywords": [
+      "理賠專員",
+      "保險理賠專員",
+      "Claims Officer"
+    ],
+    "coreResponsibilities": [
+      "理賠申請受理",
+      "文件核實",
+      "案件進度跟進",
+      "客戶通知與結案"
+    ],
+    "requiredSkills": [
+      "理賠流程認知",
+      "文件審核",
+      "客戶溝通",
+      "個案處理"
+    ],
+    "preferredSkills": [
+      "保險條款理解",
+      "Excel",
+      "服務意識",
+      "時效管理"
+    ],
+    "certifications": [
+      "保險中介人資格"
+    ],
+    "minWorkYears": 1,
+    "salaryRange": {
+      "min": 15000,
+      "max": 28000
+    },
+    "weights": {
+      "requiredSkills": 0.24,
+      "projectExperience": 0.2,
+      "industry": 0.22,
+      "coreResponsibilities": 0.06,
+      "certifications": 0.08,
+      "workYears": 0.14,
+      "candidatePreference": 0.06
+    }
+  }
+}

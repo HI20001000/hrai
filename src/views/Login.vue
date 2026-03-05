@@ -1,10 +1,7 @@
 <script setup>
-import { getCurrentInstance, onMounted, onUnmounted, ref } from 'vue'
+import { getCurrentInstance } from 'vue'
 import { useLoginForm } from '../scripts/useLoginForm.js'
 
-const heroRef = ref(null)
-const canvasRef = ref(null)
-let cleanupAnimation = null
 const instance = getCurrentInstance()
 
 const {
@@ -26,346 +23,403 @@ const {
 } = useLoginForm({
   onLoginSuccess: () => instance?.proxy?.$router?.push('/main'),
 })
-
-const mouse = {
-  x: 0,
-  y: 0,
-  active: false,
-}
-
-const createParticle = (width, height, { edge = false } = {}) => {
-  let baseVx = (Math.random() - 0.5) * 0.6
-  let baseVy = (Math.random() - 0.5) * 0.6
-  const radius = 1.6 + Math.random() * 1.4
-  let x = Math.random() * width
-  let y = Math.random() * height
-
-  if (edge) {
-    const side = Math.floor(Math.random() * 4)
-    if (side === 0) {
-      x = 0
-      y = Math.random() * height
-      baseVx = Math.abs(baseVx)
-      baseVy = (Math.random() - 0.5) * 0.6
-    } else if (side === 1) {
-      x = width
-      y = Math.random() * height
-      baseVx = -Math.abs(baseVx)
-      baseVy = (Math.random() - 0.5) * 0.6
-    } else if (side === 2) {
-      x = Math.random() * width
-      y = 0
-      baseVy = Math.abs(baseVy)
-      baseVx = (Math.random() - 0.5) * 0.6
-    } else {
-      x = Math.random() * width
-      y = height
-      baseVy = -Math.abs(baseVy)
-      baseVx = (Math.random() - 0.5) * 0.6
-    }
-  }
-
-  return { x, y, vx: baseVx, vy: baseVy, baseVx, baseVy, radius }
-}
-
-const createParticles = (count, width, height) =>
-  Array.from({ length: count }, () => createParticle(width, height))
-
-onMounted(() => {
-  const heroEl = heroRef.value
-  const canvas = canvasRef.value
-  if (!heroEl || !canvas) return
-
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-
-  const state = {
-    animationId: 0,
-    particles: [],
-    width: 0,
-    height: 0,
-    ratio: window.devicePixelRatio || 1,
-  }
-
-  const particleCount = 100
-  const resetParticleAtEdge = (particle) => {
-    Object.assign(particle, createParticle(state.width, state.height, { edge: true }))
-  }
-
-  const resize = () => {
-    state.ratio = window.devicePixelRatio || 1
-    state.width = heroEl.clientWidth
-    state.height = heroEl.clientHeight
-    canvas.width = state.width * state.ratio
-    canvas.height = state.height * state.ratio
-    canvas.style.width = `${state.width}px`
-    canvas.style.height = `${state.height}px`
-    ctx.setTransform(state.ratio, 0, 0, state.ratio, 0, 0)
-    state.particles = createParticles(particleCount, state.width, state.height)
-  }
-
-  let lastMouseX = 0
-  let lastMouseY = 0
-  let mouseVelocityX = 0
-  let mouseVelocityY = 0
-  const handleMouseMove = (event) => {
-    if (mouse.active) {
-      mouseVelocityX = event.clientX - lastMouseX
-      mouseVelocityY = event.clientY - lastMouseY
-    }
-    lastMouseX = event.clientX
-    lastMouseY = event.clientY
-    mouse.x = event.clientX
-    mouse.y = event.clientY
-    mouse.active = true
-  }
-
-  const handleMouseLeave = () => {
-    mouse.active = false
-  }
-
-  const tick = () => {
-    ctx.clearRect(0, 0, state.width, state.height)
-
-    const rect = heroEl.getBoundingClientRect()
-    const localMouse = {
-      x: mouse.x - rect.left,
-      y: mouse.y - rect.top,
-      active:
-        mouse.active &&
-        mouse.x >= rect.left &&
-        mouse.x <= rect.right &&
-        mouse.y >= rect.top &&
-        mouse.y <= rect.bottom,
-    }
-    const innerRadius = 70
-    const outerRadius = 160
-    mouseVelocityX *= 0.9
-    mouseVelocityY *= 0.9
-
-    for (const particle of state.particles) {
-      particle.x += particle.vx
-      particle.y += particle.vy
-
-      if (
-        particle.x <= 0 ||
-        particle.x >= state.width ||
-        particle.y <= 0 ||
-        particle.y >= state.height
-      ) {
-        resetParticleAtEdge(particle)
-        continue
-      }
-
-      if (localMouse.active) {
-        const dx = particle.x - localMouse.x
-        const dy = particle.y - localMouse.y
-        const distance = Math.hypot(dx, dy)
-        if (distance > 0 && distance <= innerRadius) {
-          const nx = dx / distance
-          const ny = dy / distance
-          particle.x = localMouse.x + nx * innerRadius
-          particle.y = localMouse.y + ny * innerRadius
-          particle.vx = mouseVelocityX * 0.4 + particle.baseVx * 0.2
-          particle.vy = mouseVelocityY * 0.4 + particle.baseVy * 0.2
-        } else if (distance > innerRadius && distance < outerRadius) {
-          const nx = dx / distance
-          const ny = dy / distance
-          const targetX = localMouse.x + nx * innerRadius
-          const targetY = localMouse.y + ny * innerRadius
-          const attraction = (outerRadius - distance) / outerRadius
-          particle.vx += (targetX - particle.x) * 0.002 * attraction
-          particle.vy += (targetY - particle.y) * 0.002 * attraction
-        } else {
-          particle.vx += (particle.baseVx - particle.vx) * 0.02
-          particle.vy += (particle.baseVy - particle.vy) * 0.02
-        }
-      } else {
-        particle.vx += (particle.baseVx - particle.vx) * 0.015
-        particle.vy += (particle.baseVy - particle.vy) * 0.015
-      }
-    }
-
-    if (localMouse.active) {
-      const glowRadius = 140
-      const glow = ctx.createRadialGradient(
-        localMouse.x,
-        localMouse.y,
-        0,
-        localMouse.x,
-        localMouse.y,
-        glowRadius
-      )
-      glow.addColorStop(0, 'rgba(129, 140, 248, 0.18)')
-      glow.addColorStop(0.5, 'rgba(59, 130, 246, 0.08)')
-      glow.addColorStop(1, 'rgba(15, 23, 42, 0)')
-      ctx.fillStyle = glow
-      ctx.beginPath()
-      ctx.arc(localMouse.x, localMouse.y, glowRadius, 0, Math.PI * 2)
-      ctx.fill()
-    }
-
-    for (let i = 0; i < state.particles.length; i += 1) {
-      const p1 = state.particles[i]
-      for (let j = i + 1; j < state.particles.length; j += 1) {
-        const p2 = state.particles[j]
-        const dx = p1.x - p2.x
-        const dy = p1.y - p2.y
-        const distance = Math.hypot(dx, dy)
-        if (distance < 110) {
-          const opacity = 1 - distance / 110
-          ctx.strokeStyle = `rgba(99, 102, 241, ${opacity * 0.35})`
-          ctx.lineWidth = 1
-          ctx.beginPath()
-          ctx.moveTo(p1.x, p1.y)
-          ctx.lineTo(p2.x, p2.y)
-          ctx.stroke()
-        }
-      }
-    }
-
-    for (const particle of state.particles) {
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.9)'
-      ctx.beginPath()
-      ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2)
-      ctx.fill()
-    }
-
-    state.animationId = window.requestAnimationFrame(tick)
-  }
-
-  resize()
-  window.addEventListener('resize', resize)
-  window.addEventListener('mousemove', handleMouseMove)
-  window.addEventListener('mouseleave', handleMouseLeave)
-  window.addEventListener('blur', handleMouseLeave)
-
-  state.animationId = window.requestAnimationFrame(tick)
-
-  cleanupAnimation = () => {
-    window.removeEventListener('resize', resize)
-    window.removeEventListener('mousemove', handleMouseMove)
-    window.removeEventListener('mouseleave', handleMouseLeave)
-    window.removeEventListener('blur', handleMouseLeave)
-    window.cancelAnimationFrame(state.animationId)
-  }
-})
-
-onUnmounted(() => {
-  cleanupAnimation?.()
-})
 </script>
 
 <template>
   <div class="login-page">
-    <aside class="login-hero" ref="heroRef">
-      <canvas class="hero-canvas" ref="canvasRef" aria-hidden="true"></canvas>
-      <div class="hero-content">
-        <p class="hero-title">AI 業務平台</p>
-        <p class="hero-subtitle">請使用您的帳號登入系統。</p>
+    <aside class="login-hero">
+      <div class="hero-glow hero-glow-left" aria-hidden="true"></div>
+      <div class="hero-glow hero-glow-right" aria-hidden="true"></div>
+
+      <div class="hero-stack">
+        <span class="hero-pill">簡潔舒適的 HR 工作台</span>
+        <div class="hero-copy">
+          <h1>讓招聘流程更清晰、安定且高效。</h1>
+          <p>
+            從職缺建立、CV 解析、候選人投遞到匹配檢視，都能在同一個工作台完成。
+          </p>
+        </div>
+
+        <div class="hero-panels">
+          <section class="hero-panel">
+            <strong>聚焦介面</strong>
+            <p>降低視覺干擾，讓團隊更快閱讀、比較與處理候選人資料。</p>
+          </section>
+          <section class="hero-panel">
+            <strong>流程清楚</strong>
+            <p>從職缺設定到 CV 解析與提交，用更少步驟完成整個流程。</p>
+          </section>
+          <section class="hero-panel">
+            <strong>舒適配色</strong>
+            <p>柔和藍灰色系、寬鬆留白與乾淨層次，提供更舒服的企業操作體驗。</p>
+          </section>
+        </div>
       </div>
     </aside>
 
     <section class="login-panel">
-      <header class="panel-header">
-        <p class="panel-title">歡迎回來</p>
-        <p class="panel-subtitle">請輸入你的帳號資訊以繼續。</p>
-      </header>
+      <div class="login-card">
+        <header class="panel-header">
+          <span class="panel-eyebrow">HR系統</span>
+          <div>
+            <h2>歡迎回來</h2>
+            <p class="panel-subtitle">登入以繼續使用，或建立新帳號供團隊使用。</p>
+          </div>
+        </header>
 
-      <div class="auth-tabs">
-        <button :class="{ active: activeTab === 'login' }" @click="switchTab('login')">登入</button>
-        <button :class="{ active: activeTab === 'register' }" @click="switchTab('register')">註冊</button>
+        <div class="auth-tabs" role="tablist" aria-label="驗證分頁">
+          <button
+            type="button"
+            class="auth-tab"
+            :class="{ active: activeTab === 'login' }"
+            @click="switchTab('login')"
+          >
+            登入
+          </button>
+          <button
+            type="button"
+            class="auth-tab"
+            :class="{ active: activeTab === 'register' }"
+            @click="switchTab('register')"
+          >
+            註冊
+          </button>
+        </div>
+
+        <form v-if="activeTab === 'login'" class="login-form" @submit.prevent="handleLogin">
+          <div class="form-grid">
+            <label class="field">
+              <span>電子郵件</span>
+              <input v-model="loginEmail" type="email" placeholder="name@company.com" />
+            </label>
+
+            <label class="field">
+              <span>密碼</span>
+              <input v-model="loginPassword" type="password" placeholder="請輸入密碼" />
+            </label>
+          </div>
+
+          <div class="helper-row">
+            <label class="checkbox">
+              <input v-model="rememberMe" type="checkbox" />
+              <span>記住我</span>
+            </label>
+          </div>
+
+          <button class="primary-button" type="submit">登入</button>
+        </form>
+
+        <form v-else class="login-form" @submit.prevent="handleRegister">
+          <div class="form-grid">
+            <label class="field">
+              <span>電子郵件</span>
+              <input v-model="registerEmail" type="email" placeholder="name@company.com" />
+            </label>
+            <label class="field">
+              <span>密碼</span>
+              <input v-model="registerPassword" type="password" placeholder="至少 6 個字元" />
+            </label>
+            <label class="field">
+              <span>確認密碼</span>
+              <input
+                v-model="registerPasswordConfirm"
+                type="password"
+                placeholder="請再次輸入密碼"
+              />
+            </label>
+            <label class="field">
+              <span>驗證碼</span>
+              <div class="code-row">
+                <input v-model="registerCode" type="text" placeholder="請輸入驗證碼" />
+                <button
+                  class="secondary-button"
+                  type="button"
+                  :disabled="!canRequestCode"
+                  @click="requestCode"
+                >
+                  {{ resendCooldown > 0 ? `${resendCooldown} 秒` : '發送驗證碼' }}
+                </button>
+              </div>
+            </label>
+          </div>
+
+          <button class="primary-button" type="submit">建立帳號</button>
+        </form>
+
+        <p v-if="authMessage" class="auth-message">{{ authMessage }}</p>
       </div>
-
-      <form v-if="activeTab === 'login'" class="login-form" @submit.prevent="handleLogin">
-        <div class="form-grid">
-          <label class="field">
-            <span>電子郵件</span>
-            <input v-model="loginEmail" type="email" placeholder="name@company.com" />
-          </label>
-
-          <label class="field">
-            <span>密碼</span>
-            <input v-model="loginPassword" type="password" placeholder="••••••••" />
-          </label>
-        </div>
-
-        <div class="helper-row">
-          <label class="checkbox">
-            <input v-model="rememberMe" type="checkbox" />
-            <span>記住我</span>
-          </label>
-        </div>
-
-        <button class="primary-button" type="submit">建立帳號</button>
-      </form>
-
-      <form v-else class="login-form" @submit.prevent="handleRegister">
-        <div class="form-grid">
-          <label class="field">
-            <span>電子郵件</span>
-            <input v-model="registerEmail" type="email" placeholder="name@company.com" />
-          </label>
-          <label class="field">
-            <span>密碼</span>
-            <input v-model="registerPassword" type="password" placeholder="••••••••" />
-          </label>
-          <label class="field">
-            <span>確認密碼</span>
-            <input v-model="registerPasswordConfirm" type="password" placeholder="••••••••" />
-          </label>
-          <label class="field">
-            <span>驗證碼</span>
-            <div class="code-row">
-              <input v-model="registerCode" type="text" placeholder="請輸入驗證碼" />
-              <button class="secondary-button" type="button" @click="requestCode" :disabled="!canRequestCode">
-                {{ resendCooldown > 0 ? `${resendCooldown}s` : '發送' }}
-              </button>
-            </div>
-          </label>
-        </div>
-
-        <button class="primary-button" type="submit">建立帳號</button>
-      </form>
-
-      <p v-if="authMessage" class="auth-message">{{ authMessage }}</p>
     </section>
   </div>
 </template>
 
 <style scoped>
 .login-page {
-  min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-  background: #f6f7fb;
+  grid-template-columns: minmax(0, 1.08fr) minmax(420px, 0.92fr);
+  min-height: 100vh;
 }
-.login-hero { position: relative; background: #0b1220; color: #fff; padding: 5rem 8vw; display: flex; align-items: center; overflow: hidden; }
-.hero-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0.9; }
-.hero-content { max-width: 520px; display: grid; gap: 1.25rem; position: relative; z-index: 2; }
-.hero-title { font-size: 2.4rem; font-weight: 600; margin: 0; }
-.hero-subtitle { margin: 0; color: rgba(255, 255, 255, 0.7); font-size: 1rem; line-height: 1.6; }
-.login-panel { background: #fff; padding: 4.5rem 10vw; display: grid; align-content: center; }
-.panel-header { margin-bottom: 1.5rem; }
-.panel-title { font-size: 1.7rem; font-weight: 600; margin: 0; color: #0f172a; }
-.panel-subtitle { margin: 0.5rem 0 0; color: #64748b; }
-.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-bottom: 1.25rem; }
-.auth-tabs button { border: 1px solid #e5e7eb; border-radius: 10px; padding: .7rem; background: #fff; cursor: pointer; }
-.auth-tabs .active { background: #1f2937; color: #fff; border-color: #1f2937; }
-.login-form { display: flex; flex-direction: column; gap: 1.1rem; }
-.form-grid { display: grid; gap: 1rem; }
-.field { display: flex; flex-direction: column; gap: .5rem; }
-.field span { font-size: .9rem; color: #475569; }
-.field input { border: 1px solid #e5e7eb; border-radius: 12px; padding: .85rem 1rem; }
-.helper-row { display: flex; justify-content: space-between; align-items: center; font-size: .9rem; color: #6b7280; }
-.checkbox { display: inline-flex; align-items: center; gap: .5rem; }
-.code-row { display: grid; grid-template-columns: 1fr auto; gap: .5rem; }
-.secondary-button { border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; padding: 0 .9rem; }
-.primary-button { background: #1f2937; color: #fff; border: none; border-radius: 12px; padding: .95rem; font-weight: 600; cursor: pointer; }
-.auth-message { margin-top: 1rem; text-align: center; color: #2563eb; font-weight: 500; }
-@media (max-width: 640px) {
-  .login-page { grid-template-columns: minmax(0, 1fr); }
-  .login-hero { padding: 3rem 8vw 2.5rem; }
-  .login-panel { padding: 2.5rem 8vw 3rem; }
+
+.login-hero,
+.login-panel {
+  position: relative;
+  min-width: 0;
+}
+
+.login-hero {
+  overflow: hidden;
+  padding: clamp(2.5rem, 2rem + 2vw, 4.5rem);
+  background:
+    linear-gradient(180deg, rgba(248, 251, 255, 0.98) 0%, rgba(236, 242, 249, 0.98) 100%);
+}
+
+.hero-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(10px);
+}
+
+.hero-glow-left {
+  left: -8%;
+  top: -6%;
+  width: 280px;
+  height: 280px;
+  background: rgba(103, 140, 255, 0.22);
+}
+
+.hero-glow-right {
+  right: 6%;
+  bottom: 8%;
+  width: 220px;
+  height: 220px;
+  background: rgba(129, 221, 255, 0.22);
+}
+
+.hero-stack {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 2rem;
+  align-content: center;
+  min-height: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.hero-pill,
+.panel-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 34px;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid rgba(47, 111, 237, 0.14);
+  border-radius: 999px;
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.68);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.hero-copy {
+  display: grid;
+  gap: 1rem;
+}
+
+.hero-copy h1 {
+  max-width: 9ch;
+  font-size: clamp(2.6rem, 2rem + 2.2vw, 4.5rem);
+  line-height: 0.96;
+}
+
+.hero-copy p {
+  max-width: 50ch;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.hero-panels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.hero-panel {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(18px);
+}
+
+.hero-panel strong {
+  color: var(--text-strong);
+}
+
+.hero-panel p {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.login-panel {
+  display: grid;
+  place-items: center;
+  padding: clamp(1.5rem, 1rem + 2vw, 3rem);
+}
+
+.login-card {
+  width: min(100%, 480px);
+  display: grid;
+  gap: 1.35rem;
+  padding: clamp(1.35rem, 1.1rem + 1vw, 2rem);
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  border-radius: 32px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(22px);
+}
+
+.panel-header {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.panel-header h2 {
+  font-size: 2rem;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  padding: 0.4rem;
+  border-radius: 999px;
+  background: rgba(237, 242, 248, 0.9);
+}
+
+.auth-tab {
+  min-height: 46px;
+  padding: 0.7rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 180ms ease;
+}
+
+.auth-tab.active {
+  color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(16, 24, 40, 0.06);
+  box-shadow: var(--shadow-xs);
+}
+
+.login-form,
+.form-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.helper-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--text-base);
+}
+
+.checkbox input {
+  width: 16px;
+  height: 16px;
+}
+
+.code-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+}
+
+.primary-button,
+.secondary-button {
+  min-height: 48px;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+.primary-button {
+  color: #ffffff;
+  background: linear-gradient(180deg, #4b84ff 0%, var(--accent) 100%);
+  box-shadow: 0 14px 28px rgba(47, 111, 237, 0.18);
+}
+
+.primary-button:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, #3f79f8 0%, var(--accent-hover) 100%);
+}
+
+.secondary-button {
+  padding: 0 1rem;
+  color: var(--text-strong);
+  border: 1px solid var(--border-default);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.secondary-button:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-strong);
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.auth-message {
+  padding: 0.78rem 0.92rem;
+  border-radius: 18px;
+  color: var(--accent-hover);
+  background: rgba(47, 111, 237, 0.08);
+  border: 1px solid rgba(47, 111, 237, 0.12);
+}
+
+@media (max-width: 1180px) {
+  .login-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hero-panels {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .login-panel {
+    padding-top: 0;
+  }
+
+  .login-card {
+    border-radius: 28px;
+  }
+
+  .code-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

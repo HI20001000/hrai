@@ -1,353 +1,329 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
+import CandidateTextPreviewModal from '../components/candidate/CandidateTextPreviewModal.vue'
 
-const selectedFile = ref(null)
 const message = ref('')
-const isUploading = ref(false)
-const candidates = ref([])
-const selectedCandidateId = ref('')
-const uploadedFiles = ref([])
+const applicationRows = ref([])
+const searchKeyword = ref('')
+const isLoading = ref(false)
 
-const extractedCandidate = ref(null)
-const missingFields = ref([])
-const manualFullName = ref('')
-const manualEmail = ref('')
-const manualPhone = ref('')
-const isSubmittingManual = ref(false)
-const extractedKeywords = ref([])
+const isPreviewOpen = ref(false)
+const previewTitle = ref('')
+const previewContent = ref('')
+const previewType = ref('cv')
+const previewCvId = ref(null)
+const previewApplicationId = ref(null)
+const isPreviewLoading = ref(false)
+const previewError = ref('')
+const previewDownloadUrl = ref('')
+const previewDownloadFileName = ref('')
 
-const formatSize = (bytes) => {
-  if (!Number.isFinite(bytes)) return '--'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+const normalizeSearchText = (value) => String(value ?? '').trim().toLowerCase()
+
+const getMatchScoreTone = (score) => {
+  const numericScore = Number(score || 0)
+  if (numericScore >= 85) return 'score-high'
+  if (numericScore >= 60) return 'score-medium'
+  if (numericScore > 0) return 'score-low'
+  return 'score-empty'
 }
 
-const loadCandidates = async () => {
-  const response = await fetch(`${apiBaseUrl}/api/candidates`)
-  const data = await response.json()
-  if (!response.ok) throw new Error(data.message || '讀取候選人失敗')
-  candidates.value = data.candidates || []
-}
+const filteredApplicationRows = computed(() => {
+  const keyword = normalizeSearchText(searchKeyword.value)
+  if (!keyword) return applicationRows.value
 
-const loadCandidateFiles = async () => {
-  if (!selectedCandidateId.value) {
-    uploadedFiles.value = []
-    return
-  }
-  const response = await fetch(`${apiBaseUrl}/api/candidates/${selectedCandidateId.value}/cvs`)
-  const data = await response.json()
-  if (!response.ok) throw new Error(data.message || '讀取 CV 列表失敗')
-  uploadedFiles.value = data.files || []
-}
-
-const handleFileChange = (event) => {
-  selectedFile.value = event.target.files?.[0] || null
-}
-
-const fileToBase64 = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = String(reader.result || '')
-      const base64 = result.includes(',') ? result.split(',')[1] : result
-      resolve(base64)
-    }
-    reader.onerror = () => reject(new Error('read-failed'))
-    reader.readAsDataURL(file)
-  })
-
-const syncManualForm = (candidate) => {
-  manualFullName.value = candidate?.fullName || ''
-  manualEmail.value = candidate?.email || ''
-  manualPhone.value = candidate?.phone || ''
-}
-
-
-const parseKeywordsFromLlmJson = (llmJson) => {
-  if (!llmJson) return []
-  const source = typeof llmJson === 'string' ? (() => {
-    try {
-      return JSON.parse(llmJson)
-    } catch {
-      return null
-    }
-  })() : llmJson
-
-  if (!source || typeof source !== 'object') return []
-  const values = [source.keywords, source.skills, source.tags]
-    .flatMap((item) => (Array.isArray(item) ? item : []))
-    .map((item) => String(item || '').trim())
-    .filter(Boolean)
-
-  return [...new Set(values)].slice(0, 20)
-}
-
-
-const intakeCv = async () => {
-  message.value = ''
-  if (!selectedFile.value) {
-    message.value = '請先選擇 CV 檔案'
-    return
-  }
-
-  isUploading.value = true
-  try {
-    const contentBase64 = await fileToBase64(selectedFile.value)
-    const response = await fetch(`${apiBaseUrl}/api/cv/intake`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fileName: selectedFile.value.name,
-        mimeType: selectedFile.value.type || 'application/octet-stream',
-        contentBase64,
-      }),
-    })
-
-    const data = await response.json()
-    if (!response.ok) {
-      message.value = data.message || 'CV 上傳失敗'
-      return
-    }
-
-    extractedCandidate.value = data.candidate
-    missingFields.value = data.candidate?.missingFields || []
-    extractedKeywords.value = [
-      ...new Set([...(data.candidate?.keywords || []), ...parseKeywordsFromLlmJson(data.candidate?.llmJson)]),
+  return applicationRows.value.filter((row) => {
+    const haystack = [
+      row.jobPostTitle,
+      row.fullName,
+      row.targetPosition,
+      row.matchedPosition,
+      row.phone,
+      row.cvFileName,
+      row.extractedFileName,
+      formatDateTime(row.createdAt),
     ]
-    syncManualForm(data.candidate)
-
-    await loadCandidates()
-    selectedCandidateId.value = String(data.candidate.id)
-    message.value = missingFields.value.length
-      ? 'CV 已上傳，請補齊缺漏欄位後儲存'
-      : 'CV 已上傳並完成候選人關鍵資訊擷取'
-  } catch {
-    message.value = 'CV 上傳失敗'
-  } finally {
-    isUploading.value = false
-  }
-}
-
-const saveManualProfile = async () => {
-  if (!extractedCandidate.value?.id) return
-  message.value = ''
-  if (!manualFullName.value.trim()) {
-    message.value = '姓名為必填'
-    return
-  }
-
-  isSubmittingManual.value = true
-  try {
-    const response = await fetch(`${apiBaseUrl}/api/candidates/${extractedCandidate.value.id}/complete-profile`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fullName: manualFullName.value,
-        email: manualEmail.value,
-        phone: manualPhone.value,
-      }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      message.value = data.message || '儲存候選人資料失敗'
-      return
-    }
-
-    extractedCandidate.value = data.candidate
-    missingFields.value = []
-    await loadCandidates()
-    message.value = '候選人資料已補齊'
-  } catch {
-    message.value = '儲存候選人資料失敗'
-  } finally {
-    isSubmittingManual.value = false
-  }
-}
-
-watch(selectedCandidateId, async () => {
-  try {
-    await loadCandidateFiles()
-  } catch {
-    message.value = '讀取 CV 列表失敗'
-  }
+      .map((item) => normalizeSearchText(item))
+      .join(' ')
+    return haystack.includes(keyword)
+  })
 })
 
-onMounted(async () => {
+const formatDateTime = (value) => {
+  if (!value) return '--'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const loadApplicationTable = async () => {
+  isLoading.value = true
   try {
-    await loadCandidates()
-    if (candidates.value[0]?.id) selectedCandidateId.value = String(candidates.value[0].id)
+    const response = await fetch(`${apiBaseUrl}/api/job-post-applications/table`)
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.message || '讀取 CV 管理清單失敗')
+    applicationRows.value = Array.isArray(data.applications) ? data.applications : []
   } catch {
     message.value = '初始化資料失敗'
+  } finally {
+    isLoading.value = false
   }
+}
+
+const handleApplicationsUpdated = async () => {
+  await loadApplicationTable()
+}
+
+const closePreviewModal = () => {
+  isPreviewOpen.value = false
+  previewTitle.value = ''
+  previewContent.value = ''
+  previewType.value = 'cv'
+  previewCvId.value = null
+  previewApplicationId.value = null
+  previewError.value = ''
+  isPreviewLoading.value = false
+  previewDownloadUrl.value = ''
+  previewDownloadFileName.value = ''
+}
+
+const openPreview = async (row, type) => {
+  if (!row?.cvId) return
+
+  isPreviewOpen.value = true
+  isPreviewLoading.value = true
+  previewError.value = ''
+  previewContent.value = ''
+  previewType.value = type === 'extracted' ? 'extracted' : 'cv'
+  previewCvId.value = Number(row.cvId)
+  previewApplicationId.value = Number(row.applicationId || 0) || null
+  previewDownloadUrl.value = type === 'cv' ? `${apiBaseUrl}/api/candidate-cvs/${row.cvId}/download` : ''
+  previewDownloadFileName.value = type === 'cv' ? String(row.cvFileName || '') : ''
+  previewTitle.value = type === 'extracted'
+    ? `CV 提取檔案預覽 - ${row.extractedFileName || row.cvFileName}`
+    : `CV 檔案預覽 - ${row.cvFileName}`
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/candidate-cvs/${row.cvId}/preview?type=${type}`)
+    const data = await response.json()
+    if (!response.ok) {
+      previewError.value = data.message || '讀取預覽失敗'
+      return
+    }
+    previewContent.value = data.text || ''
+  } catch {
+    previewError.value = '讀取預覽失敗'
+  } finally {
+    isPreviewLoading.value = false
+  }
+}
+
+const handlePreviewUpdated = async () => {
+  try {
+    await loadApplicationTable()
+    message.value = 'CV 提取資料已更新'
+  } catch {
+    message.value = 'CV 提取資料更新後刷新列表失敗'
+  }
+}
+
+onMounted(async () => {
+  window.addEventListener('hrai-applications-updated', handleApplicationsUpdated)
+  window.addEventListener('focus', handleApplicationsUpdated)
+  await loadApplicationTable()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('hrai-applications-updated', handleApplicationsUpdated)
+  window.removeEventListener('focus', handleApplicationsUpdated)
 })
 </script>
 
 <template>
   <section class="cv-page">
     <header class="page-header">
-      <h2>CV 管理</h2>
-      <p>流程：先上傳 CV → 系統擷取候選人關鍵資訊 → 若有缺漏再手動補齊。</p>
+      <div class="header-main">
+        <div>
+          <h2>CV 管理</h2>
+          <p>這裡集中查看所有職缺下的 CV 投遞與匹配結果。建立職缺請到左側的職缺管理頁面。</p>
+        </div>
+      </div>
+      <p v-if="message" class="message">{{ message }}</p>
     </header>
 
     <div class="card">
-      <h3>第一步：上傳 CV</h3>
-      <input type="file" accept=".pdf,.doc,.docx,.txt" @change="handleFileChange" />
-      <button type="button" :disabled="isUploading" @click="intakeCv">{{ isUploading ? '上傳與解析中...' : '上傳 CV 並解析' }}</button>
-      <p v-if="message" class="message">{{ message }}</p>
-    </div>
-
-    <div v-if="extractedCandidate" class="card">
-      <h3>LLM 擷取結果</h3>
-      <p class="info-line">姓名：{{ extractedCandidate.fullName || '（未擷取）' }}</p>
-      <p class="info-line">Email：{{ extractedCandidate.email || '（未擷取）' }}</p>
-      <p class="info-line">電話：{{ extractedCandidate.phone || '（未擷取）' }}</p>
-      <p class="info-line">解析來源：{{ extractedCandidate.parser === 'llm' ? 'LLM' : 'Regex Fallback' }}</p>
-      <p v-if="extractedKeywords.length" class="info-line">關鍵字：{{ extractedKeywords.join('、') }}</p>
-      <p v-if="missingFields.length" class="warning">缺漏欄位：{{ missingFields.join('、') }}</p>
-    </div>
-
-    <div v-if="missingFields.length" class="card">
-      <h3>第二步：補齊缺漏欄位</h3>
-      <div class="grid">
-        <input v-model="manualFullName" type="text" placeholder="姓名（必填）" />
-        <input v-model="manualEmail" type="email" placeholder="Email" />
-        <input v-model="manualPhone" type="text" placeholder="電話" />
+      <div class="card-header">
+        <h3>CV 與投遞清單</h3>
+        <input
+          v-model.trim="searchKeyword"
+          type="text"
+          class="search-input"
+          placeholder="搜尋職缺 / 候選人 / 期望職位 / 匹配結果 / 電話 / 檔案"
+        />
       </div>
-      <button type="button" :disabled="isSubmittingManual" @click="saveManualProfile">
-        {{ isSubmittingManual ? '儲存中...' : '儲存候選人資料' }}
-      </button>
+
+      <p v-if="isLoading" class="hint">讀取中...</p>
+      <div v-else class="table-wrap">
+        <table class="candidate-table">
+          <thead>
+            <tr>
+              <th>職缺</th>
+              <th>候選人名稱</th>
+              <th>期望職位</th>
+              <th>匹配職位</th>
+              <th>電話</th>
+              <th>CV 檔案</th>
+              <th>CV 提取檔案</th>
+              <th>投遞時間</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="!filteredApplicationRows.length">
+              <td colspan="8" class="empty-cell">尚無 CV 投遞資料</td>
+            </tr>
+            <tr v-for="row in filteredApplicationRows" :key="row.applicationId">
+              <td>{{ row.jobPostTitle || '--' }}</td>
+              <td>{{ row.fullName || '--' }}</td>
+              <td>{{ row.targetPosition || '--' }}</td>
+              <td>
+                <template v-if="row.matchedPosition">
+                  <span>{{ row.matchedPosition }}</span>
+                  <span class="match-score" :class="getMatchScoreTone(row.matchedScore)">
+                    {{ row.matchedScore || 0 }}
+                  </span>
+                </template>
+                <span v-else>--</span>
+              </td>
+              <td>{{ row.phone || '--' }}</td>
+              <td class="file-column">
+                <button
+                  v-if="row.cvFileName"
+                  type="button"
+                  class="link-btn file-link"
+                  @click="openPreview(row, 'cv')"
+                >
+                  {{ row.cvFileName }}
+                </button>
+                <span v-else class="file-link-text">--</span>
+              </td>
+              <td class="file-column">
+                <button
+                  v-if="row.extractedFileName"
+                  type="button"
+                  class="link-btn file-link"
+                  @click="openPreview(row, 'extracted')"
+                >
+                  {{ row.extractedFileName }}
+                </button>
+                <span v-else class="file-link-text">--</span>
+              </td>
+              <td>{{ formatDateTime(row.createdAt) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
-    <div class="card">
-      <h3>候選人 CV 清單</h3>
-      <select v-model="selectedCandidateId">
-        <option value="">請選擇候選人</option>
-        <option v-for="candidate in candidates" :key="candidate.id" :value="String(candidate.id)">
-          {{ candidate.fullName }}{{ candidate.email ? ` (${candidate.email})` : '' }}
-        </option>
-      </select>
-      <ul>
-        <li v-for="file in uploadedFiles" :key="file.id">
-          <span>v{{ file.versionNo }} - {{ file.originalFileName }}</span>
-          <span>{{ formatSize(file.fileSize) }}</span>
-        </li>
-      </ul>
-    </div>
+    <CandidateTextPreviewModal
+      :open="isPreviewOpen"
+      :title="previewTitle"
+      :content="previewContent"
+      :preview-type="previewType"
+      :candidate-cv-id="previewCvId"
+      :application-id="previewApplicationId"
+      :loading="isPreviewLoading"
+      :error="previewError"
+      :download-url="previewDownloadUrl"
+      :download-file-name="previewDownloadFileName"
+      @close="closePreviewModal"
+      @updated="handlePreviewUpdated"
+    />
   </section>
 </template>
 
 <style scoped>
 .cv-page {
-  display: grid;
-  gap: 1rem;
-  color: #0f172a;
+  color: var(--text-base);
+  gap: 0.8rem;
 }
 
-.page-header {
-  background: #ffffff;
-  border: 1px solid #dbe3f0;
-  border-radius: 12px;
-  padding: 1rem;
-}
-
-.page-header h2 {
-  margin: 0;
-  color: #0b1220;
-}
-
-.page-header p {
-  margin: .5rem 0 0;
-  color: #334155;
-}
-
-.card {
-  background: #ffffff;
-  border: 1px solid #dbe3f0;
-  border-radius: 12px;
-  padding: 1rem;
-  display: grid;
-  gap: .7rem;
-}
-
-.card h3 {
-  margin: 0;
-  color: #0f172a;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: .6rem;
-}
-
-input,
-select {
-  border: 1px solid #94a3b8;
-  border-radius: 10px;
-  padding: .65rem .75rem;
-  color: #0f172a;
-  background: #ffffff;
-}
-
-button {
-  border: none;
-  border-radius: 10px;
-  background: #1d4ed8;
-  color: #ffffff;
-  font-weight: 600;
-  padding: .7rem 1rem;
-  cursor: pointer;
-}
-
-button:disabled {
-  background: #64748b;
-  cursor: not-allowed;
-}
-
-.message {
-  color: #1e3a8a;
-  background: #dbeafe;
-  border: 1px solid #93c5fd;
-  padding: .5rem .75rem;
-  border-radius: 8px;
-  margin: 0;
-}
-
-.warning {
-  color: #92400e;
-  background: #fef3c7;
-  border: 1px solid #fcd34d;
-  padding: .5rem .75rem;
-  border-radius: 8px;
-  margin: 0;
-}
-
-.info-line {
-  margin: 0;
-  color: #1e293b;
-}
-
-ul {
-  margin: .5rem 0 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: .5rem;
-}
-
-li {
+.header-main,
+.card-header {
   display: flex;
   justify-content: space-between;
-  color: #0f172a;
-  border-bottom: 1px dashed #cbd5e1;
-  padding-bottom: .5rem;
+  align-items: center;
+  gap: 1rem;
 }
 
-@media (max-width: 900px) {
-  .grid {
-    grid-template-columns: minmax(0, 1fr);
+.search-input {
+  width: min(360px, 100%);
+}
+
+.candidate-table {
+  table-layout: fixed;
+}
+
+.candidate-table th:nth-child(6),
+.candidate-table td:nth-child(6),
+.candidate-table th:nth-child(7),
+.candidate-table td:nth-child(7) {
+  width: 180px;
+  max-width: 180px;
+}
+
+.file-column {
+  min-width: 0;
+  max-width: 180px;
+}
+
+.file-link,
+.file-link-text {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-score {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.5rem;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.score-high {
+  color: #117a52;
+  background: rgba(17, 122, 82, 0.12);
+}
+
+.score-medium {
+  color: #2f6fed;
+  background: rgba(47, 111, 237, 0.12);
+}
+
+.score-low {
+  color: #b26a00;
+  background: rgba(226, 156, 32, 0.16);
+}
+
+.score-empty {
+  color: var(--text-soft);
+  background: rgba(148, 163, 184, 0.14);
+}
+
+@media (max-width: 720px) {
+  .header-main,
+  .card-header {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>

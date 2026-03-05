@@ -12,11 +12,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "mysql2": "^3.18.2",
     "vue": "^3.5.26"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.3",
-    "vite": "^7.3.0",
-    "vite-plugin-vue-devtools": "^8.0.5"
+    "vite": "^7.3.0"
   }
 }

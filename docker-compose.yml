@@ -1,43 +1,65 @@
-version: "3.9"
-
 services:
   mysql:
     image: mysql:8.4
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-12345}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-hrai}
     ports:
-      - "8890:3306"
+      - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-
-  frontend:
-    image: node:20-alpine
-    working_dir: /app
-    command: sh -c "npm install && npm run build && npm run preview -- --host 0.0.0.0 --port 5173"
-    ports:
-      - "8888:5173"
-    volumes:
-      - ./:/app
-    depends_on:
-      - mysql
-      - backend
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   backend:
     image: node:20-alpine
-    working_dir: /app/server
-    command: sh -c "npm install && node index.js"
-    ports:
-      - "8889:3001"
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "npm --prefix server install && node server/index.js"
     env_file:
       - .env
     environment:
       NODE_ENV: production
+      PORT: 3001
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-12345}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hrai}
+      HRAI_DATABASE: ${HRAI_DATABASE:-hrai}
+    ports:
+      - "3001:3001"
     volumes:
-      - ./server:/app/server
-      - ../logs:/app/logs
+      - ./:/app
+      - backend_node_modules:/app/server/node_modules
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
+
+  frontend:
+    image: node:20-alpine
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:3001
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./:/app
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      backend:
+        condition: service_started
 
 volumes:
   mysql_data:
+  backend_node_modules:
+  frontend_node_modules:
