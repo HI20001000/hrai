@@ -41,7 +41,6 @@ const CODE_TTL_MS = 60 * 1000
 const verificationCodes = new Map()
 
 const DB_NAME = getDatabaseName()
-const cvStorageDir = path.resolve(__dirname, './storage/cv')
 const withCors = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
@@ -75,12 +74,6 @@ const hashPassword = (password, salt) =>
 
 const createAuthToken = () => crypto.randomBytes(32).toString('hex')
 const tokenDigest = (token) => crypto.createHash('sha256').update(token).digest('hex')
-
-const ensureCvStorageDir = () => {
-  if (!fs.existsSync(cvStorageDir)) {
-    fs.mkdirSync(cvStorageDir, { recursive: true })
-  }
-}
 
 const sanitizeFileName = (name) => String(name || 'cv-upload').replace(/[^a-zA-Z0-9._-]/g, '_')
 const sha256Buffer = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex')
@@ -223,23 +216,20 @@ const listCandidates = async (pool, _req, res) => {
 }
 
 const insertCandidateCv = async (pool, candidateId, fileName, mimeType, buffer) => {
-  ensureCvStorageDir()
-  const savedName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${sanitizeFileName(fileName)}`
-  const savePath = path.join(cvStorageDir, savedName)
-  fs.writeFileSync(savePath, buffer)
-
+  const safeFileName = sanitizeFileName(fileName)
   const [versionRows] = await pool.query(
     'SELECT COALESCE(MAX(version_no), 0) AS maxVersion FROM candidate_cvs WHERE candidate_id = ?',
     [candidateId]
   )
   const nextVersion = Number(versionRows[0]?.maxVersion || 0) + 1
   const fileHash = sha256Buffer(buffer)
+  const virtualStorageKey = `frontend-only/${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${safeFileName}`
 
   const [result] = await pool.query(
     `INSERT INTO candidate_cvs
       (candidate_id, version_no, storage_provider, storage_key, original_filename, mime_type, file_size, sha256)
-     VALUES (?, ?, 'local', ?, ?, ?, ?, ?)`,
-    [candidateId, nextVersion, savedName, fileName, mimeType || 'application/octet-stream', buffer.length, fileHash]
+     VALUES (?, ?, 'frontend', ?, ?, ?, ?, ?)`,
+    [candidateId, nextVersion, virtualStorageKey, fileName, mimeType || 'application/octet-stream', buffer.length, fileHash]
   )
 
   return {
@@ -248,7 +238,7 @@ const insertCandidateCv = async (pool, candidateId, fileName, mimeType, buffer) 
     versionNo: nextVersion,
     originalFileName: fileName,
     size: buffer.length,
-    storagePath: `server/storage/cv/${savedName}`,
+    storagePath: null,
   }
 }
 
