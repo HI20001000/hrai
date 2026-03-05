@@ -272,7 +272,10 @@ const extractCandidateInfoByLlm = async (cvText) => {
   }
 
   const data = await response.json()
-  return data?.choices?.[0]?.message?.content || null
+  const content = data?.choices?.[0]?.message?.content || null
+  const preview = typeof content === 'string' ? content.slice(0, 4000) : JSON.stringify(content || '')
+  console.log('[CV] LLM raw output:', preview)
+  return content
 }
 
 const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType = '') => {
