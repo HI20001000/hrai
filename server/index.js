@@ -38,10 +38,11 @@ const CODE_TTL_MS = 60 * 1000
 const verificationCodes = new Map()
 
 const DB_NAME = getDatabaseName()
+const cvStorageDir = path.resolve(__dirname, './storage/cv')
 
 const withCors = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 }
 
@@ -73,6 +74,62 @@ const hashPassword = (password, salt) =>
 const createAuthToken = () => crypto.randomBytes(32).toString('hex')
 const tokenDigest = (token) => crypto.createHash('sha256').update(token).digest('hex')
 
+
+
+const ensureCvStorageDir = () => {
+  if (!fs.existsSync(cvStorageDir)) {
+    fs.mkdirSync(cvStorageDir, { recursive: true })
+  }
+}
+
+const sanitizeFileName = (name) => String(name || 'cv-upload').replace(/[^a-zA-Z0-9._-]/g, '_')
+
+const uploadCv = async (req, res) => {
+  const body = await parseBody(req)
+  const fileName = sanitizeFileName(body?.fileName)
+  const contentBase64 = body?.contentBase64
+  if (!fileName || !contentBase64) {
+    sendJson(res, 400, { message: 'fileName and contentBase64 are required' })
+    return
+  }
+
+  const buffer = Buffer.from(contentBase64, 'base64')
+  if (!buffer.length) {
+    sendJson(res, 400, { message: 'Invalid file content' })
+    return
+  }
+
+  ensureCvStorageDir()
+  const savedName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${fileName}`
+  const savePath = path.join(cvStorageDir, savedName)
+  fs.writeFileSync(savePath, buffer)
+
+  sendJson(res, 201, {
+    message: 'CV uploaded',
+    file: {
+      name: savedName,
+      originalName: fileName,
+      size: buffer.length,
+      path: `server/storage/cv/${savedName}`,
+    },
+  })
+}
+
+const listCvFiles = async (_req, res) => {
+  ensureCvStorageDir()
+  const files = fs.readdirSync(cvStorageDir).filter((name) => !name.startsWith('.')).map((name) => {
+    const fullPath = path.join(cvStorageDir, name)
+    const stat = fs.statSync(fullPath)
+    return {
+      name,
+      size: stat.size,
+      updatedAt: stat.mtime.toISOString(),
+    }
+  })
+
+  files.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+  sendJson(res, 200, { files })
+}
 
 const requestCode = async (req, res) => {
   const body = await parseBody(req)
@@ -178,6 +235,8 @@ const start = async () => {
       if (url.pathname === '/api/auth/request-code' && req.method === 'POST') return requestCode(req, res)
       if (url.pathname === '/api/auth/register' && req.method === 'POST') return registerUser(pool, req, res)
       if (url.pathname === '/api/auth/login' && req.method === 'POST') return loginUser(pool, req, res)
+      if (url.pathname === '/api/cv/upload' && req.method === 'POST') return uploadCv(req, res)
+      if (url.pathname === '/api/cv/files' && req.method === 'GET') return listCvFiles(req, res)
       return sendJson(res, 404, { message: 'Not found' })
     } catch (error) {
       console.error(error)
