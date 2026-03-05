@@ -41,13 +41,16 @@ const verificationCodes = new Map()
 
 const DB_NAME = getDatabaseName()
 const cvStorageDir = path.resolve(__dirname, './storage/cv')
+const cvPromptPath = path.resolve(__dirname, './prompts/cv-feature-extraction.prompt.txt')
 
-const llmApiUrl = process.env.CV_LLM_API_URL || process.env.LLM_API_URL || 'http://192.168.3.71:8000/v1'
-const llmApiKey = process.env.CV_LLM_API_KEY || process.env.LLM_API_KEY || 'empty'
-const llmModel = process.env.CV_LLM_MODEL || process.env.LLM_MODEL || 'Qwen3-30B-A3B-Instruct-2507-FP8'
+const llmApiUrl = process.env.CV_LLM_API_URL || process.env.LLM_BASE_URL || process.env.LLM_API_URL || ''
+const llmApiKey = process.env.CV_LLM_API_KEY || process.env.LLM_API_KEY || ''
+const llmModel = process.env.CV_LLM_MODEL || process.env.LLM_MODEL || ''
 const cvLlmPrompt =
   process.env.CV_LLM_PROMPT ||
-  '你是資深 HR 履歷解析助理。請從履歷文字中提取 fullName、email、phone、keywords，並只輸出 JSON 物件。'
+  (fs.existsSync(cvPromptPath)
+    ? fs.readFileSync(cvPromptPath, 'utf8').trim()
+    : '你是資深 HR 履歷解析助理。請從履歷文字中提取 fullName、email、phone、keywords，並只輸出 JSON 物件。')
 
 const withCors = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
