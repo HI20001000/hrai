@@ -42,11 +42,9 @@ const verificationCodes = new Map()
 const DB_NAME = getDatabaseName()
 const cvStorageDir = path.resolve(__dirname, './storage/cv')
 
-const llmApiUrl = process.env.CV_LLM_API_URL || process.env.LLM_API_URL || ''
-const llmApiKey = process.env.CV_LLM_API_KEY || process.env.LLM_API_KEY || ''
-const llmModel = process.env.CV_LLM_MODEL || process.env.LLM_MODEL || ''
-const difyApiUrl = process.env.CV_DIFY_URL || process.env.DIFY_URL || ''
-const difyApiKey = process.env.CV_DIFY_API_KEY || process.env.DIFY_API_KEY || ''
+const llmApiUrl = process.env.CV_LLM_API_URL || process.env.LLM_API_URL || 'http://192.168.3.71:8000/v1'
+const llmApiKey = process.env.CV_LLM_API_KEY || process.env.LLM_API_KEY || 'empty'
+const llmModel = process.env.CV_LLM_MODEL || process.env.LLM_MODEL || 'Qwen3-30B-A3B-Instruct-2507-FP8'
 const cvLlmPrompt =
   process.env.CV_LLM_PROMPT ||
   '你是資深 HR 履歷解析助理。請從履歷文字中提取 fullName、email、phone、keywords，並只輸出 JSON 物件。'
@@ -257,33 +255,12 @@ const extractCandidateInfoByLlm = async (cvText) => {
   return data?.choices?.[0]?.message?.content || null
 }
 
-const extractCandidateInfoByDify = async (cvText) => {
-  if (!difyApiUrl || !difyApiKey) return null
-  const endpoint = String(difyApiUrl).replace(/\/$/, '') + '/chat-messages'
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${difyApiKey}`,
-    },
-    body: JSON.stringify({
-      inputs: {},
-      query: `${cvLlmPrompt}\n\n履歷文字內容：\n${cvText}`,
-      response_mode: 'blocking',
-      user: 'cv-management',
-    }),
-  })
-  if (!response.ok) return null
-  const data = await response.json()
-  return data?.answer || null
-}
-
 const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType = '') => {
   const cvText = (await extractTextFromBuffer(buffer, fileName, mimeType)).slice(0, 12000)
   if (!cvText.trim()) return extractCandidateInfoByRegex(buffer)
 
   try {
-    const content = (await extractCandidateInfoByLlm(cvText)) || (await extractCandidateInfoByDify(cvText))
+    const content = await extractCandidateInfoByLlm(cvText)
     if (!content) return extractCandidateInfoByRegex(buffer)
 
     const parsed = parseLlmContentToJson(content)
@@ -296,7 +273,7 @@ const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType = '') 
       keywords: extractKeywordsFromLlmJson(parsed),
     }
   } catch (error) {
-    console.warn('[CV] LLM parse error, fallback to regex:', error?.message || error)
+    console.warn('[CV] LLM parse failed, fallback to regex:', error?.message || error)
     return extractCandidateInfoByRegex(buffer)
   }
 }
