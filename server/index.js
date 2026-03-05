@@ -41,6 +41,10 @@ const verificationCodes = new Map()
 const DB_NAME = getDatabaseName()
 const cvStorageDir = path.resolve(__dirname, './storage/cv')
 
+const llmApiUrl = process.env.CV_LLM_API_URL || process.env.LLM_API_URL || ''
+const llmApiKey = process.env.CV_LLM_API_KEY || process.env.LLM_API_KEY || ''
+const llmModel = process.env.CV_LLM_MODEL || process.env.LLM_MODEL || ''
+
 const withCors = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
@@ -84,7 +88,20 @@ const ensureCvStorageDir = () => {
 const sanitizeFileName = (name) => String(name || 'cv-upload').replace(/[^a-zA-Z0-9._-]/g, '_')
 const sha256Buffer = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex')
 
-const extractCandidateInfoFromCv = (buffer) => {
+const normalizeExtractedFields = (raw = {}) => {
+  const extracted = {
+    fullName: String(raw.fullName || '').trim(),
+    email: String(raw.email || '').trim().toLowerCase(),
+    phone: String(raw.phone || '').trim(),
+  }
+  const missingFields = []
+  if (!extracted.fullName) missingFields.push('fullName')
+  if (!extracted.email) missingFields.push('email')
+  if (!extracted.phone) missingFields.push('phone')
+  return { extracted, missingFields }
+}
+
+const extractCandidateInfoByRegex = (buffer) => {
   const text = buffer.toString('utf8')
   const normalized = text.replace(/\r/g, '\n')
 
@@ -94,18 +111,65 @@ const extractCandidateInfoFromCv = (buffer) => {
     normalized.match(/(?:姓名|Name)\s*[:：]\s*([^\n]+)/i) ||
     normalized.match(/^([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z\s]{1,30})$/mu)
 
-  const extracted = {
-    fullName: nameMatch?.[1]?.trim() || '',
-    email: emailMatch?.[0]?.trim().toLowerCase() || '',
-    phone: phoneMatch?.[0]?.trim() || '',
+  return normalizeExtractedFields({
+    fullName: nameMatch?.[1] || '',
+    email: emailMatch?.[0] || '',
+    phone: phoneMatch?.[0] || '',
+  })
+}
+
+const extractCandidateInfoFromCv = async (buffer) => {
+  if (!llmApiUrl || !llmModel) {
+    return extractCandidateInfoByRegex(buffer)
   }
 
-  const missingFields = []
-  if (!extracted.fullName) missingFields.push('fullName')
-  if (!extracted.email) missingFields.push('email')
-  if (!extracted.phone) missingFields.push('phone')
+  try {
+    const cvText = buffer.toString('utf8').slice(0, 12000)
+    const response = await fetch(llmApiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(llmApiKey ? { Authorization: `Bearer ${llmApiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        model: llmModel,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are an HR resume parser. Extract candidate fullName, email, phone only. Return strict JSON object with keys: fullName, email, phone.',
+          },
+          {
+            role: 'user',
+            content: `Resume text:\n${cvText}`,
+          },
+        ],
+        temperature: 0,
+      }),
+    })
 
-  return { extracted, missingFields }
+    if (!response.ok) {
+      console.warn('[CV] LLM parse failed, fallback to regex:', response.status)
+      return extractCandidateInfoByRegex(buffer)
+    }
+
+    const data = await response.json()
+    const content = data?.choices?.[0]?.message?.content
+    if (!content) return extractCandidateInfoByRegex(buffer)
+
+    let parsed
+    try {
+      parsed = JSON.parse(content)
+    } catch {
+      return extractCandidateInfoByRegex(buffer)
+    }
+
+    return normalizeExtractedFields(parsed)
+  } catch (error) {
+    console.warn('[CV] LLM parse error, fallback to regex:', error?.message || error)
+    return extractCandidateInfoByRegex(buffer)
+  }
 }
 
 const requestCode = async (req, res) => {
@@ -291,7 +355,7 @@ const intakeCv = async (pool, req, res) => {
     return
   }
 
-  const extraction = extractCandidateInfoFromCv(buffer)
+  const extraction = await extractCandidateInfoFromCv(buffer)
   const derivedName = extraction.extracted.fullName || '待補候選人姓名'
   const derivedEmail = extraction.extracted.email || null
   const derivedPhone = extraction.extracted.phone || null
