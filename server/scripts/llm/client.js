@@ -14,6 +14,10 @@ export const extractCandidateInfoByLlm = async (cvText) => {
   if (!apiUrl || !model) return null
   const llmEndpoint = buildLlmChatCompletionsUrl(apiUrl)
   if (!llmEndpoint) return null
+  const llmInputContent = `${getCvLlmPrompt()}\n\n履歷文字內容：\n${cvText}`
+
+  console.log('[CV] LLM call step: before fetch /chat/completions')
+  console.log('[CV] LLM input content:', llmInputContent)
 
   const response = await fetch(llmEndpoint, {
     method: 'POST',
@@ -26,7 +30,7 @@ export const extractCandidateInfoByLlm = async (cvText) => {
       messages: [
         {
           role: 'user',
-          content: `${getCvLlmPrompt()}\n\n履歷文字內容：\n${cvText}`,
+          content: llmInputContent,
         },
       ],
       max_tokens: 1000,
