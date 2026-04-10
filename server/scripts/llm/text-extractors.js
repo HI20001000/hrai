@@ -38,6 +38,57 @@ const runPythonScript = (script, buffer) =>
     execute(0)
   })
 
+const decodeXmlEntities = (value = '') =>
+  String(value || '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, num) => String.fromCodePoint(parseInt(num, 10)))
+
+const normalizeOfficeExtractedText = (value = '') =>
+  decodeXmlEntities(String(value || ''))
+    .replace(/<w:tab\b[^>]*\/>/g, '\t')
+    .replace(/<w:br\b[^>]*\/>/g, '\n')
+    .replace(/<w:cr\b[^>]*\/>/g, '\n')
+    .replace(/<\/w:p>/g, '\n')
+    .replace(/<\/w:tr>/g, '\n')
+    .replace(/<\/w:tc>/g, '\t')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\u0000/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+const extractDocxParagraphsFromXml = (xmlSource = '') => {
+  const xml = String(xmlSource || '')
+  const paragraphMatches = [...xml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)]
+  const paragraphSources = paragraphMatches.length ? paragraphMatches.map((match) => match[0]) : [xml]
+
+  const paragraphs = paragraphSources
+    .map((paragraphXml) => {
+      const source = paragraphXml
+        .replace(/<w:tab\b[^>]*\/>/g, '\t')
+        .replace(/<w:br\b[^>]*\/>/g, '\n')
+        .replace(/<w:cr\b[^>]*\/>/g, '\n')
+        .replace(/<\/w:tc>/g, '\t')
+
+      const text = [...source.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)]
+        .map((match) => decodeXmlEntities(match[1]))
+        .join('')
+
+      return normalizeOfficeExtractedText(text)
+    })
+    .filter(Boolean)
+
+  if (paragraphs.length) return paragraphs.join('\n')
+  return normalizeOfficeExtractedText(xml)
+}
+
 const runUnzipDocxExtract = (buffer) =>
   new Promise((resolve) => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hrai-docx-'))
@@ -55,16 +106,7 @@ const runUnzipDocxExtract = (buffer) =>
     })
     proc.on('close', () => {
       fs.rmSync(tempDir, { recursive: true, force: true })
-      const source = xmlOutput
-        .replace(/<w:tab\b[^>]*\/>/g, '\t')
-        .replace(/<w:br\b[^>]*\/>/g, '\n')
-        .replace(/<w:cr\b[^>]*\/>/g, '\n')
-      const text = [...source.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)]
-        .map((match) => match[1])
-        .join('')
-        .replace(/\s{3,}/g, ' ')
-        .trim()
-      resolve(text)
+      resolve(extractDocxParagraphsFromXml(xmlOutput))
     })
   })
 
@@ -128,8 +170,9 @@ export const extractTextFromDocxBuffer = async (buffer) => {
   ].join('\n')
 
   const pythonText = await runPythonScript(pythonScript, buffer)
-  if (pythonText) return pythonText
-  return runUnzipDocxExtract(buffer)
+  if (pythonText) return normalizeOfficeExtractedText(pythonText)
+  const unzipText = await runUnzipDocxExtract(buffer)
+  return normalizeOfficeExtractedText(unzipText)
 }
 
 const decodePdfLiteralBytes = (value) => {

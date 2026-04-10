@@ -6,7 +6,7 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-12345}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-hrai}
     ports:
-      - "3306:3306"
+      - "7000:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -35,7 +35,7 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-hrai}
       HRAI_DATABASE: ${HRAI_DATABASE:-hrai}
     ports:
-      - "3001:3001"
+      - "7001:3001"
     volumes:
       - ./:/app
       - backend_node_modules:/app/server/node_modules
@@ -51,7 +51,7 @@ services:
     environment:
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3001}
     ports:
-      - "5173:5173"
+      - "7002:5173"
     volumes:
       - ./:/app
       - frontend_node_modules:/app/node_modules
