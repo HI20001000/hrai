@@ -1,54 +1,33 @@
-import { extractCandidateInfoByLlm, repairLlmJsonContent, retryExtractCandidateInfoByLlm } from './client.js'
+import { extractCandidateInfoByLlm } from './client.js'
 import {
-  extractCandidateInfoByRegex,
-  extractCandidateInfoByRegexText,
   normalizeExtractedFields,
   parseLlmContentToJson,
+  validateCvExtractionPayload,
 } from './parsers.js'
 import { extractTextFromBuffer } from './text-extractors.js'
+import { HttpError, LlmOutputFormatError } from '../errors.js'
 
 export const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType = '') => {
   const cvText = (await extractTextFromBuffer(buffer, fileName, mimeType)).slice(0, 12000)
+  if (!cvText.trim()) {
+    throw new HttpError(422, 'CV text extraction returned empty content')
+  }
 
-  if (!cvText.trim()) return extractCandidateInfoByRegex(buffer)
+  const primaryContent = await extractCandidateInfoByLlm(cvText)
+  const parsed = parseLlmContentToJson(primaryContent)
+  if (!parsed) {
+    throw new LlmOutputFormatError('CV extraction LLM output is not valid JSON')
+  }
 
   try {
-    const primaryContent = await extractCandidateInfoByLlm(cvText)
-    if (!primaryContent) return extractCandidateInfoByRegexText(cvText)
-
-    let parsed = parseLlmContentToJson(primaryContent)
-    let finalContent = primaryContent
-
-    if (!parsed) {
-      console.error('[CV] LLM content is not valid JSON:', String(primaryContent).slice(0, 500))
-
-      const retryContent = await retryExtractCandidateInfoByLlm(cvText, primaryContent)
-      if (retryContent) {
-        parsed = parseLlmContentToJson(retryContent)
-        finalContent = retryContent
-      }
-    }
-
-    if (!parsed && finalContent) {
-      const repairedContent = await repairLlmJsonContent(finalContent)
-      if (repairedContent) {
-        parsed = parseLlmContentToJson(repairedContent)
-        finalContent = repairedContent
-      }
-    }
-
-    if (!parsed) {
-      console.error('[CV] LLM retry/repair still invalid, fallback to regex text')
-      return extractCandidateInfoByRegexText(cvText)
-    }
-
-    const normalized = normalizeExtractedFields(parsed)
-    return {
-      ...normalized,
-      llmJson: parsed,
-    }
+    validateCvExtractionPayload(parsed)
   } catch (error) {
-    console.error('[CV] LLM extraction failed, fallback to regex text:', error)
-    return extractCandidateInfoByRegexText(cvText)
+    throw new LlmOutputFormatError(`CV extraction output schema mismatch: ${error?.message || error}`)
+  }
+
+  const normalized = normalizeExtractedFields(parsed)
+  return {
+    ...normalized,
+    llmJson: parsed,
   }
 }

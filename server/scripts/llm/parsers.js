@@ -11,15 +11,36 @@ export const parseLlmContentToJson = (content) => {
   if (!content) return null
   if (typeof content === 'object') return content
 
-  const direct = safeJsonParse(content)
-  if (direct) return direct
+  return safeJsonParse(String(content).trim())
+}
 
-  const fenced = String(content).match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fenced?.[1]) {
-    const parsed = safeJsonParse(fenced[1].trim())
-    if (parsed) return parsed
+const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value)
+
+const assertStringField = (payload, key) => {
+  if (!(key in payload)) throw new Error(`Missing field: ${key}`)
+  if (typeof payload[key] !== 'string') throw new Error(`Field ${key} must be a string`)
+}
+
+const assertStringArrayField = (payload, key) => {
+  if (!(key in payload)) throw new Error(`Missing field: ${key}`)
+  if (!Array.isArray(payload[key])) throw new Error(`Field ${key} must be an array`)
+  for (const item of payload[key]) {
+    if (typeof item !== 'string') throw new Error(`Field ${key} must contain only strings`)
   }
-  return null
+}
+
+export const validateCvExtractionPayload = (payload) => {
+  if (!isPlainObject(payload)) throw new Error('CV extraction output must be a JSON object')
+
+  for (const key of ['fullName', 'email', 'phone', 'education', 'workYears', 'industry', 'projectExperience', 'expectedSalary', 'onboardingPreference']) {
+    assertStringField(payload, key)
+  }
+
+  for (const key of ['languages', 'technicalLanguages', 'technicalCertificates', 'targetPosition']) {
+    assertStringArrayField(payload, key)
+  }
+
+  return payload
 }
 
 const normalizeString = (value) => String(value || '').trim()
@@ -175,15 +196,33 @@ const normalizeProfileFields = (raw = {}) => {
       root.projectSummary,
       root.projectDescription,
       root.projects,
+      root.workExperience,
+      root.workExperiences,
+      root.workSummary,
+      root.workHistory,
+      root.employmentHistory,
+      root.experienceSummary,
       profile.projectExperience,
       profile.projectExperiences,
       profile.projectSummary,
       profile.projectDescription,
       profile.projects,
+      profile.workExperience,
+      profile.workExperiences,
+      profile.workSummary,
+      profile.workHistory,
+      profile.employmentHistory,
+      profile.experienceSummary,
       industryExperience.projectExperience,
       industryExperience.projectExperiences,
       industryExperience.projectSummary,
-      industryExperience.projects
+      industryExperience.projects,
+      industryExperience.workExperience,
+      industryExperience.workExperiences,
+      industryExperience.workSummary,
+      industryExperience.workHistory,
+      industryExperience.employmentHistory,
+      industryExperience.experienceSummary
     ),
     targetPosition: mergeStringArrays(
       root.targetPosition,

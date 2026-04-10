@@ -11,6 +11,7 @@ import {
   ensureDatabaseExists,
   getDatabaseName,
 } from './scripts/database/index.js'
+import { HttpError } from './scripts/errors.js'
 import { extractCandidateInfoFromCv } from './scripts/llm/cv-extractor.js'
 import { extractTextFromBuffer } from './scripts/llm/text-extractors.js'
 import { getJobDictionary, loadJobDictionary, saveJobDictionary } from './scripts/jobs/dictionary.js'
@@ -66,6 +67,11 @@ const sendJson = (res, status, payload) => {
   withCors(res)
   res.writeHead(status, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify(payload))
+}
+
+const getErrorStatusCode = (error) => {
+  const statusCode = Number(error?.statusCode || error?.status || 0)
+  return Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599 ? statusCode : 500
 }
 
 const parseBody = async (req) => {
@@ -1251,34 +1257,19 @@ const listCandidateCvJobMatches = async (pool, candidateCvId) => {
 }
 
 const runCandidateCvMatching = async (pool, candidateId, candidateCvId, extracted) => {
-  try {
-    const matches = await matchCandidateToJobs(extracted, getJobDictionary())
-    await replaceCandidateCvJobMatches(pool, candidateId, candidateCvId, matches)
-    return matches
-  } catch (error) {
-    console.error(`[Match] candidateCvId=${candidateCvId} failed:`, error)
-    await replaceCandidateCvJobMatches(pool, candidateId, candidateCvId, [])
-    return []
-  }
+  const matches = await matchCandidateToJobs(extracted, getJobDictionary())
+  await replaceCandidateCvJobMatches(pool, candidateId, candidateCvId, matches)
+  return matches
 }
 
 const runJobPostApplicationMatching = async (pool, { applicationId = null, candidateId, candidateCvId, extracted, jobSnapshot }) => {
-  try {
-    const match = await matchCandidateToJobPost(extracted, jobSnapshot)
-    const matches = match ? [{ ...match, rankNo: 1 }] : []
-    await replaceCandidateCvJobMatches(pool, candidateId, candidateCvId, matches)
-    if (applicationId) {
-      await updateJobPostApplicationMatch(pool, applicationId, match)
-    }
-    return match
-  } catch (error) {
-    console.error(`[Match] applicationId=${applicationId || 'n/a'} candidateCvId=${candidateCvId} failed:`, error)
-    await replaceCandidateCvJobMatches(pool, candidateId, candidateCvId, [])
-    if (applicationId) {
-      await updateJobPostApplicationMatch(pool, applicationId, null)
-    }
-    return null
+  const match = await matchCandidateToJobPost(extracted, jobSnapshot)
+  const matches = match ? [{ ...match, rankNo: 1 }] : []
+  await replaceCandidateCvJobMatches(pool, candidateId, candidateCvId, matches)
+  if (applicationId) {
+    await updateJobPostApplicationMatch(pool, applicationId, match)
   }
+  return match
 }
 
 const computeMissingFields = (extracted = {}) => {
@@ -2168,7 +2159,11 @@ const start = async () => {
       return sendJson(res, 404, { message: 'Not found' })
     } catch (error) {
       console.error(error)
-      return sendJson(res, 500, { message: 'Internal server error' })
+      const statusCode = getErrorStatusCode(error)
+      const message = error instanceof HttpError
+        ? error.message
+        : String(error?.message || 'Internal server error')
+      return sendJson(res, statusCode, { message })
     }
   })
 

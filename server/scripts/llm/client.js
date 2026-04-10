@@ -1,5 +1,8 @@
+import crypto from 'node:crypto'
 import { getLlmConfig } from './config.js'
 import { getCvLlmPrompt } from './prompt.js'
+import { buildLlmLogMeta, logLlmEvent } from '../logger.js'
+import { LlmRequestError } from '../errors.js'
 
 export const buildLlmChatCompletionsUrl = (baseUrl) => {
   const normalized = String(baseUrl || '').trim().replace(/\/$/, '')
@@ -40,39 +43,124 @@ export const buildJsonRepairInputContent = (rawContent) => [
 
 export const callLlmPrompt = async (inputContent, { maxTokens = 1000, temperature = 0.7 } = {}) => {
   const { apiUrl, completionsUrl, apiKey, model } = getLlmConfig()
-  if ((!apiUrl && !completionsUrl) || !model) return null
-
-  const llmEndpoint = String(completionsUrl || '').trim() || buildLlmChatCompletionsUrl(apiUrl)
-  if (!llmEndpoint) return null
-
-  const response = await fetch(llmEndpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        {
-          role: 'user',
-          content: String(inputContent || ''),
-        },
-      ],
-      max_tokens: maxTokens,
-      temperature,
-    }),
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error(`[LLM] Request failed ${response.status} ${response.statusText} @ ${llmEndpoint}: ${String(errorText || '').slice(0, 500)}`)
-    return null
+  if ((!apiUrl && !completionsUrl) || !model) {
+    throw new LlmRequestError('LLM configuration is incomplete: endpoint or model is missing')
   }
 
-  const data = await response.json()
-  const content = data?.choices?.[0]?.message?.content || null
-  return content
+  const llmEndpoint = String(completionsUrl || '').trim() || buildLlmChatCompletionsUrl(apiUrl)
+  if (!llmEndpoint) {
+    throw new LlmRequestError('LLM endpoint is empty after config resolution')
+  }
+
+  const callId = crypto.randomUUID()
+  const startedAt = Date.now()
+  const requestBody = {
+    model,
+    messages: [
+      {
+        role: 'user',
+        content: String(inputContent || ''),
+      },
+    ],
+    max_tokens: maxTokens,
+    temperature,
+  }
+
+  logLlmEvent(
+    'llm_request',
+    buildLlmLogMeta({
+      callId,
+      endpoint: llmEndpoint,
+      model,
+      maxTokens,
+      temperature,
+      apiKey,
+      inputContent,
+    })
+  )
+
+  try {
+    const response = await fetch(llmEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify(requestBody),
+    })
+    const responseText = await response.text()
+    const durationMs = Date.now() - startedAt
+
+    if (!response.ok) {
+      logLlmEvent('llm_response_error', {
+        callId,
+        endpoint: llmEndpoint,
+        model,
+        status: response.status,
+        statusText: response.statusText,
+        durationMs,
+        responseText,
+      })
+      throw new LlmRequestError(
+        `LLM request failed: ${response.status} ${response.statusText} @ ${llmEndpoint}`
+      )
+    }
+
+    let data = null
+    try {
+      data = responseText ? JSON.parse(responseText) : null
+    } catch (error) {
+      logLlmEvent('llm_response_parse_error', {
+        callId,
+        endpoint: llmEndpoint,
+        model,
+        durationMs,
+        responseText,
+        error: {
+          name: error?.name || 'Error',
+          message: error?.message || String(error || 'Unknown error'),
+        },
+      })
+      throw new LlmRequestError(`LLM API response is not valid JSON @ ${llmEndpoint}`)
+    }
+
+    const content = data?.choices?.[0]?.message?.content || null
+    if (typeof content !== 'string' || !content.trim()) {
+      logLlmEvent('llm_response_content_missing', {
+        callId,
+        endpoint: llmEndpoint,
+        model,
+        durationMs,
+        responseText,
+      })
+      throw new LlmRequestError(`LLM response content is empty @ ${llmEndpoint}`)
+    }
+    logLlmEvent('llm_response', {
+      callId,
+      endpoint: llmEndpoint,
+      model,
+      status: response.status,
+      durationMs,
+      responseText,
+      content,
+    })
+    return content
+  } catch (error) {
+    const durationMs = Date.now() - startedAt
+    logLlmEvent('llm_request_exception', {
+      callId,
+      endpoint: llmEndpoint,
+      model,
+      durationMs,
+      error: {
+        name: error?.name || 'Error',
+        message: error?.message || String(error || 'Unknown error'),
+        stack: error?.stack || '',
+      },
+    })
+    if (error instanceof LlmRequestError) throw error
+    throw new LlmRequestError(error?.message || 'Unexpected LLM request error')
+  }
 }
 
 export const buildJsonTaskInputContent = (prompt, payload) => {

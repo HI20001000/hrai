@@ -1,6 +1,7 @@
 import { buildJsonTaskInputContent, callLlmPrompt } from './client.js'
 import { getJobRerankPrompt, getJobShortlistPrompt, getJobSingleMatchPrompt } from './prompt.js'
 import { parseLlmContentToJson } from './parsers.js'
+import { LlmOutputFormatError } from '../errors.js'
 
 const normalizeText = (value) => String(value ?? '').trim()
 
@@ -20,6 +21,133 @@ const normalizeList = (value, limit = 20) => {
     if (deduped.length >= limit) break
   }
   return deduped
+}
+
+const normalizeScore = (value) => Math.max(0, Math.min(100, Math.round(Number(value || 0))))
+const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value)
+
+const assertString = (value, fieldName, { allowEmpty = true } = {}) => {
+  if (typeof value !== 'string') {
+    throw new LlmOutputFormatError(`Field ${fieldName} must be a string`)
+  }
+  if (!allowEmpty && !value.trim()) {
+    throw new LlmOutputFormatError(`Field ${fieldName} cannot be empty`)
+  }
+}
+
+const assertStringArray = (value, fieldName, { min = 0, max = Infinity } = {}) => {
+  if (!Array.isArray(value)) {
+    throw new LlmOutputFormatError(`Field ${fieldName} must be an array`)
+  }
+  if (value.length < min) {
+    throw new LlmOutputFormatError(`Field ${fieldName} must contain at least ${min} items`)
+  }
+  if (value.length > max) {
+    throw new LlmOutputFormatError(`Field ${fieldName} must contain at most ${max} items`)
+  }
+  for (const item of value) {
+    if (typeof item !== 'string') {
+      throw new LlmOutputFormatError(`Field ${fieldName} must contain only strings`)
+    }
+  }
+}
+
+const assertMatchLevel = (value, fieldName) => {
+  assertString(value, fieldName, { allowEmpty: false })
+  if (!['high', 'medium', 'low'].includes(String(value).trim().toLowerCase())) {
+    throw new LlmOutputFormatError(`Field ${fieldName} must be one of high, medium, low`)
+  }
+}
+
+const assertScore = (value, fieldName) => {
+  const score = Number(value)
+  if (!Number.isFinite(score)) {
+    throw new LlmOutputFormatError(`Field ${fieldName} must be a number`)
+  }
+  if (score < 0 || score > 100) {
+    throw new LlmOutputFormatError(`Field ${fieldName} must be between 0 and 100`)
+  }
+}
+
+const parseRequiredJsonObject = (content, label) => {
+  const payload = parseLlmContentToJson(content)
+  if (!isPlainObject(payload)) {
+    throw new LlmOutputFormatError(`${label} LLM output must be a JSON object`)
+  }
+  return payload
+}
+
+const validateShortlistPayload = (payload, dictionary) => {
+  if (!('shortlistedJobs' in payload)) {
+    throw new LlmOutputFormatError('Shortlist output must contain shortlistedJobs')
+  }
+  if (!Array.isArray(payload.shortlistedJobs)) {
+    throw new LlmOutputFormatError('Field shortlistedJobs must be an array')
+  }
+  if (!payload.shortlistedJobs.length) {
+    throw new LlmOutputFormatError('Field shortlistedJobs must contain at least 1 item')
+  }
+  if (payload.shortlistedJobs.length > 5) {
+    throw new LlmOutputFormatError('Field shortlistedJobs must contain at most 5 items')
+  }
+
+  for (const [index, item] of payload.shortlistedJobs.entries()) {
+    if (!isPlainObject(item)) {
+      throw new LlmOutputFormatError(`shortlistedJobs[${index}] must be an object`)
+    }
+    assertString(item.jobKey, `shortlistedJobs[${index}].jobKey`, { allowEmpty: false })
+    assertString(item.reason, `shortlistedJobs[${index}].reason`)
+    if (!dictionary[item.jobKey]) {
+      throw new LlmOutputFormatError(`shortlistedJobs[${index}].jobKey is not in job dictionary`)
+    }
+  }
+}
+
+const validateRankedPayload = (payload, dictionary) => {
+  if (!('rankedJobs' in payload)) {
+    throw new LlmOutputFormatError('Rerank output must contain rankedJobs')
+  }
+  if (!Array.isArray(payload.rankedJobs)) {
+    throw new LlmOutputFormatError('Field rankedJobs must be an array')
+  }
+  if (!payload.rankedJobs.length) {
+    throw new LlmOutputFormatError('Field rankedJobs must contain at least 1 item')
+  }
+  if (payload.rankedJobs.length > 3) {
+    throw new LlmOutputFormatError('Field rankedJobs must contain at most 3 items')
+  }
+
+  for (const [index, item] of payload.rankedJobs.entries()) {
+    if (!isPlainObject(item)) {
+      throw new LlmOutputFormatError(`rankedJobs[${index}] must be an object`)
+    }
+    assertString(item.jobKey, `rankedJobs[${index}].jobKey`, { allowEmpty: false })
+    assertScore(item.matchScore, `rankedJobs[${index}].matchScore`)
+    assertMatchLevel(item.matchLevel, `rankedJobs[${index}].matchLevel`)
+    assertStringArray(item.strengths, `rankedJobs[${index}].strengths`, { min: 1, max: 3 })
+    assertStringArray(item.gaps, `rankedJobs[${index}].gaps`, { min: 1, max: 3 })
+    assertString(item.reasonSummary, `rankedJobs[${index}].reasonSummary`)
+    if (!dictionary[item.jobKey]) {
+      throw new LlmOutputFormatError(`rankedJobs[${index}].jobKey is not in job dictionary`)
+    }
+  }
+}
+
+const validateSingleMatchPayload = (payload, job) => {
+  for (const key of ['jobKey', 'matchedPosition', 'reasonSummary']) {
+    assertString(payload[key], key, { allowEmpty: key === 'reasonSummary' })
+  }
+  assertScore(payload.matchScore, 'matchScore')
+  assertMatchLevel(payload.matchLevel, 'matchLevel')
+  assertStringArray(payload.strengths, 'strengths', { min: 1, max: 3 })
+  assertStringArray(payload.gaps, 'gaps', { min: 1, max: 3 })
+
+  if (payload.jobKey !== job.jobKey) {
+    throw new LlmOutputFormatError(`single match output jobKey must equal ${job.jobKey}`)
+  }
+  if (payload.matchedPosition !== job.title) {
+    throw new LlmOutputFormatError(`single match output matchedPosition must equal ${job.title}`)
+  }
 }
 
 export const buildCandidateProfile = (extracted = {}) => {
@@ -124,7 +252,7 @@ const normalizeRankedJobs = (payload, dictionary) => {
     const jobKey = normalizeText(item?.jobKey)
     if (!jobKey || !dictionary[jobKey] || seen.has(jobKey)) continue
     seen.add(jobKey)
-    const score = Math.max(0, Math.min(100, Math.round(Number(item?.matchScore || 0))))
+    const score = normalizeScore(item?.matchScore)
     deduped.push({
       jobKey,
       jobTitle: normalizeText(dictionary[jobKey]?.title),
@@ -140,7 +268,9 @@ const normalizeRankedJobs = (payload, dictionary) => {
 }
 
 export const matchCandidateToJobs = async (extracted, dictionary) => {
-  if (!dictionary || typeof dictionary !== 'object' || !Object.keys(dictionary).length) return []
+  if (!dictionary || typeof dictionary !== 'object' || !Object.keys(dictionary).length) {
+    throw new LlmOutputFormatError('Job dictionary is empty, unable to run matching')
+  }
 
   const candidate = buildCandidateProfile(extracted)
   const shortlistContent = await callLlmPrompt(
@@ -150,9 +280,12 @@ export const matchCandidateToJobs = async (extracted, dictionary) => {
     }),
     { maxTokens: 1200, temperature: 0.2 }
   )
-  const shortlistPayload = parseLlmContentToJson(shortlistContent)
+  const shortlistPayload = parseRequiredJsonObject(shortlistContent, 'Shortlist')
+  validateShortlistPayload(shortlistPayload, dictionary)
   const shortlistKeys = normalizeShortlistJobKeys(shortlistPayload, dictionary)
-  if (!shortlistKeys.length) return []
+  if (!shortlistKeys.length) {
+    throw new LlmOutputFormatError('Shortlist output produced zero valid job keys')
+  }
 
   const rerankContent = await callLlmPrompt(
     buildJsonTaskInputContent(getJobRerankPrompt(), {
@@ -161,13 +294,16 @@ export const matchCandidateToJobs = async (extracted, dictionary) => {
     }),
     { maxTokens: 1600, temperature: 0.2 }
   )
-  const rerankPayload = parseLlmContentToJson(rerankContent)
+  const rerankPayload = parseRequiredJsonObject(rerankContent, 'Rerank')
+  validateRankedPayload(rerankPayload, dictionary)
   return normalizeRankedJobs(rerankPayload, dictionary)
 }
 
 export const matchCandidateToJobPost = async (extracted, jobSnapshot) => {
   const job = buildSingleJobCard(jobSnapshot)
-  if (!job.jobKey || !job.title) return null
+  if (!job.jobKey || !job.title) {
+    throw new LlmOutputFormatError('Job snapshot is missing jobKey or title')
+  }
 
   const candidate = buildCandidateProfile(extracted)
   const content = await callLlmPrompt(
@@ -177,14 +313,14 @@ export const matchCandidateToJobPost = async (extracted, jobSnapshot) => {
     }),
     { maxTokens: 1200, temperature: 0.2 }
   )
-  const payload = parseLlmContentToJson(content)
-  if (!payload || typeof payload !== 'object') return null
+  const payload = parseRequiredJsonObject(content, 'Single-job match')
+  validateSingleMatchPayload(payload, job)
 
   return {
     jobKey: job.jobKey,
     jobTitle: job.title,
-    matchedPosition: normalizeText(payload.matchedPosition) || job.title,
-    matchScore: Math.max(0, Math.min(100, Math.round(Number(payload.matchScore || 0)))),
+    matchedPosition: normalizeText(payload.matchedPosition),
+    matchScore: normalizeScore(payload.matchScore),
     matchLevel: normalizeMatchLevel(payload.matchLevel),
     strengths: normalizeList(payload.strengths, 3),
     gaps: normalizeList(payload.gaps, 3),
