@@ -32,6 +32,69 @@ const pickFirstString = (...values) => {
   return ''
 }
 
+const normalizeLongText = (value, depth = 0) => {
+  if (depth > 3 || value == null) return ''
+
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return normalizeString(value)
+  }
+
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => normalizeLongText(item, depth + 1))
+      .filter(Boolean)
+    return [...new Set(parts)].join('\n').trim()
+  }
+
+  if (typeof value === 'object') {
+    const preferredKeys = [
+      'projectExperience',
+      'projectExperiences',
+      'projectSummary',
+      'projectDescription',
+      'summary',
+      'description',
+      'details',
+      'content',
+      'experience',
+      'responsibilities',
+      'achievements',
+      'highlights',
+      'project',
+      'projects',
+      'name',
+      'title',
+      'role',
+    ]
+
+    const parts = []
+    for (const key of preferredKeys) {
+      if (!(key in value)) continue
+      const text = normalizeLongText(value[key], depth + 1)
+      if (text) parts.push(text)
+    }
+
+    if (!parts.length) {
+      for (const nested of Object.values(value)) {
+        const text = normalizeLongText(nested, depth + 1)
+        if (text) parts.push(text)
+      }
+    }
+
+    return [...new Set(parts)].join('\n').trim()
+  }
+
+  return ''
+}
+
+const pickFirstLongText = (...values) => {
+  for (const value of values) {
+    const candidate = normalizeLongText(value)
+    if (candidate) return candidate
+  }
+  return ''
+}
+
 const normalizeStringArray = (value, max = 20) => {
   const asArray = Array.isArray(value)
     ? value
@@ -106,10 +169,21 @@ const normalizeProfileFields = (raw = {}) => {
       industryExperience.industry,
       industryExperience.industries
     ),
-    projectExperience: pickFirstString(
+    projectExperience: pickFirstLongText(
       root.projectExperience,
+      root.projectExperiences,
+      root.projectSummary,
+      root.projectDescription,
+      root.projects,
       profile.projectExperience,
-      industryExperience.projectExperience
+      profile.projectExperiences,
+      profile.projectSummary,
+      profile.projectDescription,
+      profile.projects,
+      industryExperience.projectExperience,
+      industryExperience.projectExperiences,
+      industryExperience.projectSummary,
+      industryExperience.projects
     ),
     targetPosition: mergeStringArrays(
       root.targetPosition,
