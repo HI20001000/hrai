@@ -42,7 +42,7 @@ export const buildJsonRepairInputContent = (rawContent) => [
   .join('\n')
 
 export const callLlmPrompt = async (inputContent, { maxTokens = 1000, temperature = 0.7 } = {}) => {
-  const { apiUrl, completionsUrl, apiKey, model } = getLlmConfig()
+  const { apiUrl, completionsUrl, apiKey, model, disableThinking, extraBody, maxTokens: configMaxTokens } = getLlmConfig()
   if ((!apiUrl && !completionsUrl) || !model) {
     throw new LlmRequestError('LLM configuration is incomplete: endpoint or model is missing')
   }
@@ -62,8 +62,23 @@ export const callLlmPrompt = async (inputContent, { maxTokens = 1000, temperatur
         content: String(inputContent || ''),
       },
     ],
-    max_tokens: maxTokens,
+    max_tokens: maxTokens || configMaxTokens || 2500,
     temperature,
+    ...(extraBody && typeof extraBody === 'object' ? extraBody : {}),
+  }
+
+  if (disableThinking) {
+    const currentChatTemplateKwargs =
+      requestBody.chat_template_kwargs &&
+      typeof requestBody.chat_template_kwargs === 'object' &&
+      !Array.isArray(requestBody.chat_template_kwargs)
+        ? requestBody.chat_template_kwargs
+        : {}
+
+    requestBody.chat_template_kwargs = {
+      ...currentChatTemplateKwargs,
+      enable_thinking: false,
+    }
   }
 
   logLlmEvent(
@@ -125,6 +140,8 @@ export const callLlmPrompt = async (inputContent, { maxTokens = 1000, temperatur
     }
 
     const content = data?.choices?.[0]?.message?.content || null
+    const reasoning = data?.choices?.[0]?.message?.reasoning || ''
+    const finishReason = data?.choices?.[0]?.finish_reason || ''
     if (typeof content !== 'string' || !content.trim()) {
       logLlmEvent('llm_response_content_missing', {
         callId,
@@ -132,7 +149,14 @@ export const callLlmPrompt = async (inputContent, { maxTokens = 1000, temperatur
         model,
         durationMs,
         responseText,
+        finishReason,
+        reasoningPreview: String(reasoning || '').slice(0, 1000),
       })
+      if (reasoning && String(finishReason).toLowerCase() === 'length') {
+        throw new LlmRequestError(
+          'LLM used all max_tokens in reasoning mode before producing final content; disable thinking mode or increase max_tokens'
+        )
+      }
       throw new LlmRequestError(`LLM response content is empty @ ${llmEndpoint}`)
     }
     logLlmEvent('llm_response', {
@@ -170,16 +194,19 @@ export const buildJsonTaskInputContent = (prompt, payload) => {
 }
 
 export const extractCandidateInfoByLlm = async (cvText) => {
+  const { maxTokens } = getLlmConfig()
   const llmInputContent = buildCvLlmInputContent(cvText)
-  return callLlmPrompt(llmInputContent, { maxTokens: 2000, temperature: 0 })
+  return callLlmPrompt(llmInputContent, { maxTokens, temperature: 0 })
 }
 
 export const retryExtractCandidateInfoByLlm = async (cvText, previousContent = '') => {
+  const { maxTokens } = getLlmConfig()
   const llmInputContent = buildCvLlmRetryInputContent(cvText, previousContent)
-  return callLlmPrompt(llmInputContent, { maxTokens: 2200, temperature: 0 })
+  return callLlmPrompt(llmInputContent, { maxTokens, temperature: 0 })
 }
 
 export const repairLlmJsonContent = async (rawContent) => {
+  const { maxTokens } = getLlmConfig()
   const llmInputContent = buildJsonRepairInputContent(rawContent)
-  return callLlmPrompt(llmInputContent, { maxTokens: 1200, temperature: 0 })
+  return callLlmPrompt(llmInputContent, { maxTokens, temperature: 0 })
 }

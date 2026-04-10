@@ -1,4 +1,5 @@
 import { buildJsonTaskInputContent, callLlmPrompt } from './client.js'
+import { getLlmConfig } from './config.js'
 import { getJobRerankPrompt, getJobShortlistPrompt, getJobSingleMatchPrompt } from './prompt.js'
 import { parseLlmContentToJson } from './parsers.js'
 import { LlmOutputFormatError } from '../errors.js'
@@ -272,13 +273,14 @@ export const matchCandidateToJobs = async (extracted, dictionary) => {
     throw new LlmOutputFormatError('Job dictionary is empty, unable to run matching')
   }
 
+  const { maxTokens } = getLlmConfig()
   const candidate = buildCandidateProfile(extracted)
   const shortlistContent = await callLlmPrompt(
     buildJsonTaskInputContent(getJobShortlistPrompt(), {
       candidate,
       jobs: buildJobIndex(dictionary),
     }),
-    { maxTokens: 1200, temperature: 0.2 }
+    { maxTokens, temperature: 0.2 }
   )
   const shortlistPayload = parseRequiredJsonObject(shortlistContent, 'Shortlist')
   validateShortlistPayload(shortlistPayload, dictionary)
@@ -292,7 +294,7 @@ export const matchCandidateToJobs = async (extracted, dictionary) => {
       candidate,
       jobs: buildFullJobCards(dictionary, shortlistKeys),
     }),
-    { maxTokens: 1600, temperature: 0.2 }
+    { maxTokens, temperature: 0.2 }
   )
   const rerankPayload = parseRequiredJsonObject(rerankContent, 'Rerank')
   validateRankedPayload(rerankPayload, dictionary)
@@ -305,13 +307,14 @@ export const matchCandidateToJobPost = async (extracted, jobSnapshot) => {
     throw new LlmOutputFormatError('Job snapshot is missing jobKey or title')
   }
 
+  const { maxTokens } = getLlmConfig()
   const candidate = buildCandidateProfile(extracted)
   const content = await callLlmPrompt(
     buildJsonTaskInputContent(getJobSingleMatchPrompt(), {
       candidate,
       job,
     }),
-    { maxTokens: 1200, temperature: 0.2 }
+    { maxTokens, temperature: 0.2 }
   )
   const payload = parseRequiredJsonObject(content, 'Single-job match')
   validateSingleMatchPayload(payload, job)
