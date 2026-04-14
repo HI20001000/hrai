@@ -131,6 +131,41 @@ const isLikelyTextBuffer = (buffer) => {
   return suspiciousCount / sample.length < 0.2
 }
 
+const stripInvalidUnicode = (value = '') => {
+  const source = String(value || '')
+  let result = ''
+
+  for (let index = 0; index < source.length; index += 1) {
+    const code = source.charCodeAt(index)
+
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = source.charCodeAt(index + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        result += source[index] + source[index + 1]
+        index += 1
+      }
+      continue
+    }
+
+    if (code >= 0xdc00 && code <= 0xdfff) continue
+    if ((code >= 0 && code <= 8) || code === 11 || code === 12 || (code >= 14 && code <= 31)) continue
+    if (code >= 127 && code <= 159) continue
+
+    result += source[index]
+  }
+
+  return result
+}
+
+const sanitizeExtractedText = (value = '') =>
+  stripInvalidUnicode(String(value || ''))
+    .replace(/\u0000/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
 export const extractTextFromDocxBuffer = async (buffer) => {
   const pythonScript = [
     'import io, re, sys, zipfile',
@@ -368,27 +403,64 @@ const getPdfTextSources = (buffer) => {
     const streamBuffer = Buffer.from(rawStream, 'latin1')
     const filters = parsePdfFilters(dict)
     const decoded = applyPdfFilters(streamBuffer, filters)
-    if (decoded && decoded.length) sources.push(decoded.toString('latin1'))
+    if (!decoded || !decoded.length) continue
+    const decodedSource = sanitizeExtractedText(decoded.toString('latin1'))
+    if (!decodedSource) continue
+    if (isPdfNonTextStream(dict)) continue
+    if (!looksLikePdfTextStream(decodedSource)) continue
+    sources.push(decodedSource)
   }
 
-  if (!sources.length) sources.push(source)
   return sources
 }
 
 const decodePdfLiteralText = (value) => decodePdfTextBytes(decodePdfLiteralBytes(value))
 const decodePdfHexText = (hexValue) => decodePdfTextBytes(decodePdfHexBytes(hexValue))
 
+const PDF_SCRIPT_PATTERNS = [
+  /\p{Script=Latin}/u,
+  /\p{Script=Han}/u,
+  /\p{Script=Hiragana}/u,
+  /\p{Script=Katakana}/u,
+  /\p{Script=Hangul}/u,
+  /\p{Script=Cyrillic}/u,
+  /\p{Script=Arabic}/u,
+  /\p{Script=Hebrew}/u,
+  /\p{Script=Devanagari}/u,
+  /\p{Script=Bengali}/u,
+  /\p{Script=Gujarati}/u,
+  /\p{Script=Tamil}/u,
+  /\p{Script=Thai}/u,
+]
+
+const countPdfScriptFamilies = (text = '') =>
+  PDF_SCRIPT_PATTERNS.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0)
+
+const countWordRunChars = (text = '') =>
+  (text.match(/[\p{L}\p{N}][\p{L}\p{N}@._%+&/():,#-]{1,}/gu) || []).reduce(
+    (sum, part) => sum + part.length,
+    0
+  )
+
+const isPdfNonTextStream = (dictSource = '') =>
+  /\/Subtype\s*\/Image\b/.test(dictSource) ||
+  /\/Type\s*\/XRef\b/.test(dictSource) ||
+  /\/Type\s*\/ObjStm\b/.test(dictSource)
+
+const looksLikePdfTextStream = (decodedSource = '') =>
+  /\bBT\b|\bET\b|\bTj\b|\bTJ\b|\bTf\b|\bTd\b|\bTm\b|T\*/.test(String(decodedSource || ''))
+
 const extractPdfTextFromTjArray = (segment) => {
   const parts = []
   const tokenRegex = /\(((?:\\.|[^\\()])*)\)|<([0-9A-Fa-f\s]+)>/g
   for (const token of segment.matchAll(tokenRegex)) {
     if (token[1]) {
-      const text = decodePdfLiteralText(token[1])
+      const text = sanitizeExtractedText(decodePdfLiteralText(token[1]))
       if (text) parts.push(text)
       continue
     }
     if (token[2]) {
-      const text = decodePdfHexText(token[2])
+      const text = sanitizeExtractedText(decodePdfHexText(token[2]))
       if (text) parts.push(text)
     }
   }
@@ -396,7 +468,7 @@ const extractPdfTextFromTjArray = (segment) => {
 }
 
 const isLikelyReadablePdfPiece = (text) => {
-  const line = String(text || '').replace(/\u0000/g, '').trim()
+  const line = sanitizeExtractedText(text)
   if (!line) return false
 
   const chars = [...line]
@@ -404,10 +476,27 @@ const isLikelyReadablePdfPiece = (text) => {
   const lettersOrDigits = (line.match(/[\p{L}\p{N}]/gu) || []).length
   const weirdChars = (line.match(/[^\p{L}\p{N}\p{P}\p{Z}\t]/gu) || []).length
   const controls = (line.match(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g) || []).length
+  const scriptFamilies = countPdfScriptFamilies(line)
 
   if (!lettersOrDigits) return false
   if (controls / length > 0.03) return false
   if (weirdChars / length > 0.22) return false
+  if (scriptFamilies > 4) return false
+  return true
+}
+
+const isLikelyReadablePdfText = (text = '') => {
+  const normalized = sanitizeExtractedText(String(text || '').replace(/\n+/g, ' '))
+  if (normalized.length < 20) return false
+
+  const lettersOrDigits = (normalized.match(/[\p{L}\p{N}]/gu) || []).length
+  const scriptFamilies = countPdfScriptFamilies(normalized)
+  const wordRunChars = countWordRunChars(normalized)
+
+  if (lettersOrDigits < 12) return false
+  if (scriptFamilies > 4) return false
+  if (wordRunChars < 12) return false
+  if (wordRunChars / Math.max(lettersOrDigits, 1) < 0.35) return false
   return true
 }
 
@@ -419,18 +508,18 @@ const collectPdfPieces = (source) => {
 
   for (const match of source.matchAll(literalRegex)) {
     if (!match[1]) continue
-    const text = decodePdfLiteralText(match[1]).replace(/\s+/g, ' ').trim()
+    const text = sanitizeExtractedText(decodePdfLiteralText(match[1]).replace(/\s+/g, ' '))
     if (isLikelyReadablePdfPiece(text)) pieces.push(text)
   }
 
   for (const match of source.matchAll(hexRegex)) {
     if (!match[1]) continue
-    const text = decodePdfHexText(match[1]).replace(/\s+/g, ' ').trim()
+    const text = sanitizeExtractedText(decodePdfHexText(match[1]).replace(/\s+/g, ' '))
     if (isLikelyReadablePdfPiece(text)) pieces.push(text)
   }
 
   for (const match of source.matchAll(tjArrayRegex)) {
-    const merged = extractPdfTextFromTjArray(match[1] || '').replace(/\s+/g, ' ').trim()
+    const merged = sanitizeExtractedText(extractPdfTextFromTjArray(match[1] || '').replace(/\s+/g, ' '))
     if (isLikelyReadablePdfPiece(merged)) pieces.push(merged)
   }
 
@@ -448,13 +537,9 @@ export const extractTextFromPdfBuffer = (buffer) => {
     seen.add(piece)
     deduped.push(piece)
   }
-  return deduped
-    .join('\n')
-    .replace(/\u0000/g, '')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]{2,}/g, ' ')
-    .trim()
+  const text = sanitizeExtractedText(deduped.join('\n'))
+  if (!isLikelyReadablePdfText(text)) return ''
+  return text
 }
 
 export const extractTextFromBuffer = async (buffer, fileName = '', mimeType = '') => {
@@ -463,7 +548,7 @@ export const extractTextFromBuffer = async (buffer, fileName = '', mimeType = ''
 
   if (looksLikeDocx(buffer, normalizedName, normalizedType)) {
     const text = await extractTextFromDocxBuffer(buffer)
-    if (text) return text
+    if (text) return sanitizeExtractedText(text)
     return ''
   }
 
@@ -474,5 +559,5 @@ export const extractTextFromBuffer = async (buffer, fileName = '', mimeType = ''
   }
 
   if (!isLikelyTextBuffer(buffer)) return ''
-  return buffer.toString('utf8')
+  return sanitizeExtractedText(buffer.toString('utf8'))
 }
