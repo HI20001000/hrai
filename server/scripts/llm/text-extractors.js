@@ -13,6 +13,7 @@ const runPythonScript = (script, buffer) =>
         return
       }
 
+      let settled = false
       const proc = spawn(interpreters[index], ['-X', 'utf8', '-c', script], {
         env: {
           ...process.env,
@@ -21,18 +22,41 @@ const runPythonScript = (script, buffer) =>
         },
       })
       let output = ''
+      const finishWithNext = () => {
+        if (settled) return
+        settled = true
+        execute(index + 1)
+      }
       proc.stdout.on('data', (chunk) => {
         output += chunk.toString('utf8')
       })
-      proc.on('error', () => execute(index + 1))
+      proc.stdin.on('error', () => {
+        if (!settled) {
+          settled = true
+          execute(index + 1)
+        }
+      })
+      proc.on('error', () => {
+        if (!settled) {
+          settled = true
+          execute(index + 1)
+        }
+      })
       proc.on('close', () => {
+        if (settled) return
         if (output.trim()) {
+          settled = true
           resolve(output.trim())
           return
         }
+        settled = true
         execute(index + 1)
       })
-      proc.stdin.end(buffer)
+      try {
+        proc.stdin.end(buffer)
+      } catch {
+        finishWithNext()
+      }
     }
 
     execute(0)
@@ -208,6 +232,48 @@ export const extractTextFromDocxBuffer = async (buffer) => {
   if (pythonText) return normalizeOfficeExtractedText(pythonText)
   const unzipText = await runUnzipDocxExtract(buffer)
   return normalizeOfficeExtractedText(unzipText)
+}
+
+const normalizePdfExtractedText = (value = '') =>
+  sanitizeExtractedText(String(value || ''))
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => {
+      const compact = line.replace(/\s+/g, '')
+      const alphaNum = (compact.match(/[A-Za-z0-9_-]/g) || []).length
+      const otherChars = compact.length - alphaNum
+      const hasLongOpaqueToken = compact.length >= 28 && alphaNum / Math.max(compact.length, 1) > 0.88 && otherChars <= 2
+      return !hasLongOpaqueToken
+    })
+    .join('\n')
+
+const extractTextFromPdfBufferWithPython = async (buffer) => {
+  const pythonScript = [
+    'import io, re, sys',
+    'data = sys.stdin.buffer.read()',
+    'text = ""',
+    'try:',
+    '    from pypdf import PdfReader',
+    '    reader = PdfReader(io.BytesIO(data))',
+    '    parts = []',
+    '    for page in reader.pages:',
+    '        try:',
+    '            page_text = page.extract_text() or ""',
+    '        except Exception:',
+    '            page_text = ""',
+    '        if page_text:',
+    '            parts.append(page_text)',
+    '    text = "\\n".join(parts)',
+    'except Exception:',
+    '    text = ""',
+    'if text:',
+    "    text = re.sub(r'\\n{3,}', '\\n\\n', text)",
+    'sys.stdout.write(text)',
+  ].join('\n')
+
+  const pythonText = await runPythonScript(pythonScript, buffer)
+  return normalizePdfExtractedText(pythonText)
 }
 
 const decodePdfLiteralBytes = (value) => {
@@ -537,7 +603,7 @@ export const extractTextFromPdfBuffer = (buffer) => {
     seen.add(piece)
     deduped.push(piece)
   }
-  const text = sanitizeExtractedText(deduped.join('\n'))
+  const text = normalizePdfExtractedText(deduped.join('\n'))
   if (!isLikelyReadablePdfText(text)) return ''
   return text
 }
@@ -553,6 +619,8 @@ export const extractTextFromBuffer = async (buffer, fileName = '', mimeType = ''
   }
 
   if (normalizedName.endsWith('.pdf') || normalizedType.includes('pdf')) {
+    const pythonText = await extractTextFromPdfBufferWithPython(buffer)
+    if (pythonText && isLikelyReadablePdfText(pythonText)) return pythonText
     const text = extractTextFromPdfBuffer(buffer)
     if (text) return text
     return ''

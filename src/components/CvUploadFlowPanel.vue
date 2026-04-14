@@ -205,6 +205,33 @@ const getMessageTone = (value) => {
   return ''
 }
 
+const getMessageSegments = (value) => {
+  const text = String(value || '')
+  if (!text) return []
+
+  const batchParseMatch = text.match(/^(批量解析完成：可匹配 )(\d+ 份)(，失敗 )(\d+ 份)$/)
+  if (batchParseMatch) {
+    return [
+      { text: batchParseMatch[1], tone: '' },
+      { text: batchParseMatch[2], tone: 'success-message' },
+      { text: batchParseMatch[3], tone: '' },
+      { text: batchParseMatch[4], tone: 'error-message' },
+    ]
+  }
+
+  const batchActionMatch = text.match(/^(.*完成：成功 )(\d+ 份)(，失敗 )(\d+ 份)$/)
+  if (batchActionMatch) {
+    return [
+      { text: batchActionMatch[1], tone: '' },
+      { text: batchActionMatch[2], tone: 'success-message' },
+      { text: batchActionMatch[3], tone: '' },
+      { text: batchActionMatch[4], tone: 'error-message' },
+    ]
+  }
+
+  return [{ text, tone: '' }]
+}
+
 const buildBatchItem = (file, index) => ({
   id: `${file.name}-${file.lastModified}-${index}`,
   file,
@@ -1046,7 +1073,11 @@ const clearBatchQueueLegacy = () => {
       <p v-if="!isBatchMode && cachedCvId" class="info-line">
         已快取檔案：{{ cachedCvName }}（ID: {{ cachedCvId.slice(0, 8) }}...）
       </p>
-      <p v-if="message" class="message" :class="getMessageTone(message)">{{ message }}</p>
+      <p v-if="message" class="message">
+        <template v-for="(segment, index) in getMessageSegments(message)" :key="`${segment.text}-${index}`">
+          <span :class="segment.tone">{{ segment.text }}</span>
+        </template>
+      </p>
     </div>
 
     <div v-if="isBatchMode && batchItems.length && !isBatchDetailView" class="card batch-card">
