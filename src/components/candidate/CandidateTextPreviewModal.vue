@@ -1,6 +1,7 @@
 ﻿<script setup>
 import { computed, ref, watch } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
+import { parseJsonObject } from '../../scripts/cvExtractedPreview.js'
 import {
   buildDraftFieldsFromRows,
   buildExtractedPreviewData,
@@ -45,6 +46,25 @@ const resetMatchState = () => {
   matchLoading.value = false
   matchError.value = ''
   jobMatches.value = []
+}
+
+const readEmbeddedJobMatches = () => {
+  const payload = parseJsonObject(localContent.value)
+  const rawMatch = payload?.matchReport
+  if (!rawMatch || typeof rawMatch !== 'object') return []
+
+  return [
+    {
+      jobKey: String(rawMatch.jobKey || '').trim(),
+      jobTitle: String(rawMatch.jobTitle || rawMatch.matchedPosition || '').trim(),
+      rankNo: 1,
+      matchScore: Number(rawMatch.matchScore || 0),
+      matchLevel: String(rawMatch.matchLevel || '').trim(),
+      reasonSummary: String(rawMatch.reasonSummary || '').trim(),
+      strengths: Array.isArray(rawMatch.strengths) ? rawMatch.strengths : [],
+      gaps: Array.isArray(rawMatch.gaps) ? rawMatch.gaps : [],
+    },
+  ].filter((match) => match.jobKey || match.jobTitle || match.reasonSummary)
 }
 
 watch(
@@ -93,7 +113,7 @@ const loadJobMatches = async () => {
         ? `${apiBaseUrl}/api/candidate-cvs/${props.candidateCvId}/job-matches`
         : ''
     if (!endpoint) {
-      jobMatches.value = []
+      jobMatches.value = readEmbeddedJobMatches()
       return
     }
 
@@ -101,17 +121,17 @@ const loadJobMatches = async () => {
     const data = await response.json()
     if (!response.ok) {
       matchError.value = data.message || '讀取匹配結果失敗'
-      jobMatches.value = []
+      jobMatches.value = readEmbeddedJobMatches()
       return
     }
     if (props.applicationId) {
-      jobMatches.value = data.match ? [data.match] : []
+      jobMatches.value = data.match ? [data.match] : readEmbeddedJobMatches()
       return
     }
-    jobMatches.value = Array.isArray(data.matches) ? data.matches : []
+    jobMatches.value = Array.isArray(data.matches) && data.matches.length ? data.matches : readEmbeddedJobMatches()
   } catch {
     matchError.value = '讀取匹配結果失敗'
-    jobMatches.value = []
+    jobMatches.value = readEmbeddedJobMatches()
   } finally {
     matchLoading.value = false
   }

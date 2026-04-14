@@ -483,15 +483,15 @@ const updateJobDictionaryHandler = async (pool, req, res) => {
   const body = await parseBody(req)
   const dictionary = body?.dictionary
   if (!dictionary || typeof dictionary !== 'object' || Array.isArray(dictionary)) {
-    sendJson(res, 400, { message: 'dictionary is required' })
+    sendJson(res, 400, { message: '請提供職位字典資料' })
     return
   }
 
   try {
     const saved = saveJobDictionary(dictionary)
-    sendJson(res, 200, { message: 'Job dictionary updated', dictionary: saved })
+    sendJson(res, 200, { message: '職位字典已更新', dictionary: saved })
   } catch (error) {
-    sendJson(res, 400, { message: error?.message || 'Invalid job dictionary' })
+    sendJson(res, 400, { message: error?.message || '職位字典資料格式錯誤' })
   }
 }
 
@@ -1256,6 +1256,40 @@ const listCandidateCvJobMatches = async (pool, candidateCvId) => {
   }))
 }
 
+const buildEmbeddedMatchReport = (match = null) => {
+  if (!match || typeof match !== 'object') return null
+
+  const jobKey = normalizeText(match.jobKey)
+  const jobTitle = normalizeText(match.jobTitle || match.matchedPosition)
+  const matchedPosition = normalizeText(match.matchedPosition || match.jobTitle)
+  const reasonSummary = normalizeText(match.reasonSummary)
+  const matchLevel = normalizeText(match.matchLevel).toLowerCase()
+  const matchScore = Number(match.matchScore || 0)
+
+  if (!jobKey && !jobTitle && !matchedPosition && !reasonSummary && !Number.isFinite(matchScore)) {
+    return null
+  }
+
+  return {
+    jobKey,
+    jobTitle,
+    matchedPosition,
+    matchScore: Number.isFinite(matchScore) ? matchScore : 0,
+    matchLevel: matchLevel === 'high' || matchLevel === 'medium' || matchLevel === 'low' ? matchLevel : '',
+    reasonSummary,
+    strengths: normalizeList(match.strengths, 10),
+    gaps: normalizeList(match.gaps, 10),
+  }
+}
+
+const attachMatchReportToExtractedPayload = (payload = {}, match = null) => {
+  const nextPayload = payload && typeof payload === 'object' ? { ...payload } : {}
+  const matchReport = buildEmbeddedMatchReport(match)
+  if (matchReport) nextPayload.matchReport = matchReport
+  else delete nextPayload.matchReport
+  return nextPayload
+}
+
 const runCandidateCvMatching = async (pool, candidateId, candidateCvId, extracted) => {
   const matches = await matchCandidateToJobs(extracted, getJobDictionary())
   await replaceCandidateCvJobMatches(pool, candidateId, candidateCvId, matches)
@@ -1534,20 +1568,6 @@ const intakeCv = async (pool, req, res, jobPostId = null) => {
   const targetPosition = Array.isArray(finalExtracted?.profile?.targetPosition)
     ? finalExtracted.profile.targetPosition.join(', ')
     : ''
-  const extractedText = JSON.stringify(
-    {
-      extracted: finalExtracted,
-      missingFields: finalMissingFields,
-      parser,
-    },
-    null,
-    2
-  )
-  await insertCandidateCvExtraction(pool, candidateId, cv.id, {
-    targetPosition,
-    cvText,
-    extractedText,
-  })
   const applicationId = await createJobPostApplication(pool, jobPostId, candidateId, cv.id, null)
   const match = await runJobPostApplicationMatching(pool, {
     applicationId,
@@ -1555,6 +1575,20 @@ const intakeCv = async (pool, req, res, jobPostId = null) => {
     candidateCvId: cv.id,
     extracted: finalExtracted,
     jobSnapshot: jobPost.jobSnapshot,
+  })
+  const extractedPayload = attachMatchReportToExtractedPayload(
+    {
+      extracted: finalExtracted,
+      missingFields: finalMissingFields,
+      parser,
+    },
+    match
+  )
+  const extractedText = JSON.stringify(extractedPayload, null, 2)
+  await insertCandidateCvExtraction(pool, candidateId, cv.id, {
+    targetPosition,
+    cvText,
+    extractedText,
   })
 
   sendJson(res, 201, {
@@ -1830,17 +1864,6 @@ const updateCandidateCvExtractedField = async (pool, req, res, candidateCvId) =>
   const targetPosition = Array.isArray(payload.extracted?.profile?.targetPosition)
     ? payload.extracted.profile.targetPosition.join(', ')
     : ''
-  const extractedText = JSON.stringify(payload, null, 2)
-
-  await pool.query(
-    `INSERT INTO candidate_cv_extractions
-      (candidate_id, candidate_cv_id, target_position, extracted_text)
-     VALUES (?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-      target_position = VALUES(target_position),
-      extracted_text = VALUES(extracted_text)`,
-    [Number(row.candidateId), candidateCvId, targetPosition || null, extractedText]
-  )
 
   const fullName = normalizeText(payload.extracted.fullName)
   const email = normalizeText(payload.extracted.email)
@@ -1859,6 +1882,18 @@ const updateCandidateCvExtractedField = async (pool, req, res, candidateCvId) =>
       jobSnapshot: applicationContext.jobSnapshot,
     })
     : null
+  const finalPayload = attachMatchReportToExtractedPayload(payload, match)
+  const extractedText = JSON.stringify(finalPayload, null, 2)
+
+  await pool.query(
+    `INSERT INTO candidate_cv_extractions
+      (candidate_id, candidate_cv_id, target_position, extracted_text)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+      target_position = VALUES(target_position),
+      extracted_text = VALUES(extracted_text)`,
+    [Number(row.candidateId), candidateCvId, targetPosition || null, extractedText]
+  )
 
   sendJson(res, 200, {
     message: 'Extracted field updated',
@@ -1922,17 +1957,6 @@ const updateCandidateCvExtractedFields = async (pool, req, res, candidateCvId) =
   const targetPosition = Array.isArray(payload.extracted?.profile?.targetPosition)
     ? payload.extracted.profile.targetPosition.join(', ')
     : ''
-  const extractedText = JSON.stringify(payload, null, 2)
-
-  await pool.query(
-    `INSERT INTO candidate_cv_extractions
-      (candidate_id, candidate_cv_id, target_position, extracted_text)
-     VALUES (?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-      target_position = VALUES(target_position),
-      extracted_text = VALUES(extracted_text)`,
-    [Number(row.candidateId), candidateCvId, targetPosition || null, extractedText]
-  )
 
   const fullName = normalizeText(payload.extracted.fullName)
   const email = normalizeText(payload.extracted.email)
@@ -1951,6 +1975,18 @@ const updateCandidateCvExtractedFields = async (pool, req, res, candidateCvId) =
       jobSnapshot: applicationContext.jobSnapshot,
     })
     : null
+  const finalPayload = attachMatchReportToExtractedPayload(payload, match)
+  const extractedText = JSON.stringify(finalPayload, null, 2)
+
+  await pool.query(
+    `INSERT INTO candidate_cv_extractions
+      (candidate_id, candidate_cv_id, target_position, extracted_text)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+      target_position = VALUES(target_position),
+      extracted_text = VALUES(extracted_text)`,
+    [Number(row.candidateId), candidateCvId, targetPosition || null, extractedText]
+  )
 
   sendJson(res, 200, {
     message: 'Extracted fields updated',

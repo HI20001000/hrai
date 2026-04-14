@@ -738,5 +738,41 @@
       "workYears": 0.14,
       "candidatePreference": 0.06
     }
+  },
+  "客經": {
+    "title": "客經",
+    "description": "123",
+    "industry": [
+      "123"
+    ],
+    "roleKeywords": [
+      "123"
+    ],
+    "coreResponsibilities": [
+      "123"
+    ],
+    "requiredSkills": [
+      "123"
+    ],
+    "preferredSkills": [
+      "123"
+    ],
+    "certifications": [
+      "123"
+    ],
+    "minWorkYears": 1,
+    "salaryRange": {
+      "min": 0,
+      "max": 0
+    },
+    "weights": {
+      "requiredSkills": 0.25,
+      "projectExperience": 0.2,
+      "industry": 0.15,
+      "coreResponsibilities": 0.1,
+      "certifications": 0.1,
+      "workYears": 0.1,
+      "candidatePreference": 0.1
+    }
   }
 }

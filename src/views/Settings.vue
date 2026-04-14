@@ -224,25 +224,25 @@ const selectJob = (jobKey) => {
 }
 
 const validateJobDraft = (jobKey, nextJob) => {
-  if (!normalizeText(jobKey)) throw new Error('job key 不可為空')
-  if (!normalizeText(nextJob.title)) throw new Error('title 不可為空')
-  if (!normalizeText(nextJob.description)) throw new Error('description 不可為空')
-  if (!nextJob.industry.length) throw new Error('industry 至少需填 1 項')
-  if (!nextJob.roleKeywords.length) throw new Error('roleKeywords 至少需填 1 項')
-  if (!nextJob.coreResponsibilities.length) throw new Error('coreResponsibilities 至少需填 1 項')
-  if (!nextJob.requiredSkills.length) throw new Error('requiredSkills 至少需填 1 項')
-  if (!nextJob.preferredSkills.length) throw new Error('preferredSkills 至少需填 1 項')
-  if (!nextJob.certifications.length) throw new Error('certifications 至少需填 1 項')
-  if (!Number.isFinite(nextJob.minWorkYears)) throw new Error('minWorkYears 必須是數字')
+  if (!normalizeText(jobKey)) throw new Error('職位代碼不可為空')
+  if (!normalizeText(nextJob.title)) throw new Error('職位名稱不可為空')
+  if (!normalizeText(nextJob.description)) throw new Error('職位描述不可為空')
+  if (!nextJob.industry.length) throw new Error('行業背景至少需填 1 項')
+  if (!nextJob.roleKeywords.length) throw new Error('職位關鍵字至少需填 1 項')
+  if (!nextJob.coreResponsibilities.length) throw new Error('核心職責至少需填 1 項')
+  if (!nextJob.requiredSkills.length) throw new Error('必備技能至少需填 1 項')
+  if (!nextJob.preferredSkills.length) throw new Error('加分技能至少需填 1 項')
+  if (!nextJob.certifications.length) throw new Error('證照至少需填 1 項')
+  if (!Number.isFinite(nextJob.minWorkYears)) throw new Error('最低工作年資必須是數字')
   if (!Number.isFinite(nextJob.salaryRange.min) || !Number.isFinite(nextJob.salaryRange.max)) {
-    throw new Error('salaryRange 必須是數字')
+    throw new Error('薪資範圍必須是數字')
   }
   if (nextJob.salaryRange.min > nextJob.salaryRange.max) {
-    throw new Error('salaryRange.min 不可大於 salaryRange.max')
+    throw new Error('最低薪資不可大於最高薪資')
   }
 
   const sum = Object.values(nextJob.weights).reduce((acc, value) => acc + Number(value || 0), 0)
-  if (Math.abs(sum - 1) > 0.000001) throw new Error('weights 總和必須等於 1.0')
+  if (Math.abs(sum - 1) > 0.000001) throw new Error('權重總和必須等於 1.0')
 }
 
 const commitSelectedJobDraft = () => {
@@ -464,15 +464,11 @@ const loadJobDictionary = async () => {
 const addJob = () => {
   const jobKey = normalizeText(newJobKey.value)
   if (!jobKey) {
-    jobDictionaryError.value = '請輸入新的 job key'
-    return
-  }
-  if (!/^[a-z0-9_]+$/i.test(jobKey)) {
-    jobDictionaryError.value = 'job key 只能包含英文、數字與底線'
+    jobDictionaryError.value = '請輸入新的職位代碼'
     return
   }
   if (jobDictionary.value[jobKey]) {
-    jobDictionaryError.value = 'job key 已存在'
+    jobDictionaryError.value = '職位代碼已存在'
     return
   }
 
@@ -482,7 +478,7 @@ const addJob = () => {
   }
   newJobKey.value = ''
   selectJob(jobKey)
-  jobDictionaryMessage.value = `已新增職位 ${jobKey}，請編輯後儲存字典`
+  jobDictionaryMessage.value = `已新增職位「${jobKey}」，請編輯後儲存字典`
 }
 
 const deleteSelectedJob = () => {
@@ -692,7 +688,7 @@ onMounted(() => {
         <input
           v-model.trim="newJobKey"
           type="text"
-          placeholder="輸入新的 job key，例如 compliance_officer"
+          placeholder="輸入新的職位代碼，例如 客戶經理 或 compliance_officer"
           :disabled="jobDictionaryLoading || jobDictionarySaving"
         />
         <button type="button" class="secondary-btn" :disabled="jobDictionaryLoading || jobDictionarySaving" @click="addJob">
