@@ -584,17 +584,17 @@ onMounted(async () => {
                     <span v-else>--</span>
                   </td>
                   <td>{{ row.phone || '--' }}</td>
-                  <td>
-                    <button v-if="row.cvFileName" type="button" class="link-btn" @click="openPreview(row, 'cv')">
+                  <td class="file-column">
+                    <button v-if="row.cvFileName" type="button" class="link-btn file-link" @click="openPreview(row, 'cv')">
                       {{ row.cvFileName }}
                     </button>
                     <span v-else>--</span>
                   </td>
-                  <td>
+                  <td class="file-column">
                     <button
                       v-if="row.extractedFileName"
                       type="button"
-                      class="link-btn"
+                      class="link-btn file-link"
                       @click="openPreview(row, 'extracted')"
                     >
                       {{ row.extractedFileName }}
@@ -632,6 +632,8 @@ onMounted(async () => {
 <style scoped>
 .job-post-page {
   color: var(--text-base);
+  width: 100%;
+  min-width: 0;
 }
 
 .header-main,
@@ -646,6 +648,11 @@ onMounted(async () => {
   display: grid;
   gap: 1rem;
   grid-template-columns: minmax(290px, 360px) minmax(0, 1fr);
+  min-width: 0;
+}
+
+.top-grid > * {
+  min-width: 0;
 }
 
 .job-post-list-card {
@@ -701,6 +708,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-width: 0;
 }
 
 .form-grid {
@@ -717,10 +725,23 @@ onMounted(async () => {
 
 .applications-card {
   margin-top: 0.25rem;
+  min-width: 0;
+}
+
+.applications-card .card-header,
+.job-post-form-card > .card-header {
+  flex-wrap: wrap;
+}
+
+.applications-card .card-header > *,
+.job-post-form-card > .card-header > * {
+  min-width: 0;
 }
 
 .table-search-wrap {
+  flex: 1 1 320px;
   width: min(420px, 100%);
+  min-width: min(320px, 100%);
 }
 
 .table-search-wrap .search-input {
@@ -732,6 +753,9 @@ onMounted(async () => {
   align-items: center;
   justify-content: flex-end;
   gap: 0.75rem;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .select-all {
@@ -751,6 +775,53 @@ onMounted(async () => {
 .applications-card :deep(thead th:first-child),
 .applications-card :deep(tbody td:first-child) {
   width: 48px;
+}
+
+.table-wrap {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.application-table {
+  table-layout: fixed;
+}
+
+.application-table th,
+.application-table td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.application-table th:nth-child(5),
+.application-table td:nth-child(5) {
+  width: 140px;
+}
+
+.application-table th:nth-child(6),
+.application-table td:nth-child(6),
+.application-table th:nth-child(7),
+.application-table td:nth-child(7) {
+  width: 190px;
+  max-width: 190px;
+}
+
+.application-table th:nth-child(8),
+.application-table td:nth-child(8) {
+  width: 168px;
+}
+
+.file-column {
+  min-width: 0;
+  max-width: 190px;
+}
+
+.file-link {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .match-score {
@@ -802,6 +873,7 @@ onMounted(async () => {
 
   .table-search-wrap {
     width: 100%;
+    min-width: 0;
   }
 }
 </style>

@@ -21,7 +21,7 @@ export const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType
     throw new HttpError(422, '履歷未提取到可用文字內容，請確認檔案不是圖片或空白檔。')
   }
 
-  const primaryContent = await extractCandidateInfoByLlm(cvText)
+  const primaryContent = await extractCandidateInfoByLlm(cvText, fileName)
   const parsed = parseLlmContentToJson(primaryContent)
   if (!parsed) {
     throw new LlmOutputFormatError('CV extraction LLM output is not valid JSON')
