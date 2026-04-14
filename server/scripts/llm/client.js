@@ -12,9 +12,10 @@ export const buildLlmChatCompletionsUrl = (baseUrl) => {
   return `${normalized}/chat/completions`
 }
 
-export const buildCvLlmInputContent = (cvText) => `${getCvLlmPrompt()}\n\nCV text content:\n${cvText}`
+export const buildCvLlmInputContent = (cvText, fileName = '') =>
+  `${getCvLlmPrompt()}\n\nCV file name:\n${String(fileName || '')}\n\nCV text content:\n${String(cvText || '')}`
 
-export const buildCvLlmRetryInputContent = (cvText, previousContent = '') => [
+export const buildCvLlmRetryInputContent = (cvText, fileName = '', previousContent = '') => [
   getCvLlmPrompt(),
   '',
   '重要補充要求：',
@@ -22,6 +23,9 @@ export const buildCvLlmRetryInputContent = (cvText, previousContent = '') => [
   '2. 這一次請只輸出一個完整、可解析的 JSON 物件。',
   '3. 不要輸出任何額外說明、不要輸出 Markdown、不要輸出程式碼區塊。',
   previousContent ? `上一次的錯誤輸出如下，僅供你修正格式參考：\n${String(previousContent).slice(0, 1500)}` : '',
+  '',
+  'CV file name:',
+  String(fileName || ''),
   '',
   'CV text content:',
   String(cvText || ''),
@@ -193,15 +197,15 @@ export const buildJsonTaskInputContent = (prompt, payload) => {
   return `${promptText}\n\nInput JSON:\n${payloadText}`
 }
 
-export const extractCandidateInfoByLlm = async (cvText) => {
+export const extractCandidateInfoByLlm = async (cvText, fileName = '') => {
   const { maxTokens } = getLlmConfig()
-  const llmInputContent = buildCvLlmInputContent(cvText)
+  const llmInputContent = buildCvLlmInputContent(cvText, fileName)
   return callLlmPrompt(llmInputContent, { maxTokens, temperature: 0 })
 }
 
-export const retryExtractCandidateInfoByLlm = async (cvText, previousContent = '') => {
+export const retryExtractCandidateInfoByLlm = async (cvText, fileName = '', previousContent = '') => {
   const { maxTokens } = getLlmConfig()
-  const llmInputContent = buildCvLlmRetryInputContent(cvText, previousContent)
+  const llmInputContent = buildCvLlmRetryInputContent(cvText, fileName, previousContent)
   return callLlmPrompt(llmInputContent, { maxTokens, temperature: 0 })
 }
 
