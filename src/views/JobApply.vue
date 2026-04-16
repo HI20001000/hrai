@@ -95,7 +95,7 @@ const handleUploadCompleted = async (payload = {}) => {
     return
   }
 
-  message.value = 'CV 匹配完成，已同步更新到 CV 管理'
+  message.value = 'CV 匹配完成，已同步更新到候選人管理'
   await loadOpenJobPosts()
   window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
 }
@@ -109,11 +109,11 @@ onMounted(async () => {
   <section class="job-apply-page">
     <header class="page-header">
       <div>
-        <h2>候選人CV上傳</h2>
+        <h2>上傳候選人CV</h2>
         <p>先挑選一個開放中的職位，再提交單份或多份 CV。系統會依照該職位綁定的金融職位資料逐份完成匹配。</p>
       </div>
       <button type="button" class="primary-btn" :disabled="!selectedJobPost?.id" @click="openUploadModal">
-        上傳 CV 到目前職位
+        上傳候選人CV
       </button>
     </header>
 

@@ -171,7 +171,7 @@ export const buildCandidateProfile = (extracted = {}) => {
 export const buildJobIndex = (dictionary = {}) =>
   Object.entries(dictionary).map(([jobKey, job]) => ({
     jobKey,
-    title: normalizeText(job?.title),
+    title: normalizeText(jobKey),
     industry: normalizeList(job?.industry, 10),
     roleKeywords: normalizeList(job?.roleKeywords, 10),
     requiredSkills: normalizeList(job?.requiredSkills, 10),
@@ -186,7 +186,7 @@ export const buildFullJobCards = (dictionary = {}, jobKeys = []) =>
       if (!job) return null
       return {
         jobKey,
-        title: normalizeText(job.title),
+        title: normalizeText(jobKey),
         description: normalizeText(job.description),
         industry: normalizeList(job.industry, 10),
         roleKeywords: normalizeList(job.roleKeywords, 10),
@@ -256,7 +256,7 @@ const normalizeRankedJobs = (payload, dictionary) => {
     const score = normalizeScore(item?.matchScore)
     deduped.push({
       jobKey,
-      jobTitle: normalizeText(dictionary[jobKey]?.title),
+      jobTitle: normalizeText(jobKey),
       matchScore: score,
       matchLevel: normalizeMatchLevel(item?.matchLevel),
       strengths: normalizeList(item?.strengths, 3),

@@ -1,6 +1,13 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
+
+const props = defineProps({
+  selectedTitle: {
+    type: String,
+    default: '',
+  },
+})
 
 const emit = defineEmits(['updated'])
 
@@ -9,8 +16,8 @@ const jobDictionarySaving = ref(false)
 const jobDictionaryMessage = ref('')
 const jobDictionaryError = ref('')
 const jobDictionary = ref({})
-const selectedJobKey = ref('')
-const newJobKey = ref('')
+const selectedJobTitle = ref('')
+const newJobTitle = ref('')
 const jobDraft = ref(null)
 
 const WEIGHT_FIELDS = [
@@ -40,7 +47,6 @@ const normalizeListText = (value) =>
     .filter(Boolean)
 
 const createEmptyJob = () => ({
-  title: '',
   description: '',
   industry: [],
   roleKeywords: [],
@@ -61,10 +67,10 @@ const createEmptyJob = () => ({
   },
 })
 
-const buildJobDraft = (job) => {
+const buildJobDraft = (jobTitle, job) => {
   const source = job && typeof job === 'object' ? job : createEmptyJob()
   return {
-    title: normalizeText(source.title),
+    title: normalizeText(jobTitle),
     description: normalizeText(source.description),
     industryText: (source.industry || []).join(', '),
     roleKeywordsText: (source.roleKeywords || []).join(', '),
@@ -82,7 +88,6 @@ const buildJobDraft = (job) => {
 }
 
 const draftToJob = (draft) => ({
-  title: normalizeText(draft?.title),
   description: normalizeText(draft?.description),
   industry: normalizeListText(draft?.industryText),
   roleKeywords: normalizeListText(draft?.roleKeywordsText),
@@ -113,27 +118,41 @@ const getAuthContext = () => {
   }
 }
 
-const sortedJobEntries = computed(() =>
-  Object.entries(jobDictionary.value || {}).sort((a, b) => a[0].localeCompare(b[0]))
+const sortedJobTitles = computed(() =>
+  Object.keys(jobDictionary.value || {}).sort((a, b) => a.localeCompare(b))
 )
 
 const rawDictionaryPreview = computed(() => JSON.stringify(jobDictionary.value || {}, null, 2))
 
-const activeJobTitle = computed(() => {
-  const job = jobDictionary.value?.[selectedJobKey.value]
-  return normalizeText(job?.title) || selectedJobKey.value || '未選擇職位'
-})
+const activeJobTitle = computed(() => selectedJobTitle.value || '未選擇職位')
 
-const selectJob = (jobKey) => {
-  selectedJobKey.value = normalizeText(jobKey)
-  jobDraft.value = buildJobDraft(jobDictionary.value?.[selectedJobKey.value])
+const emitUpdated = () => {
+  emit('updated', jobDictionary.value)
+}
+
+const setSelectedJob = (jobTitle) => {
+  const normalizedTitle = normalizeText(jobTitle)
+  selectedJobTitle.value = normalizedTitle
+  jobDraft.value = normalizedTitle && jobDictionary.value?.[normalizedTitle]
+    ? buildJobDraft(normalizedTitle, jobDictionary.value[normalizedTitle])
+    : null
   jobDictionaryMessage.value = ''
   jobDictionaryError.value = ''
 }
 
-const validateJobDraft = (jobKey, nextJob) => {
-  if (!normalizeText(jobKey)) throw new Error('職位代碼不可為空')
-  if (!normalizeText(nextJob.title)) throw new Error('職位名稱不可為空')
+const syncExternalSelection = (title) => {
+  const normalizedTitle = normalizeText(title)
+  if (!normalizedTitle) return
+  if (jobDictionary.value[normalizedTitle]) {
+    setSelectedJob(normalizedTitle)
+    return
+  }
+  selectedJobTitle.value = ''
+  jobDraft.value = null
+}
+
+const validateJobDraft = (jobTitle, nextJob) => {
+  if (!normalizeText(jobTitle)) throw new Error('職位名稱不可為空')
   if (!normalizeText(nextJob.description)) throw new Error('職位描述不可為空')
   if (!nextJob.industry.length) throw new Error('行業背景至少需填 1 項')
   if (!nextJob.roleKeywords.length) throw new Error('職位關鍵字至少需填 1 項')
@@ -154,20 +173,39 @@ const validateJobDraft = (jobKey, nextJob) => {
 }
 
 const commitSelectedJobDraft = () => {
-  if (!selectedJobKey.value || !jobDraft.value) {
+  if (!selectedJobTitle.value || !jobDraft.value) {
     jobDictionaryError.value = '請先選擇職位'
     return false
   }
 
   try {
+    const nextTitle = normalizeText(jobDraft.value.title)
     const nextJob = draftToJob(jobDraft.value)
-    validateJobDraft(selectedJobKey.value, nextJob)
-    jobDictionary.value = {
-      ...jobDictionary.value,
-      [selectedJobKey.value]: nextJob,
+    validateJobDraft(nextTitle, nextJob)
+
+    if (nextTitle !== selectedJobTitle.value && jobDictionary.value[nextTitle]) {
+      throw new Error('職位名稱已存在')
     }
-    jobDictionaryMessage.value = `已套用 ${selectedJobKey.value} 的編輯內容`
+
+    const nextDictionary = {}
+    for (const title of sortedJobTitles.value) {
+      if (title === selectedJobTitle.value) {
+        nextDictionary[nextTitle] = nextJob
+      } else {
+        nextDictionary[title] = jobDictionary.value[title]
+      }
+    }
+
+    if (!nextDictionary[nextTitle]) {
+      nextDictionary[nextTitle] = nextJob
+    }
+
+    jobDictionary.value = nextDictionary
+    selectedJobTitle.value = nextTitle
+    jobDraft.value = buildJobDraft(nextTitle, nextJob)
+    jobDictionaryMessage.value = `已套用「${nextTitle}」的編輯內容`
     jobDictionaryError.value = ''
+    emitUpdated()
     return true
   } catch (error) {
     jobDictionaryError.value = error?.message || '職位資料驗證失敗'
@@ -200,16 +238,17 @@ const loadJobDictionary = async () => {
     }
 
     jobDictionary.value = data.dictionary && typeof data.dictionary === 'object' ? data.dictionary : {}
-    const firstKey = selectedJobKey.value && jobDictionary.value[selectedJobKey.value]
-      ? selectedJobKey.value
-      : Object.keys(jobDictionary.value)[0] || ''
-    if (firstKey) {
-      selectJob(firstKey)
+    if (normalizeText(props.selectedTitle)) {
+      syncExternalSelection(props.selectedTitle)
     } else {
-      selectedJobKey.value = ''
-      jobDraft.value = null
+      const firstTitle = sortedJobTitles.value[0] || ''
+      if (firstTitle) setSelectedJob(firstTitle)
+      else {
+        selectedJobTitle.value = ''
+        jobDraft.value = null
+      }
     }
-    emit('updated', jobDictionary.value)
+    emitUpdated()
   } catch {
     jobDictionaryError.value = '讀取職位字典失敗'
   } finally {
@@ -218,44 +257,48 @@ const loadJobDictionary = async () => {
 }
 
 const addJob = () => {
-  const jobKey = normalizeText(newJobKey.value)
-  if (!jobKey) {
-    jobDictionaryError.value = '請輸入新的職位代碼'
+  const title = normalizeText(newJobTitle.value)
+  if (!title) {
+    jobDictionaryError.value = '請輸入新的職位名稱'
     return
   }
-  if (jobDictionary.value[jobKey]) {
-    jobDictionaryError.value = '職位代碼已存在'
+  if (jobDictionary.value[title]) {
+    jobDictionaryError.value = '職位名稱已存在'
     return
   }
 
   jobDictionary.value = {
     ...jobDictionary.value,
-    [jobKey]: createEmptyJob(),
+    [title]: createEmptyJob(),
   }
-  newJobKey.value = ''
-  selectJob(jobKey)
-  jobDictionaryMessage.value = `已新增職位「${jobKey}」，請編輯後儲存字典`
+  newJobTitle.value = ''
+  setSelectedJob(title)
+  jobDictionaryMessage.value = `已新增職位「${title}」，請編輯後儲存字典`
+  emitUpdated()
 }
 
 const deleteSelectedJob = () => {
-  if (!selectedJobKey.value || !jobDictionary.value[selectedJobKey.value]) {
+  if (!selectedJobTitle.value || !jobDictionary.value[selectedJobTitle.value]) {
     jobDictionaryError.value = '請先選擇要刪除的職位'
     return
   }
 
+  const confirmed = window.confirm(`確定刪除職位字典「${selectedJobTitle.value}」？`)
+  if (!confirmed) return
+
   const nextDictionary = { ...jobDictionary.value }
-  delete nextDictionary[selectedJobKey.value]
+  delete nextDictionary[selectedJobTitle.value]
   jobDictionary.value = nextDictionary
-  const nextKey = Object.keys(nextDictionary)[0] || ''
-  if (nextKey) {
-    selectJob(nextKey)
+  const nextTitle = Object.keys(nextDictionary).sort((a, b) => a.localeCompare(b))[0] || ''
+  if (nextTitle) {
+    setSelectedJob(nextTitle)
   } else {
-    selectedJobKey.value = ''
+    selectedJobTitle.value = ''
     jobDraft.value = null
   }
   jobDictionaryMessage.value = '已從當前字典草稿移除職位，記得儲存整份字典'
   jobDictionaryError.value = ''
-  emit('updated', jobDictionary.value)
+  emitUpdated()
 }
 
 const saveJobDictionaryConfig = async () => {
@@ -283,17 +326,26 @@ const saveJobDictionaryConfig = async () => {
     }
 
     jobDictionary.value = data.dictionary && typeof data.dictionary === 'object' ? data.dictionary : jobDictionary.value
-    if (selectedJobKey.value) {
-      jobDraft.value = buildJobDraft(jobDictionary.value[selectedJobKey.value])
+    if (selectedJobTitle.value && jobDictionary.value[selectedJobTitle.value]) {
+      jobDraft.value = buildJobDraft(selectedJobTitle.value, jobDictionary.value[selectedJobTitle.value])
     }
-    jobDictionaryMessage.value = '職位字典已更新，僅影響之後新建立的 Job Post 或新觸發匹配的 CV'
-    emit('updated', jobDictionary.value)
+    jobDictionaryMessage.value = '職位字典已更新，僅影響之後新上傳或新觸發匹配的 CV'
+    emitUpdated()
   } catch {
     jobDictionaryError.value = '儲存職位字典失敗'
   } finally {
     jobDictionarySaving.value = false
   }
 }
+
+watch(
+  () => props.selectedTitle,
+  (value) => {
+    if (!jobDictionaryLoading.value && Object.keys(jobDictionary.value).length) {
+      syncExternalSelection(value)
+    }
+  }
+)
 
 onMounted(() => {
   loadJobDictionary()
@@ -305,61 +357,71 @@ onMounted(() => {
     <header class="card-header">
       <div>
         <h3>職位字典配置</h3>
-        <p>維護 `finance-job-positions.json`。更新後會影響之後新建立的 Job Post。</p>
+        <p>維護 `finance-job-positions.json`。更新後僅影響之後新上傳或新觸發匹配的 CV。</p>
       </div>
-      <button type="button" class="secondary-btn" :disabled="jobDictionaryLoading || jobDictionarySaving" @click="loadJobDictionary">
-        重新載入
-      </button>
-    </header>
-
-    <div class="dictionary-create-row">
-      <input
-        v-model.trim="newJobKey"
-        type="text"
-        placeholder="輸入新的職位代碼，例如 客戶經理 或 compliance_officer"
-        :disabled="jobDictionaryLoading || jobDictionarySaving"
-      />
-      <button type="button" class="secondary-btn" :disabled="jobDictionaryLoading || jobDictionarySaving" @click="addJob">
-        新增職位
-      </button>
       <button
         type="button"
-        class="danger-btn"
-        :disabled="!selectedJobKey || jobDictionaryLoading || jobDictionarySaving"
-        @click="deleteSelectedJob"
+        class="secondary-btn"
+        :disabled="jobDictionaryLoading || jobDictionarySaving"
+        @click="loadJobDictionary"
       >
-        刪除當前職位
+        刷新
       </button>
-    </div>
+    </header>
 
     <p v-if="jobDictionaryMessage" class="success-msg">{{ jobDictionaryMessage }}</p>
     <p v-if="jobDictionaryError" class="error-msg">{{ jobDictionaryError }}</p>
 
     <div class="dictionary-layout">
       <aside class="dictionary-sidebar">
-        <p class="sidebar-title">職位列表</p>
+        <div class="sidebar-header">
+          <p class="sidebar-title">職位列表</p>
+          <div class="dictionary-create-row">
+            <input
+              v-model.trim="newJobTitle"
+              type="text"
+              placeholder="輸入新的職位名稱"
+              :disabled="jobDictionaryLoading || jobDictionarySaving"
+            />
+            <button
+              type="button"
+              class="secondary-btn"
+              :disabled="jobDictionaryLoading || jobDictionarySaving"
+              @click="addJob"
+            >
+              新增職位
+            </button>
+          </div>
+        </div>
+
         <div class="job-list">
           <button
-            v-for="[jobKey, job] in sortedJobEntries"
-            :key="jobKey"
+            v-for="jobTitle in sortedJobTitles"
+            :key="jobTitle"
             type="button"
             class="job-list-item"
-            :class="{ active: selectedJobKey === jobKey }"
-            @click="selectJob(jobKey)"
+            :class="{ active: selectedJobTitle === jobTitle }"
+            @click="setSelectedJob(jobTitle)"
           >
-            <strong>{{ job.title || jobKey }}</strong>
-            <span>{{ jobKey }}</span>
+            <strong>{{ jobTitle }}</strong>
           </button>
         </div>
       </aside>
 
       <section class="dictionary-editor">
-        <template v-if="selectedJobKey && jobDraft">
+        <template v-if="selectedJobTitle && jobDraft">
           <div class="editor-header">
             <div>
               <h4>{{ activeJobTitle }}</h4>
-              <p>{{ selectedJobKey }}</p>
             </div>
+            <button
+              type="button"
+              class="danger-btn"
+              :disabled="jobDictionaryLoading || jobDictionarySaving"
+              @click="deleteSelectedJob"
+            >
+              刪除當前職位
+            </button>
           </div>
 
           <div class="editor-grid">
@@ -420,7 +482,7 @@ onMounted(() => {
           </div>
 
           <section class="weight-section">
-            <p class="weight-title">Weights</p>
+            <p class="weight-title">權重</p>
             <div class="weight-grid">
               <label v-for="field in WEIGHT_FIELDS" :key="field.key" class="field">
                 <span>{{ field.label }}</span>
@@ -433,7 +495,12 @@ onMounted(() => {
             <button type="button" class="secondary-btn" :disabled="jobDictionarySaving" @click="commitSelectedJobDraft">
               套用當前編輯
             </button>
-            <button type="button" class="primary-btn" :disabled="jobDictionaryLoading || jobDictionarySaving" @click="saveJobDictionaryConfig">
+            <button
+              type="button"
+              class="primary-btn"
+              :disabled="jobDictionaryLoading || jobDictionarySaving"
+              @click="saveJobDictionaryConfig"
+            >
               {{ jobDictionarySaving ? '儲存中...' : '儲存整份字典' }}
             </button>
           </div>
@@ -471,12 +538,11 @@ onMounted(() => {
   color: var(--text-strong);
 }
 
-.job-list-item span,
-.editor-header p,
 .empty-dictionary-state {
   color: var(--text-muted);
 }
 
+.sidebar-header,
 .dictionary-create-row,
 .actions {
   display: flex;
@@ -484,14 +550,19 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
+.sidebar-header {
+  flex-direction: column;
+  margin-bottom: 0.9rem;
+}
+
 .dictionary-create-row input {
   flex: 1;
-  min-width: 220px;
+  min-width: 180px;
 }
 
 .dictionary-layout {
   display: grid;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   gap: 1rem;
 }
 
@@ -531,41 +602,64 @@ onMounted(() => {
 }
 
 .job-list-item.active {
-  border-color: rgba(47, 111, 237, 0.2);
-  background: rgba(47, 111, 237, 0.08);
+  border-color: rgba(47, 111, 237, 0.18);
+  background: linear-gradient(180deg, rgba(47, 111, 237, 0.1), rgba(255, 255, 255, 0.82));
+}
+
+.dictionary-editor {
+  display: grid;
+  gap: 1rem;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
 }
 
 .editor-grid,
 .weight-grid {
   display: grid;
   gap: 0.85rem;
+}
+
+.editor-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.weight-section {
-  display: grid;
-  gap: 0.75rem;
+.weight-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.full-width {
+  grid-column: 1 / -1;
 }
 
 .raw-preview {
   margin: 0;
   max-height: 320px;
   overflow: auto;
-  background: var(--surface-inverse);
-  color: rgba(255, 255, 255, 0.82);
-  border-radius: 18px;
   padding: 0.9rem;
-  font-size: 0.84rem;
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  line-height: 1.55;
 }
 
-@media (max-width: 1100px) {
-  .dictionary-layout {
-    grid-template-columns: 1fr;
-  }
-
+@media (max-width: 960px) {
+  .dictionary-layout,
   .editor-grid,
   .weight-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .editor-header {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>

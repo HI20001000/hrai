@@ -160,7 +160,8 @@ export const ensureCvTables = async (pool) => {
       job_post_id BIGINT NOT NULL,
       candidate_id BIGINT NOT NULL,
       candidate_cv_id BIGINT NOT NULL,
-      application_status VARCHAR(40) NOT NULL DEFAULT 'submitted',
+      application_status VARCHAR(40) NOT NULL DEFAULT 'screening',
+      remark TEXT NULL,
       matched_score INT NULL,
       matched_level VARCHAR(20) NULL,
       matched_position VARCHAR(255) NULL,
@@ -173,6 +174,23 @@ export const ensureCvTables = async (pool) => {
       CONSTRAINT fk_job_post_applications_candidate FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE,
       CONSTRAINT fk_job_post_applications_cv FOREIGN KEY (candidate_cv_id) REFERENCES candidate_cvs(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `)
+
+  await pool.query(`
+    ALTER TABLE job_post_applications
+    MODIFY COLUMN application_status VARCHAR(40) NOT NULL DEFAULT 'screening'
+  `)
+
+  try {
+    await pool.query('ALTER TABLE job_post_applications ADD COLUMN remark TEXT NULL AFTER application_status')
+  } catch (error) {
+    if (!/duplicate column name/i.test(String(error?.message || ''))) throw error
+  }
+
+  await pool.query(`
+    UPDATE job_post_applications
+    SET application_status = 'screening'
+    WHERE application_status = 'submitted' OR application_status IS NULL OR application_status = ''
   `)
 }
 
