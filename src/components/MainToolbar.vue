@@ -19,8 +19,8 @@ const isMobileMenuOpen = ref(false)
 
 const pageItems = [
   { key: 'reports', label: '職缺管理', description: '管理職缺與投遞', icon: 'briefcase' },
-  { key: 'cv', label: 'CV 管理', description: '查看候選人資料', icon: 'document' },
-  { key: 'files', label: '候選人CV上傳', description: '上傳履歷與應徵', icon: 'tray' },
+  { key: 'cv', label: '候選人管理', description: '查看候選人資料', icon: 'document' },
+  { key: 'files', label: '上傳候選人CV', description: '上傳履歷與應徵', icon: 'tray' },
 ]
 
 const settingsItem = {

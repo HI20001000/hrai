@@ -59,7 +59,7 @@ const cvUploadCache = new Map()
 const DB_NAME = getDatabaseName()
 const withCors = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 }
 
@@ -603,13 +603,29 @@ const updateJobPost = async (pool, req, res, jobPostId) => {
 
   const body = await parseBody(req)
   const title = normalizeText(body?.title)
+  const jobKey = normalizeText(body?.jobKey || existing.jobKey)
   const status = normalizeJobPostStatus(body?.status || existing.status)
+  const dictionary = getJobDictionary()
+  const dictionaryJob = dictionary?.[jobKey]
   if (!title) {
     sendJson(res, 400, { message: 'title is required' })
     return
   }
+  if (!jobKey) {
+    sendJson(res, 400, { message: 'jobKey is required' })
+    return
+  }
+  if (!dictionaryJob) {
+    sendJson(res, 400, { message: 'Invalid jobKey' })
+    return
+  }
 
-  await pool.query('UPDATE job_posts SET title = ?, status = ? WHERE id = ?', [title, status, jobPostId])
+  const snapshot = buildJobSnapshot(jobKey, dictionaryJob)
+
+  await pool.query(
+    'UPDATE job_posts SET title = ?, job_key = ?, job_snapshot_json = ?, status = ? WHERE id = ?',
+    [title, jobKey, stringifyJson(snapshot), status, jobPostId]
+  )
   const updated = await getJobPostById(pool, jobPostId)
   sendJson(res, 200, { message: 'Job post updated', jobPost: updated })
 }
@@ -690,6 +706,7 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
     `SELECT
         app.id AS applicationId,
         app.application_status AS applicationStatus,
+        app.remark AS remark,
         app.matched_score AS matchedScore,
         app.matched_level AS matchedLevel,
         app.matched_position AS matchedPosition,
@@ -719,7 +736,8 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
     },
     applications: rows.map((row) => ({
       applicationId: Number(row.applicationId),
-      applicationStatus: normalizeText(row.applicationStatus) || 'submitted',
+      applicationStatus: normalizeApplicationStatus(row.applicationStatus),
+      remark: normalizeText(row.remark),
       candidateId: Number(row.candidateId),
       fullName: normalizeText(row.fullName),
       targetPosition: normalizeText(row.targetPosition),
@@ -743,6 +761,7 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
         app.candidate_id AS candidateId,
         app.candidate_cv_id AS candidateCvId,
         app.application_status AS applicationStatus,
+        app.remark AS remark,
         app.matched_score AS matchedScore,
         app.matched_level AS matchedLevel,
         app.matched_position AS matchedPosition,
@@ -771,7 +790,8 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
       jobPostId: Number(row.jobPostId),
       candidateId: Number(row.candidateId),
       candidateCvId: Number(row.candidateCvId),
-      applicationStatus: normalizeText(row.applicationStatus) || 'submitted',
+      applicationStatus: normalizeApplicationStatus(row.applicationStatus),
+      remark: normalizeText(row.remark),
       matchedScore: Number(row.matchedScore || 0),
       matchedLevel: normalizeText(row.matchedLevel),
       matchedPosition: normalizeText(row.matchedPosition),
@@ -780,6 +800,52 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
       phone: normalizeText(row.phone),
       cvFileName: normalizeText(row.cvFileName),
       createdAt: row.createdAt,
+    },
+  })
+}
+
+const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => {
+  const [rows] = await pool.query(
+    'SELECT id, application_status AS applicationStatus, remark FROM job_post_applications WHERE id = ? LIMIT 1',
+    [applicationId]
+  )
+  const existing = rows[0]
+  if (!existing) {
+    sendJson(res, 404, { message: 'Application not found' })
+    return
+  }
+
+  const body = await parseBody(req)
+  const hasStatus = body && Object.prototype.hasOwnProperty.call(body, 'applicationStatus')
+  const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
+  if (!hasStatus && !hasRemark) {
+    sendJson(res, 400, { message: 'applicationStatus or remark is required' })
+    return
+  }
+
+  const nextStatus = hasStatus
+    ? normalizeApplicationStatus(body?.applicationStatus, '')
+    : normalizeApplicationStatus(existing.applicationStatus)
+  if (hasStatus && !nextStatus) {
+    sendJson(res, 400, { message: 'Invalid applicationStatus' })
+    return
+  }
+
+  const nextRemark = hasRemark ? normalizeApplicationRemark(body?.remark) : normalizeApplicationRemark(existing.remark)
+
+  await pool.query(
+    `UPDATE job_post_applications
+      SET application_status = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [nextStatus, nextRemark, applicationId]
+  )
+
+  sendJson(res, 200, {
+    message: 'Candidate application updated',
+    application: {
+      applicationId,
+      applicationStatus: nextStatus,
+      remark: nextRemark || '',
     },
   })
 }
@@ -1032,6 +1098,37 @@ const normalizeJobPostStatus = (value) => {
   return 'open'
 }
 
+const APPLICATION_STATUS_VALUES = new Set([
+  'screening',
+  'screening_rejected',
+  'hr_interview',
+  'hr_interview_rejected',
+  'department_interview',
+  'department_interview_rejected',
+  'salary_review',
+  'offer_sent',
+  'onboarded',
+  'transferred',
+  'no_show_or_unreachable',
+  'offer_rejected',
+  'hr_withdrew_onboarding',
+])
+
+const normalizeApplicationStatus = (value, fallback = 'screening') => {
+  const normalized = normalizeText(value).toLowerCase()
+  const mapped = normalized === 'submitted'
+    ? 'screening'
+    : normalized === 'rejected'
+      ? 'screening_rejected'
+      : normalized
+  return APPLICATION_STATUS_VALUES.has(mapped) ? mapped : fallback
+}
+
+const normalizeApplicationRemark = (value) => {
+  const text = String(value ?? '').trim()
+  return text ? text.slice(0, 4000) : null
+}
+
 const parseJobSnapshot = (value) => {
   if (!value) return null
   const parsed = typeof value === 'string' ? parseJsonObject(value) : value
@@ -1040,7 +1137,7 @@ const parseJobSnapshot = (value) => {
 
 const buildJobSnapshot = (jobKey, dictionaryJob = {}) => ({
   jobKey: normalizeText(jobKey),
-  title: normalizeText(dictionaryJob?.title),
+  title: normalizeText(jobKey),
   description: normalizeText(dictionaryJob?.description),
   industry: normalizeList(dictionaryJob?.industry, 20),
   roleKeywords: normalizeList(dictionaryJob?.roleKeywords, 20),
@@ -1151,7 +1248,7 @@ const createJobPostApplication = async (pool, jobPostId, candidateId, candidateC
   const [result] = await pool.query(
     `INSERT INTO job_post_applications
       (job_post_id, candidate_id, candidate_cv_id, application_status, matched_score, matched_level, matched_position)
-     VALUES (?, ?, ?, 'submitted', ?, ?, ?)`,
+     VALUES (?, ?, ?, 'screening', ?, ?, ?)`,
     [
       jobPostId,
       candidateId,
@@ -1602,6 +1699,8 @@ const intakeCv = async (pool, req, res, jobPostId = null) => {
     application: {
       id: applicationId,
       jobPostId: jobPost.id,
+      applicationStatus: 'screening',
+      remark: '',
       matchedScore: Number(match?.matchScore || 0),
       matchedLevel: normalizeText(match?.matchLevel),
       matchedPosition: normalizeText(match?.matchedPosition || match?.jobTitle),
@@ -1730,6 +1829,7 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
     `SELECT
         app.id AS applicationId,
         app.application_status AS applicationStatus,
+        app.remark AS remark,
         app.matched_score AS matchedScore,
         app.matched_level AS matchedLevel,
         app.matched_position AS matchedPosition,
@@ -1755,7 +1855,8 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
   sendJson(res, 200, {
     applications: rows.map((row) => ({
       applicationId: Number(row.applicationId),
-      applicationStatus: normalizeText(row.applicationStatus) || 'submitted',
+      applicationStatus: normalizeApplicationStatus(row.applicationStatus),
+      remark: normalizeText(row.remark),
       matchedScore: Number(row.matchedScore || 0),
       matchedLevel: normalizeText(row.matchedLevel),
       matchedPosition: normalizeText(row.matchedPosition),
@@ -2141,6 +2242,14 @@ const start = async () => {
       const applicationMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)$/)
       if (applicationMatch && req.method === 'GET') {
         return getJobPostApplication(pool, req, res, Number(applicationMatch[1]))
+      }
+      if (applicationMatch && req.method === 'PATCH') {
+        return updateJobPostApplicationStatus(pool, req, res, Number(applicationMatch[1]))
+      }
+
+      const applicationStatusMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)\/status$/)
+      if (applicationStatusMatch && req.method === 'PATCH') {
+        return updateJobPostApplicationStatus(pool, req, res, Number(applicationStatusMatch[1]))
       }
 
       const applicationResultMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)\/match$/)

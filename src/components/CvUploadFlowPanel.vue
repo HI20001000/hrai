@@ -123,9 +123,12 @@ const batchProgressLabel = computed(() => {
   if (matchedItems.value.length) return '最新批量匹配結果'
   return '批量解析結果'
 })
+
+const batchSelectActionLabel = computed(() => (allMatchableSelected.value ? '取消勾選' : '勾選全部'))
+
 const batchPrimaryActionLabel = computed(() => {
-  if (batchHasSelection.value) return `匹配已選 ${selectedMatchableItems.value.length} 份 CV`
-  return '匹配全部可匹配 CV'
+  if (batchHasSelection.value) return `開始匹配勾選項目（${selectedMatchableItems.value.length}）`
+  return '開始匹配全部'
 })
 
 const hasSingleMatchResult = computed(() => !!singleMatchResult.value)
@@ -209,7 +212,7 @@ const getMessageSegments = (value) => {
   const text = String(value || '')
   if (!text) return []
 
-  const batchParseMatch = text.match(/^(批量解析完成：可匹配 )(\d+ 份)(，失敗 )(\d+ 份)$/)
+  const batchParseMatch = text.match(/^(批量解析完成：成功 )(\d+ 份)(，失敗 )(\d+ 份)$/)
   if (batchParseMatch) {
     return [
       { text: batchParseMatch[1], tone: '' },
@@ -758,7 +761,7 @@ const startBatchProcessing = async () => {
   isBatchParsing.value = false
   currentBatchItemId.value = ''
   currentBatchStage.value = ''
-  message.value = `批量解析完成：可匹配 ${parsedReadyItems.value.length} 份，失敗 ${batchItems.value.filter((item) => item.status === 'error').length} 份`
+  message.value = `批量解析完成：成功 ${parsedReadyItems.value.length} 份，失敗 ${batchItems.value.filter((item) => item.status === 'error').length} 份`
 
   const firstReadyItem = batchItems.value.find((item) => item.status === 'parsed' || item.status === 'match-error')
   if (firstReadyItem) activeBatchItemId.value = firstReadyItem.id
@@ -828,7 +831,7 @@ const matchBatchItemsByIds = async (itemIds, actionLabel = '批量匹配') => {
         cacheId: workingCacheId,
         status: 'matched',
         stage: 'matched',
-        message: intakeResult.data?.message || '已完成匹配並上傳到 CV 管理',
+        message: intakeResult.data?.message || '已完成匹配並同步到候選人管理',
         applicationId: intakeResult.data?.application?.id ? Number(intakeResult.data.application.id) : null,
         matchedPosition:
           intakeResult.data?.application?.matchedPosition ||
@@ -1102,7 +1105,7 @@ const clearBatchQueueLegacy = () => {
 
       <div class="batch-toolbar">
         <p class="batch-toolbar-hint">
-          點選左側 CV 查看與編輯；勾選後可批量匹配，不勾選時會直接匹配全部可處理 CV。
+          點選左側 CV 查看與編輯；可先勾選想處理的 CV，不勾選時會直接匹配全部可處理 CV。
         </p>
         <button
           type="button"
@@ -1110,7 +1113,7 @@ const clearBatchQueueLegacy = () => {
           :disabled="isBusy || !parsedReadyItems.length"
           @click="toggleSelectAllParsed"
         >
-          {{ allMatchableSelected ? '取消全選' : '全選可匹配 CV' }}
+          {{ batchSelectActionLabel }}
         </button>
         <button
           type="button"
@@ -1242,7 +1245,7 @@ const clearBatchQueueLegacy = () => {
 
     <div v-if="!isBatchMode && parsedCandidate" class="card">
       <div class="step-header">
-        <h4>第二步：確認 CV 提取結果</h4>
+        <h4>第二步：確認 AI分析結果</h4>
         <button
           v-if="!isEditingExtracted"
           type="button"
