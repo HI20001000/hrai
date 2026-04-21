@@ -360,7 +360,12 @@ const saveAllEdits = async () => {
             <button type="button" class="cancel-btn" :disabled="isSavingAll" @click="cancelEditAll">取消</button>
           </div>
         </div>
-        <pre v-else class="content">{{ localContent || '（無內容）' }}</pre>
+        <template v-else>
+          <p v-if="props.previewType === 'cv' && !props.downloadUrl" class="hint">
+            原始 CV 檔案已不在儲存空間，目前只能查看已解析內容。
+          </p>
+          <pre class="content">{{ localContent || '（無內容）' }}</pre>
+        </template>
       </div>
     </section>
   </div>

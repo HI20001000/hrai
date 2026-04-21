@@ -204,6 +204,11 @@ const resolveCandidateCvStoragePath = (storageKey) => {
   if (!fileName) return ''
   return path.join(CV_STORAGE_DIR, fileName)
 }
+
+const hasCandidateCvStoredFile = (storageKey) => {
+  const storagePath = resolveCandidateCvStoragePath(storageKey)
+  return !!storagePath && fs.existsSync(storagePath)
+}
 const sha256Buffer = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex')
 
 const cleanupExpiredCvCache = () => {
@@ -716,6 +721,7 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
         c.phone AS phone,
         cv.id AS cvId,
         cv.original_filename AS cvFileName,
+        cv.storage_key AS storageKey,
         extracts.target_position AS targetPosition
       FROM job_post_applications app
       INNER JOIN candidates c ON c.id = app.candidate_id
@@ -748,6 +754,7 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
       cvId: Number(row.cvId),
       cvFileName: normalizeText(row.cvFileName),
       extractedFileName: row.cvFileName ? `${row.cvFileName}.extracted.txt` : '',
+      hasDownload: hasCandidateCvStoredFile(row.storageKey),
       createdAt: row.createdAt,
     })),
   })
@@ -1780,6 +1787,7 @@ const listCandidateCvTable = async (pool, _req, res) => {
         c.created_at AS createdAt,
         latest_cv.id AS cvId,
         latest_cv.original_filename AS cvFileName,
+        latest_cv.storage_key AS storageKey,
         latest_cv.uploaded_at AS cvUploadedAt,
         COALESCE(extracts.target_position, '') AS targetPosition,
         COALESCE(top_match.job_title, '') AS matchedPosition,
@@ -1815,7 +1823,7 @@ const listCandidateCvTable = async (pool, _req, res) => {
     cvId: row.cvId ? Number(row.cvId) : null,
     cvFileName: row.cvFileName || '',
     extractedFileName: row.cvFileName ? `${row.cvFileName}.extracted.txt` : '',
-    hasDownload: !!row.cvId,
+    hasDownload: hasCandidateCvStoredFile(row.storageKey),
     hasCvPreview: Number(row.hasCvPreview || 0) === 1,
     hasExtractedPreview: Number(row.hasExtractedPreview || 0) === 1,
     createdAt: row.createdAt,
@@ -1841,6 +1849,7 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
         c.phone AS phone,
         cv.id AS cvId,
         cv.original_filename AS cvFileName,
+        cv.storage_key AS storageKey,
         COALESCE(extracts.target_position, '') AS targetPosition,
         CASE WHEN extracts.cv_text IS NOT NULL AND extracts.cv_text <> '' THEN 1 ELSE 0 END AS hasCvPreview,
         CASE WHEN extracts.extracted_text IS NOT NULL AND extracts.extracted_text <> '' THEN 1 ELSE 0 END AS hasExtractedPreview
@@ -1870,6 +1879,7 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
       cvFileName: normalizeText(row.cvFileName),
       extractedFileName: row.cvFileName ? `${row.cvFileName}.extracted.txt` : '',
       targetPosition: normalizeText(row.targetPosition),
+      hasDownload: hasCandidateCvStoredFile(row.storageKey),
       hasCvPreview: Number(row.hasCvPreview || 0) === 1,
       hasExtractedPreview: Number(row.hasExtractedPreview || 0) === 1,
     })),
