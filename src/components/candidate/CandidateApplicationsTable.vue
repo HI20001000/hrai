@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
+import AppSelect from '../AppSelect.vue'
 import {
   CANDIDATE_APPLICATION_STATUS_OPTIONS,
   getCandidateApplicationStatusLabel,
@@ -402,20 +403,14 @@ const updateApplicationStatus = async (row, nextStatus) => {
                 :class="[getStatusToneClass(row.applicationStatus), { saving: isStatusSaving(row.applicationId) }]"
               >
                 <span class="status-dot" aria-hidden="true"></span>
-                <select
+                <AppSelect
                   class="status-select"
-                  :value="row.applicationStatus"
+                  :model-value="row.applicationStatus"
+                  :options="CANDIDATE_APPLICATION_STATUS_OPTIONS"
+                  placeholder="請選擇狀態"
                   :disabled="isStatusSaving(row.applicationId)"
-                  @change="updateApplicationStatus(row, $event.target.value)"
-                >
-                  <option
-                    v-for="option in CANDIDATE_APPLICATION_STATUS_OPTIONS"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
+                  @update:model-value="updateApplicationStatus(row, $event)"
+                />
               </div>
               <span v-else class="status-chip" :class="getStatusToneClass(row.applicationStatus)">
                 {{ getCandidateApplicationStatusLabel(row.applicationStatus) }}
@@ -674,27 +669,12 @@ const updateApplicationStatus = async (row, nextStatus) => {
   background: rgba(148, 163, 184, 0.14);
 }
 
-.status-select {
-  width: 100%;
-  min-width: 0;
-  padding: 0.5rem 2rem 0.5rem 1.7rem;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font-size: 0.82rem;
-  font-weight: 700;
-  line-height: 1.2;
-  appearance: none;
-  outline: none;
-  cursor: pointer;
-}
-
 .status-select-wrap {
   position: relative;
   display: inline-flex;
-  align-items: center;
+  align-items: stretch;
   min-width: 196px;
-  max-width: 240px;
+  max-width: 252px;
   border: 1px solid transparent;
   border-radius: 999px;
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04);
@@ -715,18 +695,9 @@ const updateApplicationStatus = async (row, nextStatus) => {
     inset 0 0 0 1px rgba(47, 111, 237, 0.12);
 }
 
-.status-select-wrap::after {
-  content: '';
-  position: absolute;
-  right: 0.8rem;
-  top: 50%;
-  width: 0.45rem;
-  height: 0.45rem;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: translateY(-60%) rotate(45deg);
-  pointer-events: none;
-  opacity: 0.72;
+.status-select {
+  width: 100%;
+  min-width: 0;
 }
 
 .status-dot {
@@ -743,6 +714,62 @@ const updateApplicationStatus = async (row, nextStatus) => {
 
 .status-select-wrap.saving {
   opacity: 0.68;
+}
+
+.status-select-wrap :deep(.app-select-trigger) {
+  min-height: 36px;
+  padding: 0.4rem 2rem 0.4rem 1.7rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+}
+
+.status-select-wrap :deep(.app-select-trigger:hover) {
+  transform: none;
+  box-shadow: none;
+}
+
+.status-select-wrap :deep(.app-select-trigger:focus-visible) {
+  border: none;
+  box-shadow: none;
+}
+
+.status-select-wrap :deep(.app-select-copy) {
+  display: block;
+}
+
+.status-select-wrap :deep(.app-select-value) {
+  color: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.status-select-wrap :deep(.app-select-icon) {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right-width: 2px;
+  border-bottom-width: 2px;
+  border-color: currentColor;
+  opacity: 0.72;
+}
+
+.status-select-wrap :deep(.app-select-menu) {
+  left: 0;
+  right: auto;
+  width: max-content;
+  min-width: 100%;
+  max-width: 320px;
+}
+
+.status-select-wrap :deep(.app-select-option-label) {
+  font-size: 0.82rem;
+}
+
+.status-select-wrap :deep(.app-select-check) {
+  color: currentColor;
 }
 
 .status-chip {
