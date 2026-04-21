@@ -235,140 +235,142 @@ const saveAllEdits = async () => {
 </script>
 
 <template>
-  <div v-if="props.open" class="preview-backdrop" @click.self="emit('close')">
-    <section class="preview-panel">
-      <header class="preview-header">
-        <h3>{{ props.title || '檔案預覽' }}</h3>
-        <div class="header-actions">
-          <a
-            v-if="props.downloadUrl"
-            class="download-btn"
-            :href="props.downloadUrl"
-            :download="props.downloadFileName || ''"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            下載 CV
-          </a>
-          <button type="button" class="close-btn" @click="emit('close')">關閉</button>
-        </div>
-      </header>
-
-      <div class="preview-body">
-        <p v-if="props.loading" class="hint">讀取中...</p>
-        <p v-else-if="props.error" class="error">{{ props.error }}</p>
-        <div v-else-if="shouldRenderExtractedTable" class="structured-preview">
-          <p v-if="updateMessage" class="success">{{ updateMessage }}</p>
-          <p v-if="updateError" class="error">{{ updateError }}</p>
-          <p v-if="matchError" class="error">{{ matchError }}</p>
-
-          <div class="bulk-toolbar">
-            <button
-              v-if="!isEditingAll"
-              type="button"
-              class="edit-btn"
-              @click="beginEditAll"
+  <Teleport to="body">
+    <div v-if="props.open" class="preview-backdrop" @click.self="emit('close')">
+      <section class="preview-panel">
+        <header class="preview-header">
+          <h3>{{ props.title || '檔案預覽' }}</h3>
+          <div class="header-actions">
+            <a
+              v-if="props.downloadUrl"
+              class="download-btn"
+              :href="props.downloadUrl"
+              :download="props.downloadFileName || ''"
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              編輯
-            </button>
-            <p v-else class="edit-hint">已進入編輯模式，請修改欄位後在底部點擊確定。</p>
+              下載 CV
+            </a>
+            <button type="button" class="close-btn" @click="emit('close')">關閉</button>
           </div>
+        </header>
 
-          <section class="preview-section">
-            <h4>匹配職位</h4>
-            <div class="match-wrap">
-              <p v-if="matchLoading" class="hint">匹配結果讀取中...</p>
-              <p v-else-if="!jobMatches.length" class="hint">尚未產生匹配結果</p>
-              <table v-else class="structured-table">
+        <div class="preview-body">
+          <p v-if="props.loading" class="hint">讀取中...</p>
+          <p v-else-if="props.error" class="error">{{ props.error }}</p>
+          <div v-else-if="shouldRenderExtractedTable" class="structured-preview">
+            <p v-if="updateMessage" class="success">{{ updateMessage }}</p>
+            <p v-if="updateError" class="error">{{ updateError }}</p>
+            <p v-if="matchError" class="error">{{ matchError }}</p>
+
+            <div class="bulk-toolbar">
+              <button
+                v-if="!isEditingAll"
+                type="button"
+                class="edit-btn"
+                @click="beginEditAll"
+              >
+                編輯
+              </button>
+              <p v-else class="edit-hint">已進入編輯模式，請修改欄位後在底部點擊確定。</p>
+            </div>
+
+            <section class="preview-section">
+              <h4>匹配職位</h4>
+              <div class="match-wrap">
+                <p v-if="matchLoading" class="hint">匹配結果讀取中...</p>
+                <p v-else-if="!jobMatches.length" class="hint">尚未產生匹配結果</p>
+                <table v-else class="structured-table">
+                  <tbody>
+                    <tr v-for="match in jobMatches" :key="`${match.jobKey}-${match.rankNo || 1}`">
+                      <th>
+                        <div class="match-title-row">
+                          <strong>{{ match.jobTitle || match.jobKey }}</strong>
+                          <span class="match-score">{{ match.matchScore }}</span>
+                        </div>
+                      </th>
+                      <td>
+                        <p v-if="match.reasonSummary" class="match-summary">{{ match.reasonSummary }}</p>
+                        <p v-if="match.strengths?.length" class="match-list"><span>優勢：</span>{{ match.strengths.join('、') }}</p>
+                        <p v-if="match.gaps?.length" class="match-list"><span>缺口：</span>{{ match.gaps.join('、') }}</p>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="preview-section">
+              <h4>基本資料</h4>
+              <table class="structured-table">
                 <tbody>
-                  <tr v-for="match in jobMatches" :key="`${match.jobKey}-${match.rankNo || 1}`">
-                    <th>
-                      <div class="match-title-row">
-                        <strong>{{ match.jobTitle || match.jobKey }}</strong>
-                        <span class="match-score">{{ match.matchScore }}</span>
-                      </div>
-                    </th>
-                    <td>
-                      <p v-if="match.reasonSummary" class="match-summary">{{ match.reasonSummary }}</p>
-                      <p v-if="match.strengths?.length" class="match-list"><span>優勢：</span>{{ match.strengths.join('、') }}</p>
-                      <p v-if="match.gaps?.length" class="match-list"><span>缺口：</span>{{ match.gaps.join('、') }}</p>
+                  <tr v-for="row in extractedPreviewData.basicRows" :key="`basic-${row.label}`">
+                    <th>{{ row.label }}</th>
+                    <td :class="{ 'is-empty': row.empty }">
+                      <textarea
+                        v-if="isEditingAll && row.editable && row.inputType === 'textarea'"
+                        v-model="draftFields[row.fieldKey]"
+                        rows="3"
+                        class="edit-input"
+                        placeholder="請輸入新的值"
+                      />
+                      <input
+                        v-else-if="isEditingAll && row.editable"
+                        v-model="draftFields[row.fieldKey]"
+                        type="text"
+                        class="edit-input"
+                        placeholder="請輸入新的值"
+                      />
+                      <span v-else>{{ row.value }}</span>
                     </td>
                   </tr>
                 </tbody>
               </table>
+            </section>
+
+            <section class="preview-section">
+              <h4>關鍵維度</h4>
+              <table class="structured-table">
+                <tbody>
+                  <tr v-for="row in extractedPreviewData.dimensionRows" :key="`dim-${row.label}`">
+                    <th>{{ row.label }}</th>
+                    <td :class="{ 'is-empty': row.empty }">
+                      <textarea
+                        v-if="isEditingAll && row.editable && row.inputType === 'textarea'"
+                        v-model="draftFields[row.fieldKey]"
+                        rows="3"
+                        class="edit-input"
+                        placeholder="請輸入新的值"
+                      />
+                      <input
+                        v-else-if="isEditingAll && row.editable"
+                        v-model="draftFields[row.fieldKey]"
+                        type="text"
+                        class="edit-input"
+                        placeholder="請輸入新的值"
+                      />
+                      <span v-else>{{ row.value }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
+
+            <div v-if="isEditingAll" class="bulk-actions">
+              <button type="button" class="save-btn" :disabled="isSavingAll" @click="saveAllEdits">確定</button>
+              <button type="button" class="cancel-btn" :disabled="isSavingAll" @click="cancelEditAll">取消</button>
             </div>
-          </section>
-
-          <section class="preview-section">
-            <h4>基本資料</h4>
-            <table class="structured-table">
-              <tbody>
-                <tr v-for="row in extractedPreviewData.basicRows" :key="`basic-${row.label}`">
-                  <th>{{ row.label }}</th>
-                  <td :class="{ 'is-empty': row.empty }">
-                    <textarea
-                      v-if="isEditingAll && row.editable && row.inputType === 'textarea'"
-                      v-model="draftFields[row.fieldKey]"
-                      rows="3"
-                      class="edit-input"
-                      placeholder="請輸入新的值"
-                    />
-                    <input
-                      v-else-if="isEditingAll && row.editable"
-                      v-model="draftFields[row.fieldKey]"
-                      type="text"
-                      class="edit-input"
-                      placeholder="請輸入新的值"
-                    />
-                    <span v-else>{{ row.value }}</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </section>
-
-          <section class="preview-section">
-            <h4>關鍵維度</h4>
-            <table class="structured-table">
-              <tbody>
-                <tr v-for="row in extractedPreviewData.dimensionRows" :key="`dim-${row.label}`">
-                  <th>{{ row.label }}</th>
-                  <td :class="{ 'is-empty': row.empty }">
-                    <textarea
-                      v-if="isEditingAll && row.editable && row.inputType === 'textarea'"
-                      v-model="draftFields[row.fieldKey]"
-                      rows="3"
-                      class="edit-input"
-                      placeholder="請輸入新的值"
-                    />
-                    <input
-                      v-else-if="isEditingAll && row.editable"
-                      v-model="draftFields[row.fieldKey]"
-                      type="text"
-                      class="edit-input"
-                      placeholder="請輸入新的值"
-                    />
-                    <span v-else>{{ row.value }}</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </section>
-
-          <div v-if="isEditingAll" class="bulk-actions">
-            <button type="button" class="save-btn" :disabled="isSavingAll" @click="saveAllEdits">確定</button>
-            <button type="button" class="cancel-btn" :disabled="isSavingAll" @click="cancelEditAll">取消</button>
           </div>
+          <template v-else>
+            <p v-if="props.previewType === 'cv' && !props.downloadUrl" class="hint">
+              原始 CV 檔案已不在儲存空間，目前只能查看已解析內容。
+            </p>
+            <pre class="content">{{ localContent || '（無內容）' }}</pre>
+          </template>
         </div>
-        <template v-else>
-          <p v-if="props.previewType === 'cv' && !props.downloadUrl" class="hint">
-            原始 CV 檔案已不在儲存空間，目前只能查看已解析內容。
-          </p>
-          <pre class="content">{{ localContent || '（無內容）' }}</pre>
-        </template>
-      </div>
-    </section>
-  </div>
+      </section>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
