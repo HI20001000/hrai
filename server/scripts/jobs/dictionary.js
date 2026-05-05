@@ -13,9 +13,12 @@ const REQUIRED_JOB_FIELDS = [
   'roleKeywords',
   'coreResponsibilities',
   'requiredSkills',
+  'projectExperience',
   'preferredSkills',
   'certifications',
   'minWorkYears',
+  'workYears',
+  'candidatePreference',
   'salaryRange',
   'weights',
 ]
@@ -57,37 +60,55 @@ const ensureNumber = (value, fieldName, jobTitle) => {
   if (!Number.isFinite(Number(value))) throw new Error(`職位「${jobTitle}」的${label}必須是數字`)
 }
 
-const normalizeJobDefinition = (jobTitle, job = {}) => ({
-  description: normalizeText(job.description),
-  industry: Array.isArray(job.industry) ? job.industry.map((item) => normalizeText(item)).filter(Boolean) : job.industry,
-  roleKeywords: Array.isArray(job.roleKeywords)
-    ? job.roleKeywords.map((item) => normalizeText(item)).filter(Boolean)
-    : job.roleKeywords,
-  coreResponsibilities: Array.isArray(job.coreResponsibilities)
-    ? job.coreResponsibilities.map((item) => normalizeText(item)).filter(Boolean)
-    : job.coreResponsibilities,
-  requiredSkills: Array.isArray(job.requiredSkills)
-    ? job.requiredSkills.map((item) => normalizeText(item)).filter(Boolean)
-    : job.requiredSkills,
-  preferredSkills: Array.isArray(job.preferredSkills)
-    ? job.preferredSkills.map((item) => normalizeText(item)).filter(Boolean)
-    : job.preferredSkills,
-  certifications: Array.isArray(job.certifications)
-    ? job.certifications.map((item) => normalizeText(item)).filter(Boolean)
-    : job.certifications,
-  minWorkYears: Number(job.minWorkYears || 0),
-  salaryRange: {
-    min: Number(job?.salaryRange?.min || 0),
-    max: Number(job?.salaryRange?.max || 0),
-  },
-  weights: isPlainObject(job.weights) ? { ...job.weights } : job.weights,
-})
+const normalizeStringArray = (value) =>
+  Array.isArray(value) ? value.map((item) => normalizeText(item)).filter(Boolean) : value
+
+const normalizeWeights = (weights) => {
+  if (!isPlainObject(weights)) return weights
+
+  const entries = Object.entries(weights)
+  const sum = entries.reduce((acc, [, rawValue]) => acc + Number(rawValue || 0), 0)
+  const divisor = Math.abs(sum - 100) <= 0.000001 ? 100 : 1
+
+  return Object.fromEntries(entries.map(([key, value]) => [key, Number(value || 0) / divisor]))
+}
+
+const normalizeJobDefinition = (jobTitle, job = {}, fallbackJobKey = '') => {
+  const workYears = Number(job.workYears ?? job.minWorkYears ?? 0)
+
+  return {
+    jobKey: normalizeText(job.jobKey) || normalizeText(fallbackJobKey) || normalizeText(jobTitle),
+    title: normalizeText(job.title) || normalizeText(jobTitle),
+    description: normalizeText(job.description) || normalizeText(job.title) || normalizeText(jobTitle),
+    industry: normalizeStringArray(job.industry || []),
+    roleKeywords: normalizeStringArray(job.roleKeywords || [job.title || jobTitle]),
+    coreResponsibilities: normalizeStringArray(job.coreResponsibilities || []),
+    requiredSkills: normalizeStringArray(job.requiredSkills || []),
+    projectExperience: normalizeStringArray(job.projectExperience || []),
+    preferredSkills: normalizeStringArray(job.preferredSkills || []),
+    certifications: normalizeStringArray(job.certifications || []),
+    minWorkYears: workYears,
+    workYears,
+    candidatePreference: normalizeStringArray(job.candidatePreference || []),
+    salaryRange: {
+      min: Number(job?.salaryRange?.min || 0),
+      max: Number(job?.salaryRange?.max || 0),
+    },
+    weights: normalizeWeights(job.weights),
+  }
+}
 
 const normalizeDictionaryShape = (dictionary) => {
   if (!isPlainObject(dictionary)) throw new Error('職位字典根節點必須是物件')
 
+  const sourceEntries = ['jobKey', 'title', 'requiredSkills', 'coreResponsibilities', 'weights'].some(
+    (key) => key in dictionary
+  )
+    ? [[normalizeText(dictionary.title) || normalizeText(dictionary.jobKey) || 'job', dictionary]]
+    : Object.entries(dictionary)
+
   const normalizedDictionary = {}
-  for (const [rawKey, rawJob] of Object.entries(dictionary)) {
+  for (const [rawKey, rawJob] of sourceEntries) {
     if (!isPlainObject(rawJob)) throw new Error(`職位「${rawKey}」的資料必須是物件`)
 
     const titleFromKey = normalizeText(rawKey)
@@ -99,7 +120,7 @@ const normalizeDictionaryShape = (dictionary) => {
       throw new Error(`職位字典存在重複 title：「${jobTitle}」`)
     }
 
-    normalizedDictionary[jobTitle] = normalizeJobDefinition(jobTitle, rawJob)
+    normalizedDictionary[jobTitle] = normalizeJobDefinition(jobTitle, rawJob, titleFromKey)
   }
 
   return normalizedDictionary
@@ -122,10 +143,13 @@ export const validateJobDictionary = (dictionary) => {
     ensureStringArray(job.roleKeywords, 'roleKeywords', jobTitle)
     ensureStringArray(job.coreResponsibilities, 'coreResponsibilities', jobTitle)
     ensureStringArray(job.requiredSkills, 'requiredSkills', jobTitle)
+    ensureStringArray(job.projectExperience, 'projectExperience', jobTitle)
     ensureStringArray(job.preferredSkills, 'preferredSkills', jobTitle)
     ensureStringArray(job.certifications, 'certifications', jobTitle)
+    ensureStringArray(job.candidatePreference, 'candidatePreference', jobTitle)
 
     ensureNumber(job.minWorkYears, 'minWorkYears', jobTitle)
+    ensureNumber(job.workYears, 'workYears', jobTitle)
     if (!isPlainObject(job.salaryRange)) throw new Error(`職位「${jobTitle}」的薪資範圍必須是物件`)
     ensureNumber(job.salaryRange.min, 'salaryRange.min', jobTitle)
     ensureNumber(job.salaryRange.max, 'salaryRange.max', jobTitle)

@@ -20,7 +20,9 @@ const isMobileMenuOpen = ref(false)
 const pageItems = [
   { key: 'reports', label: '職缺管理', description: '管理職缺與投遞', icon: 'briefcase' },
   { key: 'cv', label: '候選人管理', description: '查看候選人資料', icon: 'document' },
-  { key: 'files', label: '上傳候選人CV', description: '上傳履歷與應徵', icon: 'tray' },
+  { key: 'files', label: '上傳候選人 CV', description: '上傳履歷與應徵', icon: 'tray' },
+  { key: 'directory', label: '名單管理', description: '內部人員與 Blacklist', icon: 'users' },
+  { key: 'projects', label: '項目管理', description: '項目組與調動', icon: 'project' },
 ]
 
 const settingsItem = {
@@ -65,8 +67,8 @@ const selectPage = (key) => {
   <div class="toolbar-shell">
     <aside class="main-toolbar" aria-label="主要導覽">
       <div class="toolbar-brand">
-        <img class="brand-logo" :src="titleLogoUrl" alt="HR系統標誌" />
-        <span class="brand-title">HR系統</span>
+        <img class="brand-logo" :src="titleLogoUrl" alt="HR 系統標誌" />
+        <span class="brand-title">HR 系統</span>
       </div>
 
       <nav class="toolbar-nav" aria-label="頁面導覽">
@@ -88,6 +90,18 @@ const selectPage = (key) => {
               <path d="M8.2 3.5h5.5L19 8.8v10.1A1.6 1.6 0 0 1 17.4 20.5H8.2A3.2 3.2 0 0 1 5 17.3V6.7a3.2 3.2 0 0 1 3.2-3.2Z" />
               <path d="M13.5 3.8V8h4.2" />
               <path d="M8.7 11.3h6.5M8.7 14.6h6.5M8.7 17.9h4.3" />
+            </svg>
+            <svg v-else-if="item.icon === 'users'" viewBox="0 0 24 24" fill="none">
+              <path d="M9 11.3A3.3 3.3 0 1 0 9 4.7A3.3 3.3 0 1 0 9 11.3Z" />
+              <path d="M16.3 10.4A2.7 2.7 0 1 0 16.3 5A2.7 2.7 0 1 0 16.3 10.4Z" />
+              <path d="M3.6 18.8a5.4 5.4 0 0 1 10.8 0" />
+              <path d="M14.1 18.8a4.4 4.4 0 0 1 6.3-3.9A4.5 4.5 0 0 1 22 18.8" />
+            </svg>
+            <svg v-else-if="item.icon === 'project'" viewBox="0 0 24 24" fill="none">
+              <path d="M5 6.5h5.5v5.5H5z" />
+              <path d="M13.5 4.5H19V10h-5.5z" />
+              <path d="M13.5 14H19v5.5h-5.5z" />
+              <path d="M10.5 9.2h3M16.25 10v4" />
             </svg>
             <svg v-else viewBox="0 0 24 24" fill="none">
               <path d="M4.5 7.5h15A1.5 1.5 0 0 1 21 9v8.2a2.3 2.3 0 0 1-2.3 2.3H5.3A2.3 2.3 0 0 1 3 17.2V9a1.5 1.5 0 0 1 1.5-1.5Z" />
@@ -124,7 +138,7 @@ const selectPage = (key) => {
     <div class="mobile-toolbar">
       <div class="mobile-header">
         <div>
-          <strong>HR系統</strong>
+          <strong>HR 系統</strong>
           <p>{{ activeItem.label }}</p>
         </div>
         <div class="mobile-actions">
@@ -227,7 +241,6 @@ const selectPage = (key) => {
   letter-spacing: -0.03em;
 }
 
-.avatar-text,
 .mobile-avatar {
   display: inline-flex;
   align-items: center;
@@ -352,7 +365,7 @@ const selectPage = (key) => {
 }
 
 .mobile-nav.open {
-  max-height: 240px;
+  max-height: 320px;
   opacity: 1;
   margin-top: 0.8rem;
 }

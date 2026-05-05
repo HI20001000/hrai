@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import { resolveJobDictionary } from '../scripts/jobDictionary.js'
 import AppSelect from '../components/AppSelect.vue'
@@ -53,9 +53,9 @@ const sortedDictionaryEntries = computed(() =>
 )
 
 const jobDictionaryOptions = computed(() =>
-  sortedDictionaryEntries.value.map((jobTitle) => ({
-    value: jobTitle,
-    label: jobTitle,
+  sortedDictionaryEntries.value.map((jobKey) => ({
+    value: jobKey,
+    label: jobDictionary.value?.[jobKey]?.title || jobKey,
   }))
 )
 
@@ -75,8 +75,9 @@ const selectedDictionaryTitle = computed(() =>
 const syncCreateFormFromDictionary = (jobTitle) => {
   const normalizedTitle = String(jobTitle || '').trim()
   if (!isCreatingJobPost.value) return
+  const dictionaryJob = jobDictionary.value?.[normalizedTitle]
   jobPostForm.value.jobKey = normalizedTitle
-  jobPostForm.value.title = normalizedTitle
+  jobPostForm.value.title = dictionaryJob?.title || normalizedTitle
 }
 
 const loadJobDictionary = async () => {
@@ -329,6 +330,8 @@ watch(
 )
 
 onMounted(async () => {
+  window.addEventListener('hrai-applications-updated', handleApplicationsUpdated)
+  window.addEventListener('focus', handleApplicationsUpdated)
   try {
     await Promise.all([loadJobDictionary(), loadJobPosts()])
     if (jobPosts.value[0]?.id) {
@@ -339,6 +342,11 @@ onMounted(async () => {
   } catch {
     message.value = '初始化資料失敗'
   }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('hrai-applications-updated', handleApplicationsUpdated)
+  window.removeEventListener('focus', handleApplicationsUpdated)
 })
 </script>
 

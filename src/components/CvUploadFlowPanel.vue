@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import CvExtractedFilePreview from './CvExtractedFilePreview.vue'
+import ProjectExperiencesField from './ProjectExperiencesField.vue'
 import {
   EDITABLE_EXTRACTED_FIELDS,
   buildDraftFieldsFromRows,
@@ -83,7 +84,7 @@ const selectedFilesLabel = computed(() => {
   return `已選擇 ${selectedFiles.value.length} 份 CV`
 })
 
-const editFieldDefs = EDITABLE_EXTRACTED_FIELDS.map((field) => ({
+const editFieldDefs = EDITABLE_EXTRACTED_FIELDS.filter((field) => field.fieldKey !== 'projectExperiences').map((field) => ({
   key: field.fieldKey,
   label: field.label,
   kind: field.inputType === 'textarea' ? 'textarea' : 'text',
@@ -1222,6 +1223,13 @@ const clearBatchQueueLegacy = () => {
             />
           </label>
         </div>
+        <div class="project-editor-section">
+          <h5>專案經歷</h5>
+          <ProjectExperiencesField
+            v-model="batchDraftFields.projectExperiences"
+            :legacy-text="activeBatchItem?.candidate?.extracted?.profile?.projectExperience || ''"
+          />
+        </div>
         <div class="edit-actions">
           <button type="button" class="save-edit-btn" :disabled="isBusy" @click="saveBatchEditedExtracted">
             儲存編輯
@@ -1282,6 +1290,13 @@ const clearBatchQueueLegacy = () => {
               :placeholder="field.required ? '必填' : '選填'"
             />
           </label>
+        </div>
+        <div class="project-editor-section">
+          <h5>專案經歷</h5>
+          <ProjectExperiencesField
+            v-model="draftFields.projectExperiences"
+            :legacy-text="parsedCandidate?.extracted?.profile?.projectExperience || ''"
+          />
         </div>
         <div class="edit-actions">
           <button type="button" class="save-edit-btn" :disabled="isConfirmingUpload" @click="saveEditedExtracted">
@@ -1595,6 +1610,16 @@ const clearBatchQueueLegacy = () => {
 
 .edit-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.project-editor-section {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.project-editor-section h5 {
+  margin: 0;
+  color: var(--text-strong);
 }
 
 .edit-field {

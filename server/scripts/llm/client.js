@@ -193,8 +193,16 @@ export const callLlmPrompt = async (inputContent, { maxTokens = 1000, temperatur
 
 export const buildJsonTaskInputContent = (prompt, payload) => {
   const promptText = String(prompt || '').trim()
-  const payloadText = JSON.stringify(payload ?? {}, null, 2)
-  return `${promptText}\n\nInput JSON:\n${payloadText}`
+  const taskPayload = payload && typeof payload === 'object' ? payload : {}
+  const payloadText = JSON.stringify(taskPayload, null, 2)
+  let hasTemplateToken = false
+  const renderedPrompt = promptText.replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (match, key) => {
+    if (!(key in taskPayload)) return match
+    hasTemplateToken = true
+    return JSON.stringify(taskPayload[key], null, 2)
+  })
+
+  return hasTemplateToken ? renderedPrompt : `${promptText}\n\nInput JSON:\n${payloadText}`
 }
 
 export const extractCandidateInfoByLlm = async (cvText, fileName = '') => {

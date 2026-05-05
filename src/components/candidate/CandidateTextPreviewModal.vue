@@ -1,6 +1,7 @@
 ﻿<script setup>
 import { computed, ref, watch } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
+import ProjectExperiencesField from '../ProjectExperiencesField.vue'
 import { parseJsonObject } from '../../scripts/cvExtractedPreview.js'
 import {
   buildDraftFieldsFromRows,
@@ -100,6 +101,8 @@ const editableRows = computed(() => {
   return getEditableRows(extractedPreviewData.value)
 })
 
+const projectExperienceField = computed(() => extractedPreviewData.value?.projectExperienceField || null)
+
 const shouldRenderExtractedTable = computed(() => !!extractedPreviewData.value)
 
 const loadJobMatches = async () => {
@@ -172,7 +175,7 @@ const saveAllEdits = async () => {
     const current = draftFields.value[row.fieldKey]
     const original = initialDraftFields.value[row.fieldKey]
     if (normalizeDraftForCompare(row, current) === normalizeDraftForCompare(row, original)) continue
-    updates[row.fieldKey] = String(current ?? '')
+    updates[row.fieldKey] = row.valueType === 'project-experiences' ? current : String(current ?? '')
   }
 
   if (!Object.keys(updates).length) {
@@ -356,6 +359,23 @@ const saveAllEdits = async () => {
               </table>
             </section>
 
+            <section v-if="projectExperienceField" class="preview-section">
+              <h4>專案經歷</h4>
+              <div class="project-section">
+                <ProjectExperiencesField
+                  v-if="isEditingAll"
+                  v-model="draftFields[projectExperienceField.fieldKey]"
+                  :legacy-text="projectExperienceField.legacyText || ''"
+                />
+                <ProjectExperiencesField
+                  v-else
+                  :model-value="projectExperienceField.rawValue || []"
+                  :legacy-text="projectExperienceField.legacyText || ''"
+                  readonly
+                />
+              </div>
+            </section>
+
             <div v-if="isEditingAll" class="bulk-actions">
               <button type="button" class="save-btn" :disabled="isSavingAll" @click="saveAllEdits">確定</button>
               <button type="button" class="cancel-btn" :disabled="isSavingAll" @click="cancelEditAll">取消</button>
@@ -450,6 +470,10 @@ const saveAllEdits = async () => {
   background: rgba(244, 248, 252, 0.86);
   color: var(--text-strong);
   font-size: 0.92rem;
+}
+
+.project-section {
+  padding: 0.95rem 1rem 1rem;
 }
 
 .structured-table th {

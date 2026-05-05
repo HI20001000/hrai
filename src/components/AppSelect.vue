@@ -233,6 +233,10 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
+.app-select.open {
+  z-index: 80;
+}
+
 .app-select-trigger {
   display: flex;
   align-items: center;
@@ -322,7 +326,7 @@ onBeforeUnmount(() => {
   top: calc(100% + 0.5rem);
   left: 0;
   right: 0;
-  z-index: 30;
+  z-index: 90;
   display: grid;
   gap: 0.35rem;
   max-height: 290px;

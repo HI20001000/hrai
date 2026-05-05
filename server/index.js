@@ -13,6 +13,7 @@ import {
 } from './scripts/database/index.js'
 import { HttpError } from './scripts/errors.js'
 import { extractCandidateInfoFromCv } from './scripts/llm/cv-extractor.js'
+import { hasProjectExperiences, normalizeProjectExperiences } from './scripts/llm/project-experiences.js'
 import { extractTextFromBuffer } from './scripts/llm/text-extractors.js'
 import { getJobDictionary, loadJobDictionary, saveJobDictionary } from './scripts/jobs/dictionary.js'
 import { matchCandidateToJobPost, matchCandidateToJobs } from './scripts/llm/job-matcher.js'
@@ -707,6 +708,8 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
     return
   }
 
+  const blacklistEntries = await listCandidateBlacklistRows(pool)
+
   const [rows] = await pool.query(
     `SELECT
         app.id AS applicationId,
@@ -718,6 +721,7 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
         app.created_at AS createdAt,
         c.id AS candidateId,
         c.full_name AS fullName,
+        c.email AS email,
         c.phone AS phone,
         cv.id AS cvId,
         cv.original_filename AS cvFileName,
@@ -740,23 +744,34 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
       status: jobPost.status,
       matchedPosition: normalizeText(jobPost.jobSnapshot?.title),
     },
-    applications: rows.map((row) => ({
-      applicationId: Number(row.applicationId),
-      applicationStatus: normalizeApplicationStatus(row.applicationStatus),
-      remark: normalizeText(row.remark),
-      candidateId: Number(row.candidateId),
-      fullName: normalizeText(row.fullName),
-      targetPosition: normalizeText(row.targetPosition),
-      matchedPosition: normalizeText(row.matchedPosition),
-      matchedScore: Number(row.matchedScore || 0),
-      matchedLevel: normalizeText(row.matchedLevel) || '',
-      phone: normalizeText(row.phone),
-      cvId: Number(row.cvId),
-      cvFileName: normalizeText(row.cvFileName),
-      extractedFileName: row.cvFileName ? `${row.cvFileName}.extracted.txt` : '',
-      hasDownload: hasCandidateCvStoredFile(row.storageKey),
-      createdAt: row.createdAt,
-    })),
+    applications: rows.map((row) => {
+      const match = findCandidateBlacklistMatch(blacklistEntries, {
+        phone: row.phone,
+        email: row.email,
+      })
+
+      return {
+        applicationId: Number(row.applicationId),
+        applicationStatus: normalizeApplicationStatus(row.applicationStatus),
+        remark: normalizeText(row.remark),
+        candidateId: Number(row.candidateId),
+        fullName: normalizeText(row.fullName),
+        targetPosition: normalizeText(row.targetPosition),
+        matchedPosition: normalizeText(row.matchedPosition),
+        matchedScore: Number(row.matchedScore || 0),
+        matchedLevel: normalizeText(row.matchedLevel) || '',
+        phone: normalizeText(row.phone),
+        cvId: Number(row.cvId),
+        cvFileName: normalizeText(row.cvFileName),
+        extractedFileName: row.cvFileName ? `${row.cvFileName}.extracted.txt` : '',
+        hasDownload: hasCandidateCvStoredFile(row.storageKey),
+        createdAt: row.createdAt,
+        ...buildCandidateBlacklistFlags(match, {
+          phone: row.phone,
+          email: row.email,
+        }),
+      }
+    }),
   })
 }
 
@@ -1023,6 +1038,30 @@ const listCandidates = async (pool, _req, res) => {
   sendJson(res, 200, { candidates: rows })
 }
 
+const getCandidateById = async (pool, candidateId) => {
+  const [rows] = await pool.query(
+    `SELECT
+        id,
+        full_name AS fullName,
+        email,
+        phone,
+        created_at AS createdAt
+      FROM candidates
+      WHERE id = ?
+      LIMIT 1`,
+    [candidateId]
+  )
+  const row = rows[0]
+  if (!row) return null
+  return {
+    id: Number(row.id),
+    fullName: normalizeText(row.fullName),
+    email: normalizeEmailIdentity(row.email),
+    phone: normalizeText(row.phone),
+    createdAt: row.createdAt,
+  }
+}
+
 const insertCandidateCv = async (
   pool,
   candidateId,
@@ -1077,6 +1116,193 @@ const parseJsonObject = (value) => {
 }
 
 const normalizeText = (value) => String(value ?? '').trim()
+
+const normalizeEmailIdentity = (value) => normalizeText(value).toLowerCase()
+
+const normalizePhoneIdentity = (value) => normalizeText(value).replace(/[\s\-()]/g, '')
+
+const PERSONNEL_STATUS_VALUES = new Set(['active', 'inactive'])
+
+const normalizeDirectoryStatus = (value, fallback = 'active') => {
+  const normalized = normalizeText(value).toLowerCase()
+  return PERSONNEL_STATUS_VALUES.has(normalized) ? normalized : fallback
+}
+
+const normalizeRemark = (value, limit = 4000) => {
+  const text = normalizeText(value)
+  return text ? text.slice(0, limit) : ''
+}
+
+const normalizePersonnelPayload = (payload = {}) => ({
+  fullName: normalizeText(payload.fullName),
+  department: normalizeText(payload.department),
+  team: normalizeText(payload.team),
+  title: normalizeText(payload.title),
+  email: normalizeEmailIdentity(payload.email),
+  phone: normalizeText(payload.phone),
+  managerPersonnelId: Number(payload.managerPersonnelId) > 0 ? Number(payload.managerPersonnelId) : null,
+  status: normalizeDirectoryStatus(payload.status),
+  remark: normalizeRemark(payload.remark),
+})
+
+const normalizeBlacklistPayload = (payload = {}) => {
+  const displayName = normalizeText(payload.displayName)
+  const phone = normalizeText(payload.phone)
+  const email = normalizeEmailIdentity(payload.email)
+  return {
+    displayName,
+    phone,
+    normalizedPhone: normalizePhoneIdentity(phone),
+    email,
+    normalizedEmail: normalizeEmailIdentity(email),
+    reason: normalizeRemark(payload.reason),
+    status: normalizeDirectoryStatus(payload.status),
+    remark: normalizeRemark(payload.remark),
+  }
+}
+
+const buildPersonnelPayload = (row = {}) => ({
+  id: Number(row.id || 0),
+  fullName: normalizeText(row.fullName),
+  department: normalizeText(row.department),
+  team: normalizeText(row.team),
+  title: normalizeText(row.title),
+  email: normalizeEmailIdentity(row.email),
+  phone: normalizeText(row.phone),
+  managerPersonnelId: row.managerPersonnelId ? Number(row.managerPersonnelId) : null,
+  managerName: normalizeText(row.managerName),
+  status: normalizeDirectoryStatus(row.status),
+  remark: normalizeRemark(row.remark),
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+})
+
+const buildCandidateBlacklistPayload = (row = {}) => ({
+  id: Number(row.id || 0),
+  displayName: normalizeText(row.displayName),
+  phone: normalizeText(row.phone),
+  normalizedPhone: normalizePhoneIdentity(row.normalizedPhone || row.phone),
+  email: normalizeEmailIdentity(row.email),
+  normalizedEmail: normalizeEmailIdentity(row.normalizedEmail || row.email),
+  reason: normalizeRemark(row.reason),
+  status: normalizeDirectoryStatus(row.status),
+  remark: normalizeRemark(row.remark),
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+})
+
+const PROJECT_STATUS_VALUES = new Set(['planned', 'active', 'paused', 'completed'])
+const ASSIGNMENT_STATUS_VALUES = new Set(['active', 'transferred', 'removed'])
+const ASSIGNMENT_SOURCE_VALUES = new Set(['manual', 'csv', 'candidate'])
+
+const normalizeProjectStatus = (value, fallback = 'planned') => {
+  const normalized = normalizeText(value).toLowerCase()
+  return PROJECT_STATUS_VALUES.has(normalized) ? normalized : fallback
+}
+
+const normalizeAssignmentStatus = (value, fallback = 'active') => {
+  const normalized = normalizeText(value).toLowerCase()
+  return ASSIGNMENT_STATUS_VALUES.has(normalized) ? normalized : fallback
+}
+
+const normalizeAssignmentSource = (value, fallback = 'manual') => {
+  const normalized = normalizeText(value).toLowerCase()
+  return ASSIGNMENT_SOURCE_VALUES.has(normalized) ? normalized : fallback
+}
+
+const normalizeDateInput = (value, fieldName = 'date') => {
+  const text = normalizeText(value)
+  if (!text) return null
+
+  const match = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/)
+  if (!match) throw new HttpError(400, `${fieldName} must use YYYY-MM-DD format`)
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const date = new Date(Date.UTC(year, month - 1, day))
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() + 1 !== month ||
+    date.getUTCDate() !== day
+  ) {
+    throw new HttpError(400, `${fieldName} is invalid`)
+  }
+
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+const getTodayDateText = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const normalizeProjectPayload = (payload = {}) => ({
+  projectName: normalizeText(payload.projectName || payload.project_name || payload.name),
+  status: normalizeProjectStatus(payload.status),
+  ownerPersonnelId: Number(payload.ownerPersonnelId) > 0 ? Number(payload.ownerPersonnelId) : null,
+  startDate: normalizeDateInput(payload.startDate, 'startDate'),
+  endDate: normalizeDateInput(payload.endDate, 'endDate'),
+  remark: normalizeRemark(payload.remark),
+})
+
+const normalizeProjectAssignmentPayload = (payload = {}, fallbackSource = 'manual') => ({
+  personnelId: Number(payload.personnelId) > 0 ? Number(payload.personnelId) : null,
+  fullName: normalizeText(payload.fullName),
+  department: normalizeText(payload.department),
+  team: normalizeText(payload.team),
+  title: normalizeText(payload.title),
+  email: normalizeEmailIdentity(payload.email),
+  phone: normalizeText(payload.phone),
+  managerPersonnelId: Number(payload.managerPersonnelId) > 0 ? Number(payload.managerPersonnelId) : null,
+  projectRole: normalizeText(payload.projectRole || payload.role),
+  startDate: normalizeDateInput(payload.startDate, 'startDate'),
+  endDate: normalizeDateInput(payload.endDate, 'endDate'),
+  source: normalizeAssignmentSource(payload.source, fallbackSource),
+  status: normalizeAssignmentStatus(payload.status),
+  remark: normalizeRemark(payload.remark),
+})
+
+const buildProjectPayload = (row = {}) => ({
+  id: Number(row.id || 0),
+  projectName: normalizeText(row.projectName),
+  status: normalizeProjectStatus(row.status),
+  ownerPersonnelId: row.ownerPersonnelId ? Number(row.ownerPersonnelId) : null,
+  ownerName: normalizeText(row.ownerName),
+  startDate: row.startDate || null,
+  endDate: row.endDate || null,
+  remark: normalizeRemark(row.remark),
+  assignmentCount: Number(row.assignmentCount || 0),
+  activeAssignmentCount: Number(row.activeAssignmentCount || 0),
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+})
+
+const buildProjectAssignmentPayload = (row = {}) => ({
+  id: Number(row.id || 0),
+  projectId: Number(row.projectId || 0),
+  projectName: normalizeText(row.projectName),
+  personnelId: Number(row.personnelId || 0),
+  fullName: normalizeText(row.fullName),
+  department: normalizeText(row.department),
+  team: normalizeText(row.team),
+  title: normalizeText(row.title),
+  email: normalizeEmailIdentity(row.email),
+  phone: normalizeText(row.phone),
+  managerPersonnelId: row.managerPersonnelId ? Number(row.managerPersonnelId) : null,
+  managerName: normalizeText(row.managerName),
+  projectRole: normalizeText(row.projectRole),
+  startDate: row.startDate || null,
+  endDate: row.endDate || null,
+  source: normalizeAssignmentSource(row.source),
+  status: normalizeAssignmentStatus(row.status),
+  remark: normalizeRemark(row.remark),
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+})
 
 const normalizeList = (value, limit = 20) => {
   const source = Array.isArray(value)
@@ -1143,16 +1369,19 @@ const parseJobSnapshot = (value) => {
 }
 
 const buildJobSnapshot = (jobKey, dictionaryJob = {}) => ({
-  jobKey: normalizeText(jobKey),
-  title: normalizeText(jobKey),
+  jobKey: normalizeText(dictionaryJob?.jobKey) || normalizeText(jobKey),
+  title: normalizeText(dictionaryJob?.title) || normalizeText(jobKey),
   description: normalizeText(dictionaryJob?.description),
   industry: normalizeList(dictionaryJob?.industry, 20),
   roleKeywords: normalizeList(dictionaryJob?.roleKeywords, 20),
   coreResponsibilities: normalizeList(dictionaryJob?.coreResponsibilities, 20),
   requiredSkills: normalizeList(dictionaryJob?.requiredSkills, 20),
+  projectExperience: normalizeList(dictionaryJob?.projectExperience, 20),
   preferredSkills: normalizeList(dictionaryJob?.preferredSkills, 20),
   certifications: normalizeList(dictionaryJob?.certifications, 20),
-  minWorkYears: Number(dictionaryJob?.minWorkYears || 0),
+  minWorkYears: Number(dictionaryJob?.minWorkYears ?? dictionaryJob?.workYears ?? 0),
+  workYears: Number(dictionaryJob?.workYears ?? dictionaryJob?.minWorkYears ?? 0),
+  candidatePreference: normalizeList(dictionaryJob?.candidatePreference, 20),
   salaryRange: {
     min: Number(dictionaryJob?.salaryRange?.min || 0),
     max: Number(dictionaryJob?.salaryRange?.max || 0),
@@ -1186,6 +1415,610 @@ const getJobPostById = async (pool, jobPostId) => {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     jobSnapshot: parseJobSnapshot(row.jobSnapshotJson),
+  }
+}
+
+const listPersonnelRows = async (pool) => {
+  const [rows] = await pool.query(
+    `SELECT
+        p.id,
+        p.full_name AS fullName,
+        p.department,
+        p.team,
+        p.title,
+        p.email,
+        p.phone,
+        p.manager_personnel_id AS managerPersonnelId,
+        p.status,
+        p.remark,
+        p.created_at AS createdAt,
+        p.updated_at AS updatedAt,
+        manager.full_name AS managerName
+      FROM personnel p
+      LEFT JOIN personnel manager ON manager.id = p.manager_personnel_id
+      ORDER BY p.updated_at DESC, p.id DESC`
+  )
+  return rows.map((row) => buildPersonnelPayload(row))
+}
+
+const ensurePersonnelManagerIsValid = async (pool, personnelId, managerPersonnelId) => {
+  if (!managerPersonnelId) return
+  if (personnelId && Number(personnelId) === Number(managerPersonnelId)) {
+    throw new HttpError(400, 'Manager cannot be self')
+  }
+
+  const rows = await listPersonnelRows(pool)
+  const rowMap = new Map(rows.map((row) => [Number(row.id), row]))
+  if (!rowMap.has(Number(managerPersonnelId))) {
+    throw new HttpError(400, 'Manager not found')
+  }
+
+  let currentId = Number(managerPersonnelId)
+  while (currentId) {
+    if (personnelId && currentId === Number(personnelId)) {
+      throw new HttpError(400, 'Manager hierarchy cannot be cyclic')
+    }
+    currentId = Number(rowMap.get(currentId)?.managerPersonnelId || 0)
+  }
+}
+
+const assertDateRange = (startDate, endDate, label = 'date range') => {
+  if (startDate && endDate && startDate > endDate) {
+    throw new HttpError(400, `${label} startDate cannot be later than endDate`)
+  }
+}
+
+const getPersonnelById = async (pool, personnelId) => {
+  const [rows] = await pool.query(
+    `SELECT
+        p.id,
+        p.full_name AS fullName,
+        p.department,
+        p.team,
+        p.title,
+        p.email,
+        p.phone,
+        p.manager_personnel_id AS managerPersonnelId,
+        p.status,
+        p.remark,
+        p.created_at AS createdAt,
+        p.updated_at AS updatedAt,
+        manager.full_name AS managerName
+      FROM personnel p
+      LEFT JOIN personnel manager ON manager.id = p.manager_personnel_id
+      WHERE p.id = ?
+      LIMIT 1`,
+    [personnelId]
+  )
+  return rows[0] ? buildPersonnelPayload(rows[0]) : null
+}
+
+const findPersonnelByIdentity = async (pool, { email = '', phone = '' } = {}) => {
+  const normalizedEmail = normalizeEmailIdentity(email)
+  const normalizedPhone = normalizePhoneIdentity(phone)
+
+  if (normalizedEmail) {
+    const [rows] = await pool.query(
+      `SELECT
+          p.id,
+          p.full_name AS fullName,
+          p.department,
+          p.team,
+          p.title,
+          p.email,
+          p.phone,
+          p.manager_personnel_id AS managerPersonnelId,
+          p.status,
+          p.remark,
+          p.created_at AS createdAt,
+          p.updated_at AS updatedAt,
+          manager.full_name AS managerName
+        FROM personnel p
+        LEFT JOIN personnel manager ON manager.id = p.manager_personnel_id
+        WHERE LOWER(p.email) = ?
+        ORDER BY p.id ASC
+        LIMIT 1`,
+      [normalizedEmail]
+    )
+    if (rows[0]) return buildPersonnelPayload(rows[0])
+  }
+
+  if (normalizedPhone) {
+    const [rows] = await pool.query(
+      `SELECT
+          p.id,
+          p.full_name AS fullName,
+          p.department,
+          p.team,
+          p.title,
+          p.email,
+          p.phone,
+          p.manager_personnel_id AS managerPersonnelId,
+          p.status,
+          p.remark,
+          p.created_at AS createdAt,
+          p.updated_at AS updatedAt,
+          manager.full_name AS managerName
+        FROM personnel p
+        LEFT JOIN personnel manager ON manager.id = p.manager_personnel_id
+        WHERE REPLACE(REPLACE(REPLACE(REPLACE(p.phone, ' ', ''), '-', ''), '(', ''), ')', '') = ?
+        ORDER BY p.id ASC
+        LIMIT 1`,
+      [normalizedPhone]
+    )
+    if (rows[0]) return buildPersonnelPayload(rows[0])
+  }
+
+  return null
+}
+
+const createOrUpdatePersonnelForProject = async (pool, payload, { requireIdentity = false } = {}) => {
+  const existing = payload.personnelId
+    ? await getPersonnelById(pool, payload.personnelId)
+    : await findPersonnelByIdentity(pool, { email: payload.email, phone: payload.phone })
+
+  if (payload.personnelId && !existing) {
+    throw new HttpError(404, 'Personnel not found')
+  }
+
+  const fullName = payload.fullName || existing?.fullName || ''
+  const email = payload.email || existing?.email || ''
+  const phone = payload.phone || existing?.phone || ''
+
+  if (!fullName) throw new HttpError(400, 'fullName is required')
+  if (requireIdentity && !email && !phone) {
+    throw new HttpError(400, 'email or phone is required')
+  }
+
+  const nextPayload = {
+    fullName,
+    department: payload.department || existing?.department || '',
+    team: payload.team || existing?.team || '',
+    title: payload.title || existing?.title || '',
+    email,
+    phone,
+    managerPersonnelId: payload.managerPersonnelId || existing?.managerPersonnelId || null,
+    status: existing?.status || 'active',
+    remark: existing?.remark || '',
+  }
+
+  await ensurePersonnelManagerIsValid(pool, existing?.id || null, nextPayload.managerPersonnelId)
+
+  if (existing?.id) {
+    await pool.query(
+      `UPDATE personnel
+        SET full_name = ?, department = ?, team = ?, title = ?, email = ?, phone = ?,
+            manager_personnel_id = ?, status = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [
+        nextPayload.fullName,
+        nextPayload.department || null,
+        nextPayload.team || null,
+        nextPayload.title || null,
+        nextPayload.email || null,
+        nextPayload.phone || null,
+        nextPayload.managerPersonnelId,
+        nextPayload.status,
+        nextPayload.remark || null,
+        existing.id,
+      ]
+    )
+    return getPersonnelById(pool, existing.id)
+  }
+
+  const [result] = await pool.query(
+    `INSERT INTO personnel
+      (full_name, department, team, title, email, phone, manager_personnel_id, status, remark)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+    [
+      nextPayload.fullName,
+      nextPayload.department || null,
+      nextPayload.team || null,
+      nextPayload.title || null,
+      nextPayload.email || null,
+      nextPayload.phone || null,
+      nextPayload.managerPersonnelId,
+      nextPayload.remark || null,
+    ]
+  )
+
+  return getPersonnelById(pool, Number(result.insertId))
+}
+
+const listProjectRows = async (pool) => {
+  const [rows] = await pool.query(
+    `SELECT
+        p.id,
+        p.project_name AS projectName,
+        p.status,
+        p.owner_personnel_id AS ownerPersonnelId,
+        owner.full_name AS ownerName,
+        DATE_FORMAT(p.start_date, '%Y-%m-%d') AS startDate,
+        DATE_FORMAT(p.end_date, '%Y-%m-%d') AS endDate,
+        p.remark,
+        p.created_at AS createdAt,
+        p.updated_at AS updatedAt,
+        COALESCE(counts.assignmentCount, 0) AS assignmentCount,
+        COALESCE(counts.activeAssignmentCount, 0) AS activeAssignmentCount
+      FROM projects p
+      LEFT JOIN personnel owner ON owner.id = p.owner_personnel_id
+      LEFT JOIN (
+        SELECT
+          project_id,
+          COUNT(*) AS assignmentCount,
+          SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS activeAssignmentCount
+        FROM project_personnel_assignments
+        GROUP BY project_id
+      ) counts ON counts.project_id = p.id
+      ORDER BY p.updated_at DESC, p.id DESC`
+  )
+  return rows.map((row) => buildProjectPayload(row))
+}
+
+const getProjectById = async (pool, projectId) => {
+  const [rows] = await pool.query(
+    `SELECT
+        p.id,
+        p.project_name AS projectName,
+        p.status,
+        p.owner_personnel_id AS ownerPersonnelId,
+        owner.full_name AS ownerName,
+        DATE_FORMAT(p.start_date, '%Y-%m-%d') AS startDate,
+        DATE_FORMAT(p.end_date, '%Y-%m-%d') AS endDate,
+        p.remark,
+        p.created_at AS createdAt,
+        p.updated_at AS updatedAt,
+        COALESCE(counts.assignmentCount, 0) AS assignmentCount,
+        COALESCE(counts.activeAssignmentCount, 0) AS activeAssignmentCount
+      FROM projects p
+      LEFT JOIN personnel owner ON owner.id = p.owner_personnel_id
+      LEFT JOIN (
+        SELECT
+          project_id,
+          COUNT(*) AS assignmentCount,
+          SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS activeAssignmentCount
+        FROM project_personnel_assignments
+        GROUP BY project_id
+      ) counts ON counts.project_id = p.id
+      WHERE p.id = ?
+      LIMIT 1`,
+    [projectId]
+  )
+  return rows[0] ? buildProjectPayload(rows[0]) : null
+}
+
+const listProjectAssignments = async (pool, projectId) => {
+  const [rows] = await pool.query(
+    `SELECT
+        a.id,
+        a.project_id AS projectId,
+        project.project_name AS projectName,
+        a.personnel_id AS personnelId,
+        personnel.full_name AS fullName,
+        personnel.department,
+        personnel.team,
+        personnel.title,
+        personnel.email,
+        personnel.phone,
+        personnel.manager_personnel_id AS managerPersonnelId,
+        manager.full_name AS managerName,
+        a.project_role AS projectRole,
+        DATE_FORMAT(a.start_date, '%Y-%m-%d') AS startDate,
+        DATE_FORMAT(a.end_date, '%Y-%m-%d') AS endDate,
+        a.source,
+        a.status,
+        a.remark,
+        a.created_at AS createdAt,
+        a.updated_at AS updatedAt
+      FROM project_personnel_assignments a
+      INNER JOIN projects project ON project.id = a.project_id
+      INNER JOIN personnel personnel ON personnel.id = a.personnel_id
+      LEFT JOIN personnel manager ON manager.id = personnel.manager_personnel_id
+      WHERE a.project_id = ?
+      ORDER BY FIELD(a.status, 'active', 'transferred', 'removed'), a.updated_at DESC, a.id DESC`,
+    [projectId]
+  )
+  return rows.map((row) => buildProjectAssignmentPayload(row))
+}
+
+const getProjectAssignmentById = async (pool, assignmentId) => {
+  const [rows] = await pool.query(
+    `SELECT
+        a.id,
+        a.project_id AS projectId,
+        project.project_name AS projectName,
+        a.personnel_id AS personnelId,
+        personnel.full_name AS fullName,
+        personnel.department,
+        personnel.team,
+        personnel.title,
+        personnel.email,
+        personnel.phone,
+        personnel.manager_personnel_id AS managerPersonnelId,
+        manager.full_name AS managerName,
+        a.project_role AS projectRole,
+        DATE_FORMAT(a.start_date, '%Y-%m-%d') AS startDate,
+        DATE_FORMAT(a.end_date, '%Y-%m-%d') AS endDate,
+        a.source,
+        a.status,
+        a.remark,
+        a.created_at AS createdAt,
+        a.updated_at AS updatedAt
+      FROM project_personnel_assignments a
+      INNER JOIN projects project ON project.id = a.project_id
+      INNER JOIN personnel personnel ON personnel.id = a.personnel_id
+      LEFT JOIN personnel manager ON manager.id = personnel.manager_personnel_id
+      WHERE a.id = ?
+      LIMIT 1`,
+    [assignmentId]
+  )
+  return rows[0] ? buildProjectAssignmentPayload(rows[0]) : null
+}
+
+const insertProjectMovement = async (pool, {
+  assignmentId = null,
+  personnelId,
+  fromProjectId = null,
+  toProjectId = null,
+  movementType,
+  movementDate = null,
+  projectRole = '',
+  source = 'manual',
+  remark = '',
+} = {}) => {
+  await pool.query(
+    `INSERT INTO project_personnel_movements
+      (assignment_id, personnel_id, from_project_id, to_project_id, movement_type, movement_date, project_role, source, remark)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      assignmentId || null,
+      personnelId,
+      fromProjectId || null,
+      toProjectId || null,
+      normalizeText(movementType),
+      movementDate || getTodayDateText(),
+      normalizeText(projectRole) || null,
+      normalizeAssignmentSource(source),
+      normalizeRemark(remark) || null,
+    ]
+  )
+}
+
+const upsertProjectAssignment = async (
+  pool,
+  projectId,
+  personnelId,
+  payload,
+  movementType = 'joined',
+  { recordMovement = true } = {}
+) => {
+  assertDateRange(payload.startDate, payload.endDate, 'assignment')
+
+  const [existingRows] = await pool.query(
+    'SELECT id FROM project_personnel_assignments WHERE project_id = ? AND personnel_id = ? LIMIT 1',
+    [projectId, personnelId]
+  )
+  const existingId = existingRows[0]?.id ? Number(existingRows[0].id) : null
+  const status = normalizeAssignmentStatus(payload.status, 'active')
+
+  if (existingId) {
+    await pool.query(
+      `UPDATE project_personnel_assignments
+        SET project_role = ?, start_date = ?, end_date = ?, source = ?, status = ?, remark = ?,
+            updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [
+        payload.projectRole || null,
+        payload.startDate,
+        payload.endDate,
+        payload.source,
+        status,
+        payload.remark || null,
+        existingId,
+      ]
+    )
+    const assignment = await getProjectAssignmentById(pool, existingId)
+    if (recordMovement) {
+      await insertProjectMovement(pool, {
+        assignmentId: existingId,
+        personnelId,
+        toProjectId: projectId,
+        movementType: movementType === 'joined' ? 'updated' : movementType,
+        movementDate: payload.startDate,
+        projectRole: payload.projectRole,
+        source: payload.source,
+        remark: payload.remark,
+      })
+    }
+    return { assignment, action: 'updated' }
+  }
+
+  const [result] = await pool.query(
+    `INSERT INTO project_personnel_assignments
+      (project_id, personnel_id, project_role, start_date, end_date, source, status, remark)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      projectId,
+      personnelId,
+      payload.projectRole || null,
+      payload.startDate,
+      payload.endDate,
+      payload.source,
+      status,
+      payload.remark || null,
+    ]
+  )
+  const assignmentId = Number(result.insertId)
+  const assignment = await getProjectAssignmentById(pool, assignmentId)
+  if (recordMovement) {
+    await insertProjectMovement(pool, {
+      assignmentId,
+      personnelId,
+      toProjectId: projectId,
+      movementType,
+      movementDate: payload.startDate,
+      projectRole: payload.projectRole,
+      source: payload.source,
+      remark: payload.remark,
+    })
+  }
+  return { assignment, action: 'created' }
+}
+
+const parseCsvRows = (csvText) => {
+  const text = String(csvText || '').replace(/^\uFEFF/, '')
+  const rows = []
+  let row = []
+  let cell = ''
+  let inQuotes = false
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    const nextChar = text[index + 1]
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        cell += '"'
+        index += 1
+      } else {
+        inQuotes = !inQuotes
+      }
+      continue
+    }
+
+    if (char === ',' && !inQuotes) {
+      row.push(cell)
+      cell = ''
+      continue
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') index += 1
+      row.push(cell)
+      if (row.some((value) => normalizeText(value))) rows.push(row)
+      row = []
+      cell = ''
+      continue
+    }
+
+    cell += char
+  }
+
+  row.push(cell)
+  if (row.some((value) => normalizeText(value))) rows.push(row)
+  return rows
+}
+
+const normalizeCsvHeader = (value) => normalizeText(value).toLowerCase().replace(/\s+/g, '')
+
+const PROJECT_PERSONNEL_IMPORT_HEADERS = {
+  姓名: 'fullName',
+  name: 'fullName',
+  fullname: 'fullName',
+  full_name: 'fullName',
+  部門: 'department',
+  部门: 'department',
+  department: 'department',
+  組別: 'team',
+  组别: 'team',
+  team: 'team',
+  職稱: 'title',
+  职称: 'title',
+  title: 'title',
+  email: 'email',
+  'e-mail': 'email',
+  電話: 'phone',
+  电话: 'phone',
+  phone: 'phone',
+  mobile: 'phone',
+  主管: 'managerName',
+  直屬主管: 'managerName',
+  直属主管: 'managerName',
+  manager: 'managerName',
+  managername: 'managerName',
+  項目角色: 'projectRole',
+  项目角色: 'projectRole',
+  角色: 'projectRole',
+  projectrole: 'projectRole',
+  role: 'projectRole',
+  入組日期: 'startDate',
+  入组日期: 'startDate',
+  startdate: 'startDate',
+  start_date: 'startDate',
+  離組日期: 'endDate',
+  离组日期: 'endDate',
+  enddate: 'endDate',
+  end_date: 'endDate',
+  備註: 'remark',
+  备注: 'remark',
+  remark: 'remark',
+  note: 'remark',
+}
+
+const listCandidateBlacklistRows = async (pool) => {
+  const [rows] = await pool.query(
+    `SELECT
+        id,
+        display_name AS displayName,
+        phone,
+        normalized_phone AS normalizedPhone,
+        email,
+        normalized_email AS normalizedEmail,
+        reason,
+        status,
+        remark,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM candidate_blacklist
+      ORDER BY updated_at DESC, id DESC`
+  )
+  return rows.map((row) => buildCandidateBlacklistPayload(row))
+}
+
+const ensureCandidateBlacklistUniqueness = async (pool, payload, excludeId = null) => {
+  const rows = await listCandidateBlacklistRows(pool)
+  const targetPhone = payload.normalizedPhone
+  const targetEmail = payload.normalizedEmail
+
+  const duplicate = rows.find((row) => {
+    if (excludeId && Number(row.id) === Number(excludeId)) return false
+    if (targetPhone && row.normalizedPhone === targetPhone) return true
+    if (targetEmail && row.normalizedEmail === targetEmail) return true
+    return false
+  })
+
+  if (duplicate) {
+    throw new HttpError(400, 'Blacklist entry already exists with the same phone or email')
+  }
+}
+
+const findCandidateBlacklistMatch = (entries, { phone = '', email = '' } = {}) => {
+  const normalizedPhone = normalizePhoneIdentity(phone)
+  const normalizedEmail = normalizeEmailIdentity(email)
+  return entries.find((entry) => {
+    if (entry.status !== 'active') return false
+    if (normalizedPhone && entry.normalizedPhone && entry.normalizedPhone === normalizedPhone) return true
+    if (normalizedEmail && entry.normalizedEmail && entry.normalizedEmail === normalizedEmail) return true
+    return false
+  }) || null
+}
+
+const buildCandidateBlacklistFlags = (match, identity = {}) => {
+  const normalizedPhone = normalizePhoneIdentity(identity.phone)
+  const normalizedEmail = normalizeEmailIdentity(identity.email)
+  const matchedBy = match
+    ? match.normalizedPhone && normalizedPhone && match.normalizedPhone === normalizedPhone
+      ? 'phone'
+      : match.normalizedEmail && normalizedEmail && match.normalizedEmail === normalizedEmail
+        ? 'email'
+        : ''
+    : ''
+
+  return {
+    isBlacklisted: !!match,
+    blacklistReason: match ? match.reason : '',
+    blacklistMatchedBy: matchedBy,
+    blacklistEntryId: match ? Number(match.id) : null,
   }
 }
 
@@ -1428,7 +2261,10 @@ const computeMissingFields = (extracted = {}) => {
     { key: 'technicalLanguages', value: profile.technicalLanguages },
     { key: 'technicalCertificates', value: profile.technicalCertificates },
     { key: 'industry', value: profile.industry },
-    { key: 'projectExperience', value: profile.projectExperience },
+    {
+      key: 'projectExperiences',
+      value: hasProjectExperiences(profile.projectExperiences, profile.projectExperience),
+    },
     { key: 'targetPosition', value: profile.targetPosition },
     { key: 'expectedSalary', value: profile.expectedSalary },
     { key: 'onboardingPreference', value: profile.onboardingPreference },
@@ -1453,7 +2289,7 @@ const applyExtractedFieldUpdate = (extracted, fieldKey, inputValue) => {
     technicalLanguages: { kind: 'list', target: 'profile', limit: 30 },
     technicalCertificates: { kind: 'list', target: 'profile', limit: 20 },
     industry: { kind: 'text', target: 'profile' },
-    projectExperience: { kind: 'text', target: 'profile' },
+    projectExperiences: { kind: 'project-experiences', target: 'profile' },
     targetPosition: { kind: 'list', target: 'profile', limit: 10 },
     expectedSalary: { kind: 'text', target: 'profile' },
     onboardingPreference: { kind: 'text', target: 'profile' },
@@ -1466,6 +2302,18 @@ const applyExtractedFieldUpdate = (extracted, fieldKey, inputValue) => {
     const list = normalizeList(inputValue, config.limit || 20)
     if (config.target === 'profile') root.profile[fieldKey] = list
     else root[fieldKey] = list
+    return { extracted: root }
+  }
+
+  if (config.kind === 'project-experiences') {
+    const groups = normalizeProjectExperiences(inputValue)
+    if (config.target === 'profile') {
+      root.profile[fieldKey] = groups
+      delete root.profile.projectExperience
+    } else {
+      root[fieldKey] = groups
+      delete root.projectExperience
+    }
     return { extracted: root }
   }
 
@@ -1500,7 +2348,7 @@ const applyEditedExtractedPayload = (baseExtracted, editedExtracted) => {
     ['technicalLanguages', sourceProfile.technicalLanguages],
     ['technicalCertificates', sourceProfile.technicalCertificates],
     ['industry', sourceProfile.industry],
-    ['projectExperience', sourceProfile.projectExperience],
+    ['projectExperiences', sourceProfile.projectExperiences],
     ['targetPosition', sourceProfile.targetPosition],
     ['expectedSalary', sourceProfile.expectedSalary],
     ['onboardingPreference', sourceProfile.onboardingPreference],
@@ -1766,6 +2614,120 @@ const uploadCandidateCv = async (pool, req, res, candidateId) => {
   sendJson(res, 201, { message: 'CV uploaded', cv })
 }
 
+const intakeCandidateCvToJobPost = async (pool, req, res, candidateId, jobPostId) => {
+  const candidate = await getCandidateById(pool, candidateId)
+  if (!candidate) {
+    sendJson(res, 404, { message: 'Candidate not found' })
+    return
+  }
+
+  const jobPost = await getJobPostById(pool, jobPostId)
+  if (!jobPost || !jobPost.jobSnapshot) {
+    sendJson(res, 404, { message: 'Job post not found' })
+    return
+  }
+
+  if (jobPost.status !== 'open') {
+    sendJson(res, 400, { message: 'Job post is not open' })
+    return
+  }
+
+  const body = await parseBody(req)
+  const fileName = normalizeText(body?.fileName)
+  const contentBase64 = body?.contentBase64
+  const mimeType = normalizeText(body?.mimeType) || 'application/octet-stream'
+
+  if (!fileName || !contentBase64) {
+    sendJson(res, 400, { message: 'fileName and contentBase64 are required' })
+    return
+  }
+
+  const buffer = Buffer.from(contentBase64, 'base64')
+  if (!buffer.length) {
+    sendJson(res, 400, { message: 'Invalid file content' })
+    return
+  }
+
+  const extraction = await extractCandidateInfoFromCv(buffer, fileName, mimeType)
+  const finalExtracted = extraction?.extracted || {}
+  const finalMissingFields = computeMissingFields(finalExtracted)
+  const parser = extraction?.llmJson ? 'llm' : 'regex'
+  const cvText = await extractTextFromBuffer(buffer, fileName, mimeType)
+
+  const nextFullName = normalizeText(finalExtracted.fullName) || candidate.fullName || 'x'
+  const nextEmail = normalizeEmailIdentity(finalExtracted.email) || candidate.email || null
+  const nextPhone = normalizeText(finalExtracted.phone) || candidate.phone || null
+
+  await pool.query(
+    'UPDATE candidates SET full_name = ?, email = ?, phone = ? WHERE id = ?',
+    [nextFullName, nextEmail, nextPhone, Number(candidateId)]
+  )
+
+  const cv = await insertCandidateCv(pool, Number(candidateId), fileName, mimeType, buffer, {
+    fullName: nextFullName,
+    createdAt: candidate.createdAt || new Date(),
+  })
+
+  const targetPosition = Array.isArray(finalExtracted?.profile?.targetPosition)
+    ? finalExtracted.profile.targetPosition.join(', ')
+    : ''
+  const applicationId = await createJobPostApplication(pool, Number(jobPostId), Number(candidateId), cv.id, null)
+  const match = await runJobPostApplicationMatching(pool, {
+    applicationId,
+    candidateId: Number(candidateId),
+    candidateCvId: cv.id,
+    extracted: finalExtracted,
+    jobSnapshot: jobPost.jobSnapshot,
+  })
+
+  const extractedPayload = attachMatchReportToExtractedPayload(
+    {
+      extracted: finalExtracted,
+      missingFields: finalMissingFields,
+      parser,
+    },
+    match
+  )
+  const extractedText = JSON.stringify(extractedPayload, null, 2)
+
+  await insertCandidateCvExtraction(pool, Number(candidateId), cv.id, {
+    targetPosition,
+    cvText,
+    extractedText,
+  })
+
+  sendJson(res, 201, {
+    message: 'Candidate CV uploaded and matched',
+    jobPost: {
+      id: jobPost.id,
+      title: jobPost.title,
+      jobKey: jobPost.jobKey,
+      matchedPosition: normalizeText(jobPost.jobSnapshot?.title),
+    },
+    application: {
+      id: applicationId,
+      jobPostId: jobPost.id,
+      applicationStatus: 'screening',
+      remark: '',
+      matchedScore: Number(match?.matchScore || 0),
+      matchedLevel: normalizeText(match?.matchLevel),
+      matchedPosition: normalizeText(match?.matchedPosition || match?.jobTitle),
+    },
+    candidate: {
+      id: Number(candidateId),
+      fullName: nextFullName,
+      email: nextEmail,
+      phone: nextPhone,
+      extracted: finalExtracted,
+      missingFields: finalMissingFields,
+      llmJson: extraction?.llmJson || null,
+      parser,
+    },
+    cv,
+    match,
+  })
+}
+
 const listCandidateCvs = async (pool, _req, res, candidateId) => {
   const [rows] = await pool.query(
     `SELECT id, candidate_id AS candidateId, version_no AS versionNo, original_filename AS originalFileName,
@@ -1833,6 +2795,7 @@ const listCandidateCvTable = async (pool, _req, res) => {
 }
 
 const listAllJobPostApplicationsTable = async (pool, _req, res) => {
+  const blacklistEntries = await listCandidateBlacklistRows(pool)
   const [rows] = await pool.query(
     `SELECT
         app.id AS applicationId,
@@ -1846,6 +2809,7 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
         jp.title AS jobPostTitle,
         c.id AS candidateId,
         c.full_name AS fullName,
+        c.email AS email,
         c.phone AS phone,
         cv.id AS cvId,
         cv.original_filename AS cvFileName,
@@ -1862,27 +2826,39 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
   )
 
   sendJson(res, 200, {
-    applications: rows.map((row) => ({
-      applicationId: Number(row.applicationId),
-      applicationStatus: normalizeApplicationStatus(row.applicationStatus),
-      remark: normalizeText(row.remark),
-      matchedScore: Number(row.matchedScore || 0),
-      matchedLevel: normalizeText(row.matchedLevel),
-      matchedPosition: normalizeText(row.matchedPosition),
-      createdAt: row.createdAt,
-      jobPostId: Number(row.jobPostId),
-      jobPostTitle: normalizeText(row.jobPostTitle),
-      candidateId: Number(row.candidateId),
-      fullName: normalizeText(row.fullName),
-      phone: normalizeText(row.phone),
-      cvId: Number(row.cvId),
-      cvFileName: normalizeText(row.cvFileName),
-      extractedFileName: row.cvFileName ? `${row.cvFileName}.extracted.txt` : '',
-      targetPosition: normalizeText(row.targetPosition),
-      hasDownload: hasCandidateCvStoredFile(row.storageKey),
-      hasCvPreview: Number(row.hasCvPreview || 0) === 1,
-      hasExtractedPreview: Number(row.hasExtractedPreview || 0) === 1,
-    })),
+    applications: rows.map((row) => {
+      const match = findCandidateBlacklistMatch(blacklistEntries, {
+        phone: row.phone,
+        email: row.email,
+      })
+
+      return {
+        applicationId: Number(row.applicationId),
+        applicationStatus: normalizeApplicationStatus(row.applicationStatus),
+        remark: normalizeText(row.remark),
+        matchedScore: Number(row.matchedScore || 0),
+        matchedLevel: normalizeText(row.matchedLevel),
+        matchedPosition: normalizeText(row.matchedPosition),
+        createdAt: row.createdAt,
+        jobPostId: Number(row.jobPostId),
+        jobPostTitle: normalizeText(row.jobPostTitle),
+        candidateId: Number(row.candidateId),
+        fullName: normalizeText(row.fullName),
+        email: normalizeEmailIdentity(row.email),
+        phone: normalizeText(row.phone),
+        cvId: Number(row.cvId),
+        cvFileName: normalizeText(row.cvFileName),
+        extractedFileName: row.cvFileName ? `${row.cvFileName}.extracted.txt` : '',
+        targetPosition: normalizeText(row.targetPosition),
+        hasDownload: hasCandidateCvStoredFile(row.storageKey),
+        hasCvPreview: Number(row.hasCvPreview || 0) === 1,
+        hasExtractedPreview: Number(row.hasExtractedPreview || 0) === 1,
+        ...buildCandidateBlacklistFlags(match, {
+          phone: row.phone,
+          email: row.email,
+        }),
+      }
+    }),
   })
 }
 
@@ -2183,6 +3159,649 @@ const deleteCandidatesBatch = async (pool, req, res) => {
   })
 }
 
+const listProjects = async (pool, _req, res, url) => {
+  const keyword = normalizeText(url?.searchParams.get('keyword')).toLowerCase()
+  const status = normalizeProjectStatus(url?.searchParams.get('status'), '')
+  const rows = await listProjectRows(pool)
+  const filtered = rows.filter((row) => {
+    if (status && row.status !== status) return false
+    if (!keyword) return true
+    return [
+      row.projectName,
+      row.status,
+      row.ownerName,
+      row.remark,
+    ].join(' ').toLowerCase().includes(keyword)
+  })
+  sendJson(res, 200, { projects: filtered })
+}
+
+const createProject = async (pool, req, res) => {
+  const payload = normalizeProjectPayload(await parseBody(req))
+  if (!payload.projectName) {
+    sendJson(res, 400, { message: 'projectName is required' })
+    return
+  }
+  assertDateRange(payload.startDate, payload.endDate, 'project')
+  if (payload.ownerPersonnelId && !(await getPersonnelById(pool, payload.ownerPersonnelId))) {
+    sendJson(res, 400, { message: 'Owner personnel not found' })
+    return
+  }
+
+  const [result] = await pool.query(
+    `INSERT INTO projects
+      (project_name, status, owner_personnel_id, start_date, end_date, remark)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      payload.projectName,
+      payload.status,
+      payload.ownerPersonnelId,
+      payload.startDate,
+      payload.endDate,
+      payload.remark || null,
+    ]
+  )
+  const project = await getProjectById(pool, Number(result.insertId))
+  sendJson(res, 201, { message: 'Project created', project })
+}
+
+const getProjectDetail = async (pool, _req, res, projectId) => {
+  const project = await getProjectById(pool, projectId)
+  if (!project) {
+    sendJson(res, 404, { message: 'Project not found' })
+    return
+  }
+  const assignments = await listProjectAssignments(pool, projectId)
+  sendJson(res, 200, { project, assignments })
+}
+
+const updateProject = async (pool, req, res, projectId) => {
+  const existing = await getProjectById(pool, projectId)
+  if (!existing) {
+    sendJson(res, 404, { message: 'Project not found' })
+    return
+  }
+
+  const payload = normalizeProjectPayload(await parseBody(req))
+  if (!payload.projectName) {
+    sendJson(res, 400, { message: 'projectName is required' })
+    return
+  }
+  assertDateRange(payload.startDate, payload.endDate, 'project')
+  if (payload.ownerPersonnelId && !(await getPersonnelById(pool, payload.ownerPersonnelId))) {
+    sendJson(res, 400, { message: 'Owner personnel not found' })
+    return
+  }
+
+  await pool.query(
+    `UPDATE projects
+      SET project_name = ?, status = ?, owner_personnel_id = ?, start_date = ?, end_date = ?,
+          remark = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [
+      payload.projectName,
+      payload.status,
+      payload.ownerPersonnelId,
+      payload.startDate,
+      payload.endDate,
+      payload.remark || null,
+      projectId,
+    ]
+  )
+
+  const project = await getProjectById(pool, projectId)
+  sendJson(res, 200, { message: 'Project updated', project })
+}
+
+const deleteProject = async (pool, _req, res, projectId) => {
+  const existing = await getProjectById(pool, projectId)
+  if (!existing) {
+    sendJson(res, 404, { message: 'Project not found' })
+    return
+  }
+
+  await pool.query('DELETE FROM projects WHERE id = ?', [projectId])
+  sendJson(res, 200, { message: 'Project deleted', projectId })
+}
+
+const addProjectPersonnel = async (pool, req, res, projectId) => {
+  const project = await getProjectById(pool, projectId)
+  if (!project) {
+    sendJson(res, 404, { message: 'Project not found' })
+    return
+  }
+
+  const payload = normalizeProjectAssignmentPayload(await parseBody(req), 'manual')
+  const personnel = await createOrUpdatePersonnelForProject(pool, payload)
+  const { assignment, action } = await upsertProjectAssignment(pool, projectId, Number(personnel.id), payload, 'joined')
+  sendJson(res, action === 'created' ? 201 : 200, {
+    message: action === 'created' ? 'Project personnel added' : 'Project personnel updated',
+    personnel,
+    assignment,
+  })
+}
+
+const updateProjectPersonnelAssignment = async (pool, req, res, assignmentId) => {
+  const existing = await getProjectAssignmentById(pool, assignmentId)
+  if (!existing) {
+    sendJson(res, 404, { message: 'Project assignment not found' })
+    return
+  }
+
+  const body = await parseBody(req)
+  const payload = normalizeProjectAssignmentPayload({
+    ...body,
+    source: body?.source || existing.source,
+    status: body?.status || existing.status,
+    startDate: Object.prototype.hasOwnProperty.call(body || {}, 'startDate') ? body.startDate : existing.startDate,
+    endDate: Object.prototype.hasOwnProperty.call(body || {}, 'endDate') ? body.endDate : existing.endDate,
+    projectRole: Object.prototype.hasOwnProperty.call(body || {}, 'projectRole') ? body.projectRole : existing.projectRole,
+    remark: Object.prototype.hasOwnProperty.call(body || {}, 'remark') ? body.remark : existing.remark,
+  }, existing.source)
+  assertDateRange(payload.startDate, payload.endDate, 'assignment')
+
+  await pool.query(
+    `UPDATE project_personnel_assignments
+      SET project_role = ?, start_date = ?, end_date = ?, source = ?, status = ?, remark = ?,
+          updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [
+      payload.projectRole || null,
+      payload.startDate,
+      payload.endDate,
+      payload.source,
+      payload.status,
+      payload.remark || null,
+      assignmentId,
+    ]
+  )
+
+  const assignment = await getProjectAssignmentById(pool, assignmentId)
+  await insertProjectMovement(pool, {
+    assignmentId,
+    personnelId: existing.personnelId,
+    fromProjectId: existing.projectId,
+    toProjectId: payload.status === 'removed' ? null : existing.projectId,
+    movementType: payload.status === 'removed' ? 'removed' : 'updated',
+    movementDate: payload.status === 'removed' ? payload.endDate : payload.startDate,
+    projectRole: payload.projectRole,
+    source: payload.source,
+    remark: payload.remark,
+  })
+
+  sendJson(res, 200, { message: 'Project assignment updated', assignment })
+}
+
+const removeProjectPersonnelAssignment = async (pool, req, res, assignmentId) => {
+  const existing = await getProjectAssignmentById(pool, assignmentId)
+  if (!existing) {
+    sendJson(res, 404, { message: 'Project assignment not found' })
+    return
+  }
+
+  const body = await parseBody(req).catch(() => ({}))
+  const endDate = normalizeDateInput(body?.endDate || existing.endDate || getTodayDateText(), 'endDate')
+  const remark = normalizeRemark(body?.remark || existing.remark)
+  await pool.query(
+    `UPDATE project_personnel_assignments
+      SET status = 'removed', end_date = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [endDate, remark || null, assignmentId]
+  )
+  const assignment = await getProjectAssignmentById(pool, assignmentId)
+  await insertProjectMovement(pool, {
+    assignmentId,
+    personnelId: existing.personnelId,
+    fromProjectId: existing.projectId,
+    movementType: 'removed',
+    movementDate: endDate,
+    projectRole: existing.projectRole,
+    source: existing.source,
+    remark,
+  })
+  sendJson(res, 200, { message: 'Project personnel removed', assignment })
+}
+
+const transferProjectPersonnelAssignment = async (pool, req, res, assignmentId) => {
+  const existing = await getProjectAssignmentById(pool, assignmentId)
+  if (!existing) {
+    sendJson(res, 404, { message: 'Project assignment not found' })
+    return
+  }
+
+  const body = await parseBody(req)
+  const targetProjectId = Number(body?.targetProjectId)
+  if (!Number.isInteger(targetProjectId) || targetProjectId <= 0) {
+    sendJson(res, 400, { message: 'targetProjectId is required' })
+    return
+  }
+  if (targetProjectId === Number(existing.projectId)) {
+    sendJson(res, 400, { message: 'targetProjectId must be different from current project' })
+    return
+  }
+  const targetProject = await getProjectById(pool, targetProjectId)
+  if (!targetProject) {
+    sendJson(res, 404, { message: 'Target project not found' })
+    return
+  }
+
+  const transferDate = normalizeDateInput(body?.transferDate || body?.startDate || getTodayDateText(), 'transferDate')
+  const targetPayload = normalizeProjectAssignmentPayload({
+    projectRole: body?.projectRole || existing.projectRole,
+    startDate: body?.startDate || transferDate,
+    endDate: body?.endDate || null,
+    source: body?.source || 'manual',
+    status: 'active',
+    remark: body?.remark || '',
+  }, 'manual')
+
+  await pool.query(
+    `UPDATE project_personnel_assignments
+      SET status = 'transferred', end_date = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [transferDate, assignmentId]
+  )
+
+  const { assignment: targetAssignment } = await upsertProjectAssignment(
+    pool,
+    targetProjectId,
+    existing.personnelId,
+    targetPayload,
+    'transferred',
+    { recordMovement: false }
+  )
+
+  await insertProjectMovement(pool, {
+    assignmentId,
+    personnelId: existing.personnelId,
+    fromProjectId: existing.projectId,
+    toProjectId: targetProjectId,
+    movementType: 'transferred',
+    movementDate: transferDate,
+    projectRole: targetPayload.projectRole,
+    source: targetPayload.source,
+    remark: targetPayload.remark,
+  })
+
+  const sourceAssignment = await getProjectAssignmentById(pool, assignmentId)
+  sendJson(res, 200, {
+    message: 'Project personnel transferred',
+    sourceAssignment,
+    targetAssignment,
+  })
+}
+
+const resolveCsvManagerPersonnelId = (managerName, personnelRows) => {
+  const text = normalizeText(managerName)
+  if (!text) return null
+  const managerById = personnelRows.find((row) => String(row.id) === text)
+  if (managerById) return Number(managerById.id)
+  const managerByName = personnelRows.find((row) => normalizeText(row.fullName) === text)
+  if (managerByName) return Number(managerByName.id)
+  throw new HttpError(400, `Manager not found: ${text}`)
+}
+
+const importProjectPersonnelCsv = async (pool, req, res, projectId) => {
+  const project = await getProjectById(pool, projectId)
+  if (!project) {
+    sendJson(res, 404, { message: 'Project not found' })
+    return
+  }
+
+  const body = await parseBody(req)
+  const csvText = String(body?.csvText || '')
+  if (!normalizeText(csvText)) {
+    sendJson(res, 400, { message: 'csvText is required' })
+    return
+  }
+
+  const csvRows = parseCsvRows(csvText)
+  if (csvRows.length < 2) {
+    sendJson(res, 400, { message: 'CSV must include header and at least one data row' })
+    return
+  }
+
+  const headers = csvRows[0].map((header) => PROJECT_PERSONNEL_IMPORT_HEADERS[normalizeCsvHeader(header)] || '')
+  if (!headers.includes('fullName')) {
+    sendJson(res, 400, { message: 'CSV header must include fullName/name/姓名' })
+    return
+  }
+
+  let personnelRows = await listPersonnelRows(pool)
+  const summary = {
+    total: 0,
+    createdCount: 0,
+    updatedCount: 0,
+    errorCount: 0,
+    errors: [],
+  }
+
+  for (let rowIndex = 1; rowIndex < csvRows.length; rowIndex += 1) {
+    const rawRow = csvRows[rowIndex]
+    if (!rawRow.some((value) => normalizeText(value))) continue
+    summary.total += 1
+    const record = {}
+    headers.forEach((key, columnIndex) => {
+      if (!key) return
+      record[key] = normalizeText(rawRow[columnIndex])
+    })
+
+    try {
+      if (!record.fullName) throw new HttpError(400, '姓名不可為空')
+      if (!record.email && !record.phone) throw new HttpError(400, 'Email 或電話至少填一項')
+
+      const managerPersonnelId = resolveCsvManagerPersonnelId(record.managerName, personnelRows)
+      const payload = normalizeProjectAssignmentPayload({
+        ...record,
+        managerPersonnelId,
+        source: 'csv',
+        status: 'active',
+      }, 'csv')
+      const personnel = await createOrUpdatePersonnelForProject(pool, payload, { requireIdentity: true })
+      const { action } = await upsertProjectAssignment(pool, projectId, Number(personnel.id), payload, 'joined')
+      if (action === 'created') summary.createdCount += 1
+      else summary.updatedCount += 1
+      personnelRows = [
+        buildPersonnelPayload({
+          ...personnel,
+          managerName: personnel.managerName || '',
+        }),
+        ...personnelRows.filter((row) => Number(row.id) !== Number(personnel.id)),
+      ]
+    } catch (error) {
+      summary.errorCount += 1
+      summary.errors.push({
+        rowNumber: rowIndex + 1,
+        message: error?.message || '匯入失敗',
+      })
+    }
+  }
+
+  const assignments = await listProjectAssignments(pool, projectId)
+  sendJson(res, 200, {
+    message: 'CSV import completed',
+    summary,
+    assignments,
+  })
+}
+
+const addProjectPersonnelFromApplication = async (pool, req, res) => {
+  const body = await parseBody(req)
+  const applicationId = Number(body?.applicationId)
+  const projectId = Number(body?.projectId)
+  if (!Number.isInteger(applicationId) || applicationId <= 0) {
+    sendJson(res, 400, { message: 'applicationId is required' })
+    return
+  }
+  if (!Number.isInteger(projectId) || projectId <= 0) {
+    sendJson(res, 400, { message: 'projectId is required' })
+    return
+  }
+
+  const project = await getProjectById(pool, projectId)
+  if (!project) {
+    sendJson(res, 404, { message: 'Project not found' })
+    return
+  }
+
+  const [rows] = await pool.query(
+    `SELECT
+        app.id AS applicationId,
+        app.application_status AS applicationStatus,
+        app.matched_position AS matchedPosition,
+        c.id AS candidateId,
+        c.full_name AS fullName,
+        c.email,
+        c.phone,
+        extracts.target_position AS targetPosition
+      FROM job_post_applications app
+      INNER JOIN candidates c ON c.id = app.candidate_id
+      LEFT JOIN candidate_cv_extractions extracts ON extracts.candidate_cv_id = app.candidate_cv_id
+      WHERE app.id = ?
+      LIMIT 1`,
+    [applicationId]
+  )
+  const application = rows[0]
+  if (!application) {
+    sendJson(res, 404, { message: 'Application not found' })
+    return
+  }
+  if (normalizeApplicationStatus(application.applicationStatus) !== 'onboarded') {
+    sendJson(res, 400, { message: 'Only onboarded candidates can be added to project personnel' })
+    return
+  }
+
+  const payload = normalizeProjectAssignmentPayload({
+    fullName: application.fullName,
+    email: application.email,
+    phone: application.phone,
+    title: application.matchedPosition || application.targetPosition || '',
+    projectRole: body?.projectRole || application.matchedPosition || application.targetPosition || '',
+    startDate: body?.startDate || getTodayDateText(),
+    endDate: body?.endDate || null,
+    source: 'candidate',
+    status: 'active',
+    remark: body?.remark || '',
+  }, 'candidate')
+  const personnel = await createOrUpdatePersonnelForProject(pool, payload)
+  const { assignment, action } = await upsertProjectAssignment(pool, projectId, Number(personnel.id), payload, 'joined')
+  sendJson(res, action === 'created' ? 201 : 200, {
+    message: action === 'created' ? 'Candidate added to project personnel' : 'Project personnel updated from candidate',
+    personnel,
+    assignment,
+  })
+}
+
+const listPersonnel = async (pool, _req, res, url) => {
+  const keyword = normalizeText(url?.searchParams.get('keyword'))
+  const status = normalizeDirectoryStatus(url?.searchParams.get('status'), '')
+  const rows = await listPersonnelRows(pool)
+
+  const filtered = rows.filter((row) => {
+    if (status && row.status !== status) return false
+    if (!keyword) return true
+    const haystack = [
+      row.fullName,
+      row.department,
+      row.team,
+      row.title,
+      row.email,
+      row.phone,
+      row.managerName,
+      row.remark,
+    ].join(' ').toLowerCase()
+    return haystack.includes(keyword.toLowerCase())
+  })
+
+  sendJson(res, 200, { personnel: filtered })
+}
+
+const createPersonnel = async (pool, req, res) => {
+  const payload = normalizePersonnelPayload(await parseBody(req))
+  if (!payload.fullName) {
+    sendJson(res, 400, { message: 'fullName is required' })
+    return
+  }
+
+  await ensurePersonnelManagerIsValid(pool, null, payload.managerPersonnelId)
+  const [result] = await pool.query(
+    `INSERT INTO personnel
+      (full_name, department, team, title, email, phone, manager_personnel_id, status, remark)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      payload.fullName,
+      payload.department || null,
+      payload.team || null,
+      payload.title || null,
+      payload.email || null,
+      payload.phone || null,
+      payload.managerPersonnelId,
+      payload.status,
+      payload.remark || null,
+    ]
+  )
+
+  const rows = await listPersonnelRows(pool)
+  const personnel = rows.find((row) => Number(row.id) === Number(result.insertId)) || null
+  sendJson(res, 201, { message: 'Personnel created', personnel })
+}
+
+const updatePersonnel = async (pool, req, res, personnelId) => {
+  const [existingRows] = await pool.query('SELECT id FROM personnel WHERE id = ? LIMIT 1', [personnelId])
+  if (!existingRows.length) {
+    sendJson(res, 404, { message: 'Personnel not found' })
+    return
+  }
+
+  const payload = normalizePersonnelPayload(await parseBody(req))
+  if (!payload.fullName) {
+    sendJson(res, 400, { message: 'fullName is required' })
+    return
+  }
+
+  await ensurePersonnelManagerIsValid(pool, personnelId, payload.managerPersonnelId)
+  await pool.query(
+    `UPDATE personnel
+      SET full_name = ?, department = ?, team = ?, title = ?, email = ?, phone = ?,
+          manager_personnel_id = ?, status = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [
+      payload.fullName,
+      payload.department || null,
+      payload.team || null,
+      payload.title || null,
+      payload.email || null,
+      payload.phone || null,
+      payload.managerPersonnelId,
+      payload.status,
+      payload.remark || null,
+      personnelId,
+    ]
+  )
+
+  const rows = await listPersonnelRows(pool)
+  const personnel = rows.find((row) => Number(row.id) === Number(personnelId)) || null
+  sendJson(res, 200, { message: 'Personnel updated', personnel })
+}
+
+const deletePersonnel = async (pool, _req, res, personnelId) => {
+  const [existingRows] = await pool.query('SELECT id FROM personnel WHERE id = ? LIMIT 1', [personnelId])
+  if (!existingRows.length) {
+    sendJson(res, 404, { message: 'Personnel not found' })
+    return
+  }
+
+  await pool.query('UPDATE personnel SET manager_personnel_id = NULL WHERE manager_personnel_id = ?', [personnelId])
+  await pool.query('DELETE FROM personnel WHERE id = ?', [personnelId])
+  sendJson(res, 200, { message: 'Personnel deleted', personnelId: Number(personnelId) })
+}
+
+const listCandidateBlacklist = async (pool, _req, res, url) => {
+  const keyword = normalizeText(url?.searchParams.get('keyword'))
+  const status = normalizeDirectoryStatus(url?.searchParams.get('status'), '')
+  const rows = await listCandidateBlacklistRows(pool)
+
+  const filtered = rows.filter((row) => {
+    if (status && row.status !== status) return false
+    if (!keyword) return true
+    const haystack = [
+      row.displayName,
+      row.phone,
+      row.email,
+      row.reason,
+      row.remark,
+    ].join(' ').toLowerCase()
+    return haystack.includes(keyword.toLowerCase())
+  })
+
+  sendJson(res, 200, { blacklist: filtered })
+}
+
+const createCandidateBlacklist = async (pool, req, res) => {
+  const payload = normalizeBlacklistPayload(await parseBody(req))
+  if (!payload.normalizedPhone && !payload.normalizedEmail) {
+    sendJson(res, 400, { message: 'phone or email is required' })
+    return
+  }
+  if (!payload.reason) {
+    sendJson(res, 400, { message: 'reason is required' })
+    return
+  }
+
+  await ensureCandidateBlacklistUniqueness(pool, payload)
+  const [result] = await pool.query(
+    `INSERT INTO candidate_blacklist
+      (display_name, phone, normalized_phone, email, normalized_email, reason, status, remark)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      payload.displayName || null,
+      payload.phone || null,
+      payload.normalizedPhone || null,
+      payload.email || null,
+      payload.normalizedEmail || null,
+      payload.reason,
+      payload.status,
+      payload.remark || null,
+    ]
+  )
+
+  const rows = await listCandidateBlacklistRows(pool)
+  const blacklistEntry = rows.find((row) => Number(row.id) === Number(result.insertId)) || null
+  sendJson(res, 201, { message: 'Blacklist entry created', blacklistEntry })
+}
+
+const updateCandidateBlacklist = async (pool, req, res, blacklistId) => {
+  const [existingRows] = await pool.query('SELECT id FROM candidate_blacklist WHERE id = ? LIMIT 1', [blacklistId])
+  if (!existingRows.length) {
+    sendJson(res, 404, { message: 'Blacklist entry not found' })
+    return
+  }
+
+  const payload = normalizeBlacklistPayload(await parseBody(req))
+  if (!payload.normalizedPhone && !payload.normalizedEmail) {
+    sendJson(res, 400, { message: 'phone or email is required' })
+    return
+  }
+  if (!payload.reason) {
+    sendJson(res, 400, { message: 'reason is required' })
+    return
+  }
+
+  await ensureCandidateBlacklistUniqueness(pool, payload, blacklistId)
+  await pool.query(
+    `UPDATE candidate_blacklist
+      SET display_name = ?, phone = ?, normalized_phone = ?, email = ?, normalized_email = ?,
+          reason = ?, status = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [
+      payload.displayName || null,
+      payload.phone || null,
+      payload.normalizedPhone || null,
+      payload.email || null,
+      payload.normalizedEmail || null,
+      payload.reason,
+      payload.status,
+      payload.remark || null,
+      blacklistId,
+    ]
+  )
+
+  const rows = await listCandidateBlacklistRows(pool)
+  const blacklistEntry = rows.find((row) => Number(row.id) === Number(blacklistId)) || null
+  sendJson(res, 200, { message: 'Blacklist entry updated', blacklistEntry })
+}
+
+const deleteCandidateBlacklist = async (pool, _req, res, blacklistId) => {
+  const [existingRows] = await pool.query('SELECT id FROM candidate_blacklist WHERE id = ? LIMIT 1', [blacklistId])
+  if (!existingRows.length) {
+    sendJson(res, 404, { message: 'Blacklist entry not found' })
+    return
+  }
+
+  await pool.query('DELETE FROM candidate_blacklist WHERE id = ?', [blacklistId])
+  sendJson(res, 200, { message: 'Blacklist entry deleted', blacklistId: Number(blacklistId) })
+}
+
 const start = async () => {
   loadJobDictionary()
   await ensureDatabaseExists()
@@ -2212,10 +3831,23 @@ const start = async () => {
       if (url.pathname === '/api/job-dictionary' && req.method === 'PUT') return updateJobDictionaryHandler(pool, req, res)
       if (url.pathname === '/api/job-posts' && req.method === 'GET') return listJobPosts(pool, req, res)
       if (url.pathname === '/api/job-posts' && req.method === 'POST') return createJobPost(pool, req, res)
+      if (url.pathname === '/api/projects' && req.method === 'GET') return listProjects(pool, req, res, url)
+      if (url.pathname === '/api/projects' && req.method === 'POST') return createProject(pool, req, res)
+      if (url.pathname === '/api/project-personnel/from-application' && req.method === 'POST') {
+        return addProjectPersonnelFromApplication(pool, req, res)
+      }
 
       if (url.pathname === '/api/candidates' && req.method === 'POST') return createCandidate(pool, req, res)
       if (url.pathname === '/api/candidates' && req.method === 'GET') return listCandidates(pool, req, res)
       if (url.pathname === '/api/candidates/cv-table' && req.method === 'GET') return listCandidateCvTable(pool, req, res)
+      if (url.pathname === '/api/personnel' && req.method === 'GET') return listPersonnel(pool, req, res, url)
+      if (url.pathname === '/api/personnel' && req.method === 'POST') return createPersonnel(pool, req, res)
+      if (url.pathname === '/api/candidate-blacklist' && req.method === 'GET') {
+        return listCandidateBlacklist(pool, req, res, url)
+      }
+      if (url.pathname === '/api/candidate-blacklist' && req.method === 'POST') {
+        return createCandidateBlacklist(pool, req, res)
+      }
       if (url.pathname === '/api/job-post-applications/table' && req.method === 'GET') {
         return listAllJobPostApplicationsTable(pool, req, res)
       }
@@ -2228,6 +3860,37 @@ const start = async () => {
       if (jobPostDetailMatch && req.method === 'GET') return getJobPostDetail(pool, req, res, Number(jobPostDetailMatch[1]))
       if (jobPostDetailMatch && req.method === 'PUT') return updateJobPost(pool, req, res, Number(jobPostDetailMatch[1]))
       if (jobPostDetailMatch && req.method === 'DELETE') return deleteJobPost(pool, req, res, Number(jobPostDetailMatch[1]))
+
+      const projectDetailMatch = url.pathname.match(/^\/api\/projects\/(\d+)$/)
+      if (projectDetailMatch && req.method === 'GET') return getProjectDetail(pool, req, res, Number(projectDetailMatch[1]))
+      if (projectDetailMatch && req.method === 'PATCH') return updateProject(pool, req, res, Number(projectDetailMatch[1]))
+      if (projectDetailMatch && req.method === 'DELETE') return deleteProject(pool, req, res, Number(projectDetailMatch[1]))
+
+      const projectPersonnelMatch = url.pathname.match(/^\/api\/projects\/(\d+)\/personnel$/)
+      if (projectPersonnelMatch && req.method === 'GET') {
+        return getProjectDetail(pool, req, res, Number(projectPersonnelMatch[1]))
+      }
+      if (projectPersonnelMatch && req.method === 'POST') {
+        return addProjectPersonnel(pool, req, res, Number(projectPersonnelMatch[1]))
+      }
+
+      const projectPersonnelImportMatch = url.pathname.match(/^\/api\/projects\/(\d+)\/personnel\/import-csv$/)
+      if (projectPersonnelImportMatch && req.method === 'POST') {
+        return importProjectPersonnelCsv(pool, req, res, Number(projectPersonnelImportMatch[1]))
+      }
+
+      const projectAssignmentTransferMatch = url.pathname.match(/^\/api\/project-personnel-assignments\/(\d+)\/transfer$/)
+      if (projectAssignmentTransferMatch && req.method === 'POST') {
+        return transferProjectPersonnelAssignment(pool, req, res, Number(projectAssignmentTransferMatch[1]))
+      }
+
+      const projectAssignmentMatch = url.pathname.match(/^\/api\/project-personnel-assignments\/(\d+)$/)
+      if (projectAssignmentMatch && req.method === 'PATCH') {
+        return updateProjectPersonnelAssignment(pool, req, res, Number(projectAssignmentMatch[1]))
+      }
+      if (projectAssignmentMatch && req.method === 'DELETE') {
+        return removeProjectPersonnelAssignment(pool, req, res, Number(projectAssignmentMatch[1]))
+      }
 
       const jobPostApplicationsMatch = url.pathname.match(/^\/api\/job-posts\/(\d+)\/applications$/)
       if (jobPostApplicationsMatch && req.method === 'GET') {
@@ -2279,6 +3942,17 @@ const start = async () => {
       if (uploadMatch && req.method === 'POST') return uploadCandidateCv(pool, req, res, Number(uploadMatch[1]))
       if (uploadMatch && req.method === 'GET') return listCandidateCvs(pool, req, res, Number(uploadMatch[1]))
 
+      const candidateJobPostIntakeMatch = url.pathname.match(/^\/api\/candidates\/(\d+)\/job-posts\/(\d+)\/intake$/)
+      if (candidateJobPostIntakeMatch && req.method === 'POST') {
+        return intakeCandidateCvToJobPost(
+          pool,
+          req,
+          res,
+          Number(candidateJobPostIntakeMatch[1]),
+          Number(candidateJobPostIntakeMatch[2])
+        )
+      }
+
       const previewMatch = url.pathname.match(/^\/api\/candidate-cvs\/(\d+)\/preview$/)
       if (previewMatch && req.method === 'GET') {
         const previewType = String(url.searchParams.get('type') || 'cv').trim().toLowerCase()
@@ -2310,6 +3984,18 @@ const start = async () => {
 
       const candidateMatch = url.pathname.match(/^\/api\/candidates\/(\d+)$/)
       if (candidateMatch && req.method === 'DELETE') return deleteCandidate(pool, req, res, Number(candidateMatch[1]))
+
+      const personnelMatch = url.pathname.match(/^\/api\/personnel\/(\d+)$/)
+      if (personnelMatch && req.method === 'PATCH') return updatePersonnel(pool, req, res, Number(personnelMatch[1]))
+      if (personnelMatch && req.method === 'DELETE') return deletePersonnel(pool, req, res, Number(personnelMatch[1]))
+
+      const blacklistMatch = url.pathname.match(/^\/api\/candidate-blacklist\/(\d+)$/)
+      if (blacklistMatch && req.method === 'PATCH') {
+        return updateCandidateBlacklist(pool, req, res, Number(blacklistMatch[1]))
+      }
+      if (blacklistMatch && req.method === 'DELETE') {
+        return deleteCandidateBlacklist(pool, req, res, Number(blacklistMatch[1]))
+      }
 
       return sendJson(res, 404, { message: 'Not found' })
     } catch (error) {

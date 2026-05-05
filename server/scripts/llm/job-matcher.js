@@ -2,6 +2,7 @@ import { buildJsonTaskInputContent, callLlmPrompt } from './client.js'
 import { getLlmConfig } from './config.js'
 import { getJobRerankPrompt, getJobShortlistPrompt, getJobSingleMatchPrompt } from './prompt.js'
 import { parseLlmContentToJson } from './parsers.js'
+import { buildProjectExperiencesSummary, normalizeProjectExperiences } from './project-experiences.js'
 import { LlmOutputFormatError } from '../errors.js'
 
 const normalizeText = (value) => String(value ?? '').trim()
@@ -26,6 +27,23 @@ const normalizeList = (value, limit = 20) => {
 
 const normalizeScore = (value) => Math.max(0, Math.min(100, Math.round(Number(value || 0))))
 const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value)
+
+const getJobOutputKey = (dictionaryKey, job = {}) => normalizeText(job?.jobKey) || normalizeText(dictionaryKey)
+const getJobTitle = (dictionaryKey, job = {}) => normalizeText(job?.title) || normalizeText(dictionaryKey)
+
+const findDictionaryJobKey = (dictionary, requestedKey) => {
+  const normalizedKey = normalizeText(requestedKey)
+  if (!normalizedKey) return ''
+  if (dictionary[normalizedKey]) return normalizedKey
+
+  for (const [dictionaryKey, job] of Object.entries(dictionary || {})) {
+    if (getJobOutputKey(dictionaryKey, job) === normalizedKey || getJobTitle(dictionaryKey, job) === normalizedKey) {
+      return dictionaryKey
+    }
+  }
+
+  return ''
+}
 
 const assertString = (value, fieldName, { allowEmpty = true } = {}) => {
   if (typeof value !== 'string') {
@@ -98,7 +116,7 @@ const validateShortlistPayload = (payload, dictionary) => {
     }
     assertString(item.jobKey, `shortlistedJobs[${index}].jobKey`, { allowEmpty: false })
     assertString(item.reason, `shortlistedJobs[${index}].reason`)
-    if (!dictionary[item.jobKey]) {
+    if (!findDictionaryJobKey(dictionary, item.jobKey)) {
       throw new LlmOutputFormatError(`shortlistedJobs[${index}].jobKey is not in job dictionary`)
     }
   }
@@ -128,7 +146,7 @@ const validateRankedPayload = (payload, dictionary) => {
     assertStringArray(item.strengths, `rankedJobs[${index}].strengths`, { min: 1, max: 3 })
     assertStringArray(item.gaps, `rankedJobs[${index}].gaps`, { min: 1, max: 3 })
     assertString(item.reasonSummary, `rankedJobs[${index}].reasonSummary`)
-    if (!dictionary[item.jobKey]) {
+    if (!findDictionaryJobKey(dictionary, item.jobKey)) {
       throw new LlmOutputFormatError(`rankedJobs[${index}].jobKey is not in job dictionary`)
     }
   }
@@ -153,6 +171,7 @@ const validateSingleMatchPayload = (payload, job) => {
 
 export const buildCandidateProfile = (extracted = {}) => {
   const profile = extracted?.profile && typeof extracted.profile === 'object' ? extracted.profile : {}
+  const projectExperiences = normalizeProjectExperiences(profile.projectExperiences)
   return {
     fullName: normalizeText(extracted?.fullName),
     education: normalizeText(profile.education),
@@ -161,7 +180,7 @@ export const buildCandidateProfile = (extracted = {}) => {
     technicalLanguages: normalizeList(profile.technicalLanguages, 30),
     technicalCertificates: normalizeList(profile.technicalCertificates, 20),
     industry: normalizeText(profile.industry),
-    projectExperience: normalizeText(profile.projectExperience),
+    projectExperience: buildProjectExperiencesSummary(projectExperiences, profile.projectExperience),
     targetPosition: normalizeList(profile.targetPosition, 10),
     expectedSalary: normalizeText(profile.expectedSalary),
     onboardingPreference: normalizeText(profile.onboardingPreference),
@@ -170,13 +189,14 @@ export const buildCandidateProfile = (extracted = {}) => {
 
 export const buildJobIndex = (dictionary = {}) =>
   Object.entries(dictionary).map(([jobKey, job]) => ({
-    jobKey,
-    title: normalizeText(jobKey),
+    jobKey: getJobOutputKey(jobKey, job),
+    title: getJobTitle(jobKey, job),
     industry: normalizeList(job?.industry, 10),
     roleKeywords: normalizeList(job?.roleKeywords, 10),
     requiredSkills: normalizeList(job?.requiredSkills, 10),
+    projectExperience: normalizeList(job?.projectExperience, 10),
     certifications: normalizeList(job?.certifications, 10),
-    minWorkYears: Number(job?.minWorkYears || 0),
+    workYears: Number(job?.workYears ?? job?.minWorkYears ?? 0),
   }))
 
 export const buildFullJobCards = (dictionary = {}, jobKeys = []) =>
@@ -185,16 +205,19 @@ export const buildFullJobCards = (dictionary = {}, jobKeys = []) =>
       const job = dictionary[jobKey]
       if (!job) return null
       return {
-        jobKey,
-        title: normalizeText(jobKey),
+        jobKey: getJobOutputKey(jobKey, job),
+        title: getJobTitle(jobKey, job),
         description: normalizeText(job.description),
         industry: normalizeList(job.industry, 10),
         roleKeywords: normalizeList(job.roleKeywords, 10),
         coreResponsibilities: normalizeList(job.coreResponsibilities, 10),
         requiredSkills: normalizeList(job.requiredSkills, 10),
+        projectExperience: normalizeList(job.projectExperience, 10),
         preferredSkills: normalizeList(job.preferredSkills, 10),
         certifications: normalizeList(job.certifications, 10),
-        minWorkYears: Number(job.minWorkYears || 0),
+        minWorkYears: Number(job.minWorkYears ?? job.workYears ?? 0),
+        workYears: Number(job.workYears ?? job.minWorkYears ?? 0),
+        candidatePreference: normalizeList(job.candidatePreference, 10),
         salaryRange: {
           min: Number(job?.salaryRange?.min || 0),
           max: Number(job?.salaryRange?.max || 0),
@@ -214,9 +237,12 @@ export const buildSingleJobCard = (jobSnapshot = {}) => {
     roleKeywords: normalizeList(snapshot.roleKeywords, 10),
     coreResponsibilities: normalizeList(snapshot.coreResponsibilities, 10),
     requiredSkills: normalizeList(snapshot.requiredSkills, 10),
+    projectExperience: normalizeList(snapshot.projectExperience, 10),
     preferredSkills: normalizeList(snapshot.preferredSkills, 10),
     certifications: normalizeList(snapshot.certifications, 10),
-    minWorkYears: Number(snapshot.minWorkYears || 0),
+    minWorkYears: Number(snapshot.minWorkYears ?? snapshot.workYears ?? 0),
+    workYears: Number(snapshot.workYears ?? snapshot.minWorkYears ?? 0),
+    candidatePreference: normalizeList(snapshot.candidatePreference, 10),
     salaryRange: {
       min: Number(snapshot?.salaryRange?.min || 0),
       max: Number(snapshot?.salaryRange?.max || 0),
@@ -230,8 +256,8 @@ const normalizeShortlistJobKeys = (payload, dictionary) => {
   const deduped = []
   const seen = new Set()
   for (const item of jobs) {
-    const jobKey = normalizeText(item?.jobKey)
-    if (!jobKey || !dictionary[jobKey] || seen.has(jobKey)) continue
+    const jobKey = findDictionaryJobKey(dictionary, item?.jobKey)
+    if (!jobKey || seen.has(jobKey)) continue
     seen.add(jobKey)
     deduped.push(jobKey)
     if (deduped.length >= 5) break
@@ -250,13 +276,14 @@ const normalizeRankedJobs = (payload, dictionary) => {
   const deduped = []
   const seen = new Set()
   for (const item of jobs) {
-    const jobKey = normalizeText(item?.jobKey)
-    if (!jobKey || !dictionary[jobKey] || seen.has(jobKey)) continue
-    seen.add(jobKey)
+    const dictionaryKey = findDictionaryJobKey(dictionary, item?.jobKey)
+    if (!dictionaryKey || seen.has(dictionaryKey)) continue
+    seen.add(dictionaryKey)
+    const job = dictionary[dictionaryKey]
     const score = normalizeScore(item?.matchScore)
     deduped.push({
-      jobKey,
-      jobTitle: normalizeText(jobKey),
+      jobKey: getJobOutputKey(dictionaryKey, job),
+      jobTitle: getJobTitle(dictionaryKey, job),
       matchScore: score,
       matchLevel: normalizeMatchLevel(item?.matchLevel),
       strengths: normalizeList(item?.strengths, 3),

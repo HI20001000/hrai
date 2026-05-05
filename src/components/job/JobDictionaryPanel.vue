@@ -47,15 +47,20 @@ const normalizeListText = (value) =>
     .map((item) => item.trim())
     .filter(Boolean)
 
-const createEmptyJob = () => ({
+const createEmptyJob = (title = '') => ({
+  jobKey: normalizeText(title),
+  title: normalizeText(title),
   description: '',
   industry: [],
   roleKeywords: [],
   coreResponsibilities: [],
   requiredSkills: [],
+  projectExperience: [],
   preferredSkills: [],
   certifications: [],
   minWorkYears: 1,
+  workYears: 1,
+  candidatePreference: [],
   salaryRange: { min: 0, max: 0 },
   weights: {
     requiredSkills: 0.25,
@@ -69,17 +74,21 @@ const createEmptyJob = () => ({
 })
 
 const buildJobDraft = (jobTitle, job) => {
-  const source = job && typeof job === 'object' ? job : createEmptyJob()
+  const source = job && typeof job === 'object' ? job : createEmptyJob(jobTitle)
+  const workYears = source.workYears ?? source.minWorkYears ?? 1
   return {
-    title: normalizeText(jobTitle),
+    jobKey: normalizeText(source.jobKey) || normalizeText(jobTitle),
+    title: normalizeText(source.title) || normalizeText(jobTitle),
     description: normalizeText(source.description),
     industryText: (source.industry || []).join(', '),
     roleKeywordsText: (source.roleKeywords || []).join(', '),
     coreResponsibilitiesText: (source.coreResponsibilities || []).join(', '),
     requiredSkillsText: (source.requiredSkills || []).join(', '),
+    projectExperienceText: (source.projectExperience || []).join(', '),
     preferredSkillsText: (source.preferredSkills || []).join(', '),
     certificationsText: (source.certifications || []).join(', '),
-    minWorkYears: String(source.minWorkYears ?? 1),
+    minWorkYears: String(workYears),
+    candidatePreferenceText: (source.candidatePreference || []).join(', '),
     salaryMin: String(source?.salaryRange?.min ?? 0),
     salaryMax: String(source?.salaryRange?.max ?? 0),
     weights: Object.fromEntries(
@@ -88,23 +97,32 @@ const buildJobDraft = (jobTitle, job) => {
   }
 }
 
-const draftToJob = (draft) => ({
-  description: normalizeText(draft?.description),
-  industry: normalizeListText(draft?.industryText),
-  roleKeywords: normalizeListText(draft?.roleKeywordsText),
-  coreResponsibilities: normalizeListText(draft?.coreResponsibilitiesText),
-  requiredSkills: normalizeListText(draft?.requiredSkillsText),
-  preferredSkills: normalizeListText(draft?.preferredSkillsText),
-  certifications: normalizeListText(draft?.certificationsText),
-  minWorkYears: Number(draft?.minWorkYears || 0),
-  salaryRange: {
-    min: Number(draft?.salaryMin || 0),
-    max: Number(draft?.salaryMax || 0),
-  },
-  weights: Object.fromEntries(
-    WEIGHT_FIELDS.map((field) => [field.key, Number(draft?.weights?.[field.key] || 0)])
-  ),
-})
+const draftToJob = (draft) => {
+  const workYears = Number(draft?.minWorkYears || 0)
+
+  return {
+    jobKey: normalizeText(draft?.jobKey),
+    title: normalizeText(draft?.title),
+    description: normalizeText(draft?.description),
+    industry: normalizeListText(draft?.industryText),
+    roleKeywords: normalizeListText(draft?.roleKeywordsText),
+    coreResponsibilities: normalizeListText(draft?.coreResponsibilitiesText),
+    requiredSkills: normalizeListText(draft?.requiredSkillsText),
+    projectExperience: normalizeListText(draft?.projectExperienceText),
+    preferredSkills: normalizeListText(draft?.preferredSkillsText),
+    certifications: normalizeListText(draft?.certificationsText),
+    minWorkYears: workYears,
+    workYears,
+    candidatePreference: normalizeListText(draft?.candidatePreferenceText),
+    salaryRange: {
+      min: Number(draft?.salaryMin || 0),
+      max: Number(draft?.salaryMax || 0),
+    },
+    weights: Object.fromEntries(
+      WEIGHT_FIELDS.map((field) => [field.key, Number(draft?.weights?.[field.key] || 0)])
+    ),
+  }
+}
 
 const getAuthContext = () => {
   const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
@@ -159,13 +177,12 @@ const syncExternalSelection = (title) => {
 
 const validateJobDraft = (jobTitle, nextJob) => {
   if (!normalizeText(jobTitle)) throw new Error('職位名稱不可為空')
+  if (!normalizeText(nextJob.jobKey)) throw new Error('職位編號不可為空')
   if (!normalizeText(nextJob.description)) throw new Error('職位描述不可為空')
   if (!nextJob.industry.length) throw new Error('行業背景至少需填 1 項')
   if (!nextJob.roleKeywords.length) throw new Error('職位關鍵字至少需填 1 項')
   if (!nextJob.coreResponsibilities.length) throw new Error('核心職責至少需填 1 項')
   if (!nextJob.requiredSkills.length) throw new Error('必備技能至少需填 1 項')
-  if (!nextJob.preferredSkills.length) throw new Error('加分技能至少需填 1 項')
-  if (!nextJob.certifications.length) throw new Error('證照至少需填 1 項')
   if (!Number.isFinite(nextJob.minWorkYears)) throw new Error('最低工作年資必須是數字')
   if (!Number.isFinite(nextJob.salaryRange.min) || !Number.isFinite(nextJob.salaryRange.max)) {
     throw new Error('薪資範圍必須是數字')
@@ -275,7 +292,7 @@ const addJob = () => {
 
   jobDictionary.value = {
     ...jobDictionary.value,
-    [title]: createEmptyJob(),
+    [title]: createEmptyJob(title),
   }
   newJobTitle.value = ''
   setSelectedJob(title)
@@ -437,6 +454,11 @@ onMounted(() => {
               <input v-model="jobDraft.title" type="text" />
             </label>
 
+            <label class="field">
+              <span>職位編號 / jobKey</span>
+              <input v-model="jobDraft.jobKey" type="text" />
+            </label>
+
             <label class="field full-width">
               <span>職位描述</span>
               <textarea v-model="jobDraft.description" rows="3" />
@@ -463,6 +485,11 @@ onMounted(() => {
             </label>
 
             <label class="field">
+              <span>專案經驗</span>
+              <textarea v-model="jobDraft.projectExperienceText" rows="3" />
+            </label>
+
+            <label class="field">
               <span>加分技能</span>
               <textarea v-model="jobDraft.preferredSkillsText" rows="3" />
             </label>
@@ -475,6 +502,11 @@ onMounted(() => {
             <label class="field">
               <span>最低工作年資</span>
               <input v-model="jobDraft.minWorkYears" type="number" min="0" step="1" />
+            </label>
+
+            <label class="field">
+              <span>候選人偏好</span>
+              <textarea v-model="jobDraft.candidatePreferenceText" rows="3" />
             </label>
 
             <label class="field">

@@ -1,3 +1,8 @@
+import {
+  hasProjectExperiences,
+  normalizeProjectExperiences,
+} from './project-experiences.js'
+
 export const safeJsonParse = (value) => {
   if (typeof value !== 'string') return null
   try {
@@ -29,16 +34,61 @@ const assertStringArrayField = (payload, key) => {
   }
 }
 
+const assertProjectExperiencesField = (payload, key) => {
+  if (!(key in payload)) throw new Error(`Missing field: ${key}`)
+  if (!Array.isArray(payload[key])) throw new Error(`Field ${key} must be an array`)
+
+  for (const [groupIndex, group] of payload[key].entries()) {
+    if (!isPlainObject(group)) throw new Error(`Field ${key}[${groupIndex}] must be an object`)
+    if (typeof group.groupType !== 'string') {
+      throw new Error(`Field ${key}[${groupIndex}].groupType must be a string`)
+    }
+    if (!['company', 'personal'].includes(group.groupType)) {
+      throw new Error(`Field ${key}[${groupIndex}].groupType must be company or personal`)
+    }
+    if (typeof group.companyName !== 'string') {
+      throw new Error(`Field ${key}[${groupIndex}].companyName must be a string`)
+    }
+    if (!Array.isArray(group.projects)) {
+      throw new Error(`Field ${key}[${groupIndex}].projects must be an array`)
+    }
+
+    for (const [projectIndex, project] of group.projects.entries()) {
+      if (!isPlainObject(project)) {
+        throw new Error(`Field ${key}[${groupIndex}].projects[${projectIndex}] must be an object`)
+      }
+      if (typeof project.projectName !== 'string') {
+        throw new Error(`Field ${key}[${groupIndex}].projects[${projectIndex}].projectName must be a string`)
+      }
+      if (!Array.isArray(project.skills)) {
+        throw new Error(`Field ${key}[${groupIndex}].projects[${projectIndex}].skills must be an array`)
+      }
+      for (const skill of project.skills) {
+        if (typeof skill !== 'string') {
+          throw new Error(
+            `Field ${key}[${groupIndex}].projects[${projectIndex}].skills must contain only strings`
+          )
+        }
+      }
+      if (typeof project.durationText !== 'string') {
+        throw new Error(`Field ${key}[${groupIndex}].projects[${projectIndex}].durationText must be a string`)
+      }
+    }
+  }
+}
+
 export const validateCvExtractionPayload = (payload) => {
   if (!isPlainObject(payload)) throw new Error('CV extraction output must be a JSON object')
 
-  for (const key of ['fullName', 'email', 'phone', 'education', 'workYears', 'industry', 'projectExperience', 'expectedSalary', 'onboardingPreference']) {
+  for (const key of ['fullName', 'email', 'phone', 'education', 'workYears', 'industry', 'expectedSalary', 'onboardingPreference']) {
     assertStringField(payload, key)
   }
 
   for (const key of ['languages', 'technicalLanguages', 'technicalCertificates', 'targetPosition']) {
     assertStringArrayField(payload, key)
   }
+
+  assertProjectExperiencesField(payload, 'projectExperiences')
 
   return payload
 }
@@ -116,6 +166,14 @@ const pickFirstLongText = (...values) => {
   return ''
 }
 
+const pickFirstProjectExperienceGroups = (...values) => {
+  for (const value of values) {
+    const groups = normalizeProjectExperiences(value)
+    if (groups.length) return groups
+  }
+  return []
+}
+
 const normalizeStringArray = (value, max = 20) => {
   const asArray = Array.isArray(value)
     ? value
@@ -190,39 +248,10 @@ const normalizeProfileFields = (raw = {}) => {
       industryExperience.industry,
       industryExperience.industries
     ),
-    projectExperience: pickFirstLongText(
-      root.projectExperience,
+    projectExperiences: pickFirstProjectExperienceGroups(
       root.projectExperiences,
-      root.projectSummary,
-      root.projectDescription,
-      root.projects,
-      root.workExperience,
-      root.workExperiences,
-      root.workSummary,
-      root.workHistory,
-      root.employmentHistory,
-      root.experienceSummary,
-      profile.projectExperience,
       profile.projectExperiences,
-      profile.projectSummary,
-      profile.projectDescription,
-      profile.projects,
-      profile.workExperience,
-      profile.workExperiences,
-      profile.workSummary,
-      profile.workHistory,
-      profile.employmentHistory,
-      profile.experienceSummary,
-      industryExperience.projectExperience,
-      industryExperience.projectExperiences,
-      industryExperience.projectSummary,
-      industryExperience.projects,
-      industryExperience.workExperience,
-      industryExperience.workExperiences,
-      industryExperience.workSummary,
-      industryExperience.workHistory,
-      industryExperience.employmentHistory,
-      industryExperience.experienceSummary
+      industryExperience.projectExperiences
     ),
     targetPosition: mergeStringArrays(
       root.targetPosition,
@@ -273,7 +302,10 @@ export const normalizeExtractedFields = (raw = {}) => {
     { key: 'technicalLanguages', value: extracted.profile.technicalLanguages },
     { key: 'technicalCertificates', value: extracted.profile.technicalCertificates },
     { key: 'industry', value: extracted.profile.industry },
-    { key: 'projectExperience', value: extracted.profile.projectExperience },
+    {
+      key: 'projectExperiences',
+      value: hasProjectExperiences(extracted.profile.projectExperiences, extracted.profile.projectExperience),
+    },
     { key: 'targetPosition', value: extracted.profile.targetPosition },
     { key: 'expectedSalary', value: extracted.profile.expectedSalary },
     { key: 'onboardingPreference', value: extracted.profile.onboardingPreference },

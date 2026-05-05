@@ -5,14 +5,19 @@ const RESPONSE_META_KEYS = new Set(['dictionary', 'message', 'data', 'payload', 
 const looksLikeJobEntry = (value) => {
   if (!isPlainObject(value)) return false
   return [
+    'jobKey',
+    'title',
     'description',
     'industry',
     'roleKeywords',
     'coreResponsibilities',
     'requiredSkills',
+    'projectExperience',
     'preferredSkills',
     'certifications',
     'minWorkYears',
+    'workYears',
+    'candidatePreference',
     'salaryRange',
     'weights',
   ].some((key) => key in value)

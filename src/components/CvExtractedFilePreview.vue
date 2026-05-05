@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import ProjectExperiencesField from './ProjectExperiencesField.vue'
 import { buildExtractedPreviewData, EXTRACTED_EMPTY_TEXT } from '../scripts/cvExtractedEditor.js'
 
 const props = defineProps({
@@ -20,6 +21,7 @@ const previewData = computed(() =>
 
 const basicRows = computed(() => previewData.value.basicRows || [])
 const dimensionRows = computed(() => previewData.value.dimensionRows || [])
+const projectExperienceField = computed(() => previewData.value.projectExperienceField || null)
 </script>
 
 <template>
@@ -47,6 +49,17 @@ const dimensionRows = computed(() => previewData.value.dimensionRows || [])
         </tbody>
       </table>
     </section>
+
+    <section v-if="projectExperienceField" class="preview-section">
+      <h4>專案經歷</h4>
+      <div class="project-section">
+        <ProjectExperiencesField
+          :model-value="projectExperienceField.rawValue || []"
+          :legacy-text="projectExperienceField.legacyText || ''"
+          readonly
+        />
+      </div>
+    </section>
   </div>
 </template>
 
@@ -68,6 +81,10 @@ const dimensionRows = computed(() => previewData.value.dimensionRows || [])
   background: rgba(244, 248, 252, 0.86);
   color: var(--text-strong);
   font-size: 0.92rem;
+}
+
+.project-section {
+  padding: 0.95rem 1rem 1rem;
 }
 
 .structured-table th {

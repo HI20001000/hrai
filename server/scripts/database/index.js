@@ -192,6 +192,123 @@ export const ensureCvTables = async (pool) => {
     SET application_status = 'screening'
     WHERE application_status = 'submitted' OR application_status IS NULL OR application_status = ''
   `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS personnel (
+      id BIGINT PRIMARY KEY AUTO_INCREMENT,
+      full_name VARCHAR(120) NOT NULL,
+      department VARCHAR(120) NULL,
+      team VARCHAR(120) NULL,
+      title VARCHAR(120) NULL,
+      email VARCHAR(255) NULL,
+      phone VARCHAR(40) NULL,
+      manager_personnel_id BIGINT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'active',
+      remark TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_personnel_full_name (full_name),
+      INDEX idx_personnel_status (status),
+      INDEX idx_personnel_manager (manager_personnel_id),
+      CONSTRAINT fk_personnel_manager FOREIGN KEY (manager_personnel_id) REFERENCES personnel(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id BIGINT PRIMARY KEY AUTO_INCREMENT,
+      project_name VARCHAR(255) NOT NULL,
+      status VARCHAR(30) NOT NULL DEFAULT 'planned',
+      owner_personnel_id BIGINT NULL,
+      start_date DATE NULL,
+      end_date DATE NULL,
+      remark TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_projects_name (project_name),
+      INDEX idx_projects_status (status),
+      INDEX idx_projects_owner (owner_personnel_id),
+      CONSTRAINT fk_projects_owner FOREIGN KEY (owner_personnel_id) REFERENCES personnel(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS project_personnel_assignments (
+      id BIGINT PRIMARY KEY AUTO_INCREMENT,
+      project_id BIGINT NOT NULL,
+      personnel_id BIGINT NOT NULL,
+      project_role VARCHAR(120) NULL,
+      start_date DATE NULL,
+      end_date DATE NULL,
+      source VARCHAR(30) NOT NULL DEFAULT 'manual',
+      status VARCHAR(30) NOT NULL DEFAULT 'active',
+      remark TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_project_personnel_assignment (project_id, personnel_id),
+      INDEX idx_project_personnel_project (project_id),
+      INDEX idx_project_personnel_personnel (personnel_id),
+      INDEX idx_project_personnel_status (status),
+      CONSTRAINT fk_project_personnel_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      CONSTRAINT fk_project_personnel_personnel FOREIGN KEY (personnel_id) REFERENCES personnel(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS project_personnel_movements (
+      id BIGINT PRIMARY KEY AUTO_INCREMENT,
+      assignment_id BIGINT NULL,
+      personnel_id BIGINT NOT NULL,
+      from_project_id BIGINT NULL,
+      to_project_id BIGINT NULL,
+      movement_type VARCHAR(30) NOT NULL,
+      movement_date DATE NULL,
+      project_role VARCHAR(120) NULL,
+      source VARCHAR(30) NOT NULL DEFAULT 'manual',
+      remark TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_project_movements_assignment (assignment_id),
+      INDEX idx_project_movements_personnel (personnel_id),
+      INDEX idx_project_movements_from_project (from_project_id),
+      INDEX idx_project_movements_to_project (to_project_id),
+      INDEX idx_project_movements_type (movement_type),
+      CONSTRAINT fk_project_movements_assignment FOREIGN KEY (assignment_id) REFERENCES project_personnel_assignments(id) ON DELETE SET NULL,
+      CONSTRAINT fk_project_movements_personnel FOREIGN KEY (personnel_id) REFERENCES personnel(id) ON DELETE CASCADE,
+      CONSTRAINT fk_project_movements_from_project FOREIGN KEY (from_project_id) REFERENCES projects(id) ON DELETE SET NULL,
+      CONSTRAINT fk_project_movements_to_project FOREIGN KEY (to_project_id) REFERENCES projects(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS candidate_blacklist (
+      id BIGINT PRIMARY KEY AUTO_INCREMENT,
+      display_name VARCHAR(120) NULL,
+      phone VARCHAR(40) NULL,
+      normalized_phone VARCHAR(40) NULL,
+      email VARCHAR(255) NULL,
+      normalized_email VARCHAR(255) NULL,
+      reason TEXT NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'active',
+      remark TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_candidate_blacklist_status (status),
+      INDEX idx_candidate_blacklist_phone (normalized_phone),
+      INDEX idx_candidate_blacklist_email (normalized_email)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `)
+
+  try {
+    await pool.query('ALTER TABLE candidate_blacklist ADD COLUMN normalized_phone VARCHAR(40) NULL AFTER phone')
+  } catch (error) {
+    if (!/duplicate column name/i.test(String(error?.message || ''))) throw error
+  }
+
+  try {
+    await pool.query('ALTER TABLE candidate_blacklist ADD COLUMN normalized_email VARCHAR(255) NULL AFTER email')
+  } catch (error) {
+    if (!/duplicate column name/i.test(String(error?.message || ''))) throw error
+  }
 }
 
 export const getDatabaseName = getDbName

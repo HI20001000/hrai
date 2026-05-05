@@ -34,6 +34,50 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  showBlacklistAction: {
+    type: Boolean,
+    default: false,
+  },
+  showProjectTransferAction: {
+    type: Boolean,
+    default: false,
+  },
+  showBulkBlacklistActions: {
+    type: Boolean,
+    default: false,
+  },
+  showBulkUploadAction: {
+    type: Boolean,
+    default: false,
+  },
+  bulkBlacklisting: {
+    type: Boolean,
+    default: false,
+  },
+  bulkUnblacklisting: {
+    type: Boolean,
+    default: false,
+  },
+  bulkUploading: {
+    type: Boolean,
+    default: false,
+  },
+  bulkBlacklistDisabled: {
+    type: Boolean,
+    default: false,
+  },
+  bulkUnblacklistDisabled: {
+    type: Boolean,
+    default: false,
+  },
+  bulkUploadDisabled: {
+    type: Boolean,
+    default: false,
+  },
+  deleteSelectedLabel: {
+    type: String,
+    default: '刪除已選擇',
+  },
   selectable: {
     type: Boolean,
     default: false,
@@ -56,13 +100,23 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['selection-change', 'delete-selected', 'rows-updated', 'notify'])
+const emit = defineEmits([
+  'selection-change',
+  'delete-selected',
+  'bulk-blacklist-selected',
+  'bulk-unblacklist-selected',
+  'upload-selected-cv',
+  'add-to-project',
+  'rows-updated',
+  'notify',
+])
 
 const searchKeyword = ref('')
 const statusOverrides = ref({})
 const savingStatusIds = ref([])
 const remarkDrafts = ref({})
 const savingRemarkIds = ref([])
+const addingBlacklistIds = ref([])
 
 const isPreviewOpen = ref(false)
 const previewTitle = ref('')
@@ -98,6 +152,13 @@ const getStatusToneClass = (status) => {
   return `status-tone-${normalized}`
 }
 
+const getBlacklistMatchedByLabel = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'phone') return '電話'
+  if (normalized === 'email') return 'Email'
+  return '--'
+}
+
 const isRemarkSaving = (applicationId) => savingRemarkIds.value.includes(Number(applicationId))
 
 const getRemarkDraft = (row) => {
@@ -108,6 +169,7 @@ const getRemarkDraft = (row) => {
 }
 
 const isStatusSaving = (applicationId) => savingStatusIds.value.includes(Number(applicationId))
+const isBlacklistSaving = (applicationId) => addingBlacklistIds.value.includes(Number(applicationId))
 
 const displayRows = computed(() =>
   props.rows.map((row) => ({
@@ -133,6 +195,8 @@ const filteredRows = computed(() => {
       row.cvFileName,
       row.extractedFileName,
       row.remark,
+      row.blacklistReason,
+      row.blacklistMatchedBy,
       formatDateTime(row.createdAt),
     ]
       .map((item) => normalizeSearchText(item))
@@ -141,24 +205,11 @@ const filteredRows = computed(() => {
   })
 })
 
-const selectableIds = computed(() =>
-  filteredRows.value
-    .map((row) => Number(row.applicationId))
-    .filter((id) => Number.isInteger(id) && id > 0)
-)
-
-const allSelected = computed(() => {
-  if (!props.selectable || !selectableIds.value.length) return false
-  const selectedSet = new Set(props.selectedIds.map((id) => Number(id)))
-  return selectableIds.value.every((id) => selectedSet.has(id))
-})
-
 const selectedCount = computed(() => props.selectedIds.length)
 
 const tableColumnCount = computed(() => {
   let count = 9
   if (props.showJobColumn) count += 1
-  if (props.selectable) count += 1
   return count
 })
 
@@ -230,8 +281,21 @@ const toggleRowSelection = (applicationId, checked) => {
   )
 }
 
-const toggleSelectAll = (checked) => {
-  emit('selection-change', checked ? [...selectableIds.value] : [])
+const handleRowClick = (row, event) => {
+  if (!props.selectable) return
+
+  const target = event?.target
+  if (
+    target?.closest?.(
+      'button, input, textarea, label, a, .app-select, .app-select-trigger, .app-select-menu'
+    )
+  ) {
+    return
+  }
+
+  const applicationId = Number(row?.applicationId)
+  if (!Number.isInteger(applicationId) || applicationId <= 0) return
+  toggleRowSelection(applicationId, !props.selectedIds.includes(applicationId))
 }
 
 const saveApplicationRemark = async (row) => {
@@ -326,6 +390,66 @@ const updateApplicationStatus = async (row, nextStatus) => {
     savingStatusIds.value = savingStatusIds.value.filter((id) => id !== applicationId)
   }
 }
+
+const quickAddToBlacklist = async (row) => {
+  const applicationId = Number(row?.applicationId)
+  if (!applicationId || row?.isBlacklisted || isBlacklistSaving(applicationId)) return
+
+  const phone = String(row?.phone || '').trim()
+  const email = String(row?.email || '').trim()
+  if (!phone && !email) {
+    emit('notify', {
+      type: 'error',
+      message: `${row?.fullName || '此候選人'} 沒有電話或 Email，無法加入 Blacklist`,
+    })
+    return
+  }
+
+  const reason = window.prompt('請輸入加入 Blacklist 的原因', '由候選人管理頁快速加入')
+  if (reason === null) return
+
+  const normalizedReason = String(reason || '').trim()
+  if (!normalizedReason) {
+    emit('notify', {
+      type: 'error',
+      message: '請先輸入 Blacklist 原因',
+    })
+    return
+  }
+
+  addingBlacklistIds.value = [...addingBlacklistIds.value, applicationId]
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/candidate-blacklist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        displayName: String(row?.fullName || '').trim(),
+        phone,
+        email,
+        reason: normalizedReason,
+        status: 'active',
+      }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.message || '加入 Blacklist 失敗')
+    }
+
+    emit('rows-updated')
+    emit('notify', {
+      type: 'success',
+      message: `已將 ${row?.fullName || '此候選人'} 加入 Blacklist`,
+    })
+    window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
+  } catch (error) {
+    emit('notify', {
+      type: 'error',
+      message: error?.message || '加入 Blacklist 失敗',
+    })
+  } finally {
+    addingBlacklistIds.value = addingBlacklistIds.value.filter((id) => id !== applicationId)
+  }
+}
 </script>
 
 <template>
@@ -344,15 +468,34 @@ const updateApplicationStatus = async (row, nextStatus) => {
         />
       </div>
       <div v-if="selectable" class="table-actions">
-        <label class="select-all">
-          <input
-            type="checkbox"
-            :checked="allSelected"
-            :disabled="!selectableIds.length"
-            @change="toggleSelectAll($event.target.checked)"
-          />
-          <span>全選</span>
-        </label>
+        <span class="selected-count-chip">已選 {{ selectedCount }}</span>
+        <button
+          v-if="showBulkBlacklistActions"
+          type="button"
+          class="danger-btn"
+          :disabled="!selectedCount || bulkBlacklistDisabled || bulkBlacklisting"
+          @click="emit('bulk-blacklist-selected')"
+        >
+          {{ bulkBlacklisting ? '加入中...' : '加入 Blacklist' }}
+        </button>
+        <button
+          v-if="showBulkBlacklistActions"
+          type="button"
+          class="secondary-btn"
+          :disabled="!selectedCount || bulkUnblacklistDisabled || bulkUnblacklisting"
+          @click="emit('bulk-unblacklist-selected')"
+        >
+          {{ bulkUnblacklisting ? '取消中...' : '取消 Blacklist' }}
+        </button>
+        <button
+          v-if="showBulkUploadAction"
+          type="button"
+          class="primary-btn"
+          :disabled="bulkUploadDisabled || bulkUploading"
+          @click="emit('upload-selected-cv')"
+        >
+          {{ bulkUploading ? '開啟中...' : '上傳 CV' }}
+        </button>
         <button
           type="button"
           class="danger-btn"
@@ -369,7 +512,6 @@ const updateApplicationStatus = async (row, nextStatus) => {
       <table class="application-table">
         <thead>
           <tr>
-            <th v-if="selectable" class="check-col"></th>
             <th v-if="showJobColumn" class="job-col">職位</th>
             <th class="name-col">候選人名稱</th>
             <th class="status-col">候選人狀態</th>
@@ -386,18 +528,45 @@ const updateApplicationStatus = async (row, nextStatus) => {
           <tr v-if="!filteredRows.length">
             <td :colspan="tableColumnCount" class="empty-cell">{{ emptyText }}</td>
           </tr>
-          <tr v-for="row in filteredRows" :key="row.applicationId">
-            <td v-if="selectable" class="check-col">
-              <label class="row-check">
-                <input
-                  type="checkbox"
-                  :checked="selectedIds.includes(Number(row.applicationId))"
-                  @change="toggleRowSelection(row.applicationId, $event.target.checked)"
-                />
-              </label>
-            </td>
+          <tr
+            v-for="row in filteredRows"
+            :key="row.applicationId"
+            :class="{
+              'blacklist-row': row.isBlacklisted,
+              'selected-row': selectable && selectedIds.includes(Number(row.applicationId)),
+              'selectable-row': selectable,
+            }"
+            @click="handleRowClick(row, $event)"
+          >
             <td v-if="showJobColumn" class="job-col">{{ row.jobPostTitle || '--' }}</td>
-            <td class="name-col">{{ row.fullName || '--' }}</td>
+            <td class="name-col">
+              <div class="candidate-name-cell">
+                <span>{{ row.fullName || '--' }}</span>
+                <span v-if="row.isBlacklisted" class="blacklist-badge">Blacklist</span>
+                <button
+                  v-else-if="showBlacklistAction"
+                  type="button"
+                  class="blacklist-action-btn"
+                  :disabled="isBlacklistSaving(row.applicationId)"
+                  @click="quickAddToBlacklist(row)"
+                >
+                  {{ isBlacklistSaving(row.applicationId) ? '加入中...' : '加入 Blacklist' }}
+                </button>
+                <button
+                  v-if="showProjectTransferAction && normalizeCandidateApplicationStatus(row.applicationStatus) === 'onboarded'"
+                  type="button"
+                  class="project-action-btn"
+                  @click="emit('add-to-project', row)"
+                >
+                  加入項目
+                </button>
+              </div>
+              <div v-if="row.isBlacklisted" class="blacklist-note">
+                <strong>原因：</strong>{{ row.blacklistReason || '--' }}
+                <span class="blacklist-divider">｜</span>
+                <strong>命中：</strong>{{ getBlacklistMatchedByLabel(row.blacklistMatchedBy) }}
+              </div>
+            </td>
             <td class="status-col">
               <div
                 v-if="editableStatus"
@@ -524,18 +693,17 @@ const updateApplicationStatus = async (row, nextStatus) => {
   min-width: 0;
 }
 
-.select-all {
+.selected-count-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  min-height: 32px;
+  padding: 0.3rem 0.72rem;
+  border-radius: 999px;
   color: var(--text-base);
+  background: var(--surface-soft);
+  font-size: 0.82rem;
+  font-weight: 700;
   white-space: nowrap;
-}
-
-.row-check input,
-.select-all input {
-  width: 16px;
-  height: 16px;
 }
 
 .table-wrap {
@@ -565,14 +733,107 @@ const updateApplicationStatus = async (row, nextStatus) => {
   min-width: 120px;
 }
 
-.check-col {
-  min-width: 56px;
-  width: 56px;
-}
-
 .job-col,
 .name-col {
   min-width: 180px;
+}
+
+.candidate-name-cell {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.blacklist-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0.14rem 0.52rem;
+  border-radius: 999px;
+  color: #b42318;
+  background: rgba(217, 45, 32, 0.12);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.blacklist-action-btn,
+.project-action-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0.22rem 0.62rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+.blacklist-action-btn {
+  border: 1px solid rgba(217, 45, 32, 0.24);
+  color: #b42318;
+  background: rgba(217, 45, 32, 0.08);
+}
+
+.project-action-btn {
+  border: 1px solid rgba(47, 111, 237, 0.22);
+  color: var(--accent);
+  background: rgba(47, 111, 237, 0.08);
+}
+
+.blacklist-action-btn:hover {
+  background: rgba(217, 45, 32, 0.12);
+  border-color: rgba(217, 45, 32, 0.32);
+}
+
+.project-action-btn:hover {
+  background: rgba(47, 111, 237, 0.12);
+  border-color: rgba(47, 111, 237, 0.3);
+}
+
+.blacklist-action-btn:disabled,
+.project-action-btn:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
+.blacklist-note {
+  margin-top: 0.42rem;
+  color: #b42318;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.blacklist-divider {
+  margin: 0 0.25rem;
+  color: rgba(180, 35, 24, 0.55);
+}
+
+.blacklist-row td {
+  background: rgba(217, 45, 32, 0.05);
+}
+
+.selectable-row {
+  cursor: pointer;
+}
+
+.selected-row td {
+  background: rgba(47, 111, 237, 0.1);
+}
+
+.selected-row:hover td {
+  background: rgba(47, 111, 237, 0.14);
+}
+
+.blacklist-row.selected-row td {
+  background: linear-gradient(0deg, rgba(47, 111, 237, 0.08), rgba(47, 111, 237, 0.08)), rgba(217, 45, 32, 0.06);
+}
+
+.blacklist-row:hover td {
+  background: rgba(217, 45, 32, 0.08);
 }
 
 .status-col {
@@ -673,6 +934,7 @@ const updateApplicationStatus = async (row, nextStatus) => {
 
 .status-select-wrap {
   position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: stretch;
   min-width: 196px;
@@ -691,6 +953,7 @@ const updateApplicationStatus = async (row, nextStatus) => {
 }
 
 .status-select-wrap:focus-within {
+  z-index: 20;
   border-color: rgba(47, 111, 237, 0.28);
   box-shadow:
     0 0 0 3px rgba(47, 111, 237, 0.12),
@@ -700,6 +963,10 @@ const updateApplicationStatus = async (row, nextStatus) => {
 .status-select {
   width: 100%;
   min-width: 0;
+}
+
+.status-select-wrap :deep(.app-select.open) {
+  z-index: 30;
 }
 
 .status-dot {
@@ -761,6 +1028,7 @@ const updateApplicationStatus = async (row, nextStatus) => {
 .status-select-wrap :deep(.app-select-menu) {
   left: 0;
   right: auto;
+  z-index: 40;
   width: max-content;
   min-width: 100%;
   max-width: 320px;
