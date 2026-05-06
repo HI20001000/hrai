@@ -3853,8 +3853,8 @@ const start = async () => {
       }
       if (url.pathname === '/api/candidates/batch-delete' && req.method === 'POST') return deleteCandidatesBatch(pool, req, res)
       if (url.pathname === '/api/cv/cache' && req.method === 'POST') return cacheCvUpload(pool, req, res)
-      if (url.pathname === '/api/cv/parse' && req.method === 'POST') return parseCvFromCache(pool, req, res)
-      if (url.pathname === '/api/cv/intake' && req.method === 'POST') return intakeCv(pool, req, res)
+      if (url.pathname === '/api/cv/parse' && req.method === 'POST') return await parseCvFromCache(pool, req, res)
+      if (url.pathname === '/api/cv/intake' && req.method === 'POST') return await intakeCv(pool, req, res)
 
       const jobPostDetailMatch = url.pathname.match(/^\/api\/job-posts\/(\d+)$/)
       if (jobPostDetailMatch && req.method === 'GET') return getJobPostDetail(pool, req, res, Number(jobPostDetailMatch[1]))
@@ -3904,12 +3904,12 @@ const start = async () => {
 
       const jobPostParseMatch = url.pathname.match(/^\/api\/job-posts\/(\d+)\/cv\/parse$/)
       if (jobPostParseMatch && req.method === 'POST') {
-        return parseCvFromCache(pool, req, res, Number(jobPostParseMatch[1]))
+        return await parseCvFromCache(pool, req, res, Number(jobPostParseMatch[1]))
       }
 
       const jobPostIntakeMatch = url.pathname.match(/^\/api\/job-posts\/(\d+)\/cv\/intake$/)
       if (jobPostIntakeMatch && req.method === 'POST') {
-        return intakeCv(pool, req, res, Number(jobPostIntakeMatch[1]))
+        return await intakeCv(pool, req, res, Number(jobPostIntakeMatch[1]))
       }
 
       const applicationMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)$/)
@@ -3944,7 +3944,7 @@ const start = async () => {
 
       const candidateJobPostIntakeMatch = url.pathname.match(/^\/api\/candidates\/(\d+)\/job-posts\/(\d+)\/intake$/)
       if (candidateJobPostIntakeMatch && req.method === 'POST') {
-        return intakeCandidateCvToJobPost(
+        return await intakeCandidateCvToJobPost(
           pool,
           req,
           res,
@@ -3966,12 +3966,12 @@ const start = async () => {
 
       const updateExtractedMatch = url.pathname.match(/^\/api\/candidate-cvs\/(\d+)\/extracted-field$/)
       if (updateExtractedMatch && req.method === 'POST') {
-        return updateCandidateCvExtractedField(pool, req, res, Number(updateExtractedMatch[1]))
+        return await updateCandidateCvExtractedField(pool, req, res, Number(updateExtractedMatch[1]))
       }
 
       const updateExtractedBatchMatch = url.pathname.match(/^\/api\/candidate-cvs\/(\d+)\/extracted-fields$/)
       if (updateExtractedBatchMatch && req.method === 'POST') {
-        return updateCandidateCvExtractedFields(pool, req, res, Number(updateExtractedBatchMatch[1]))
+        return await updateCandidateCvExtractedFields(pool, req, res, Number(updateExtractedBatchMatch[1]))
       }
 
       const downloadMatch = url.pathname.match(/^\/api\/candidate-cvs\/(\d+)\/download$/)
@@ -3980,7 +3980,7 @@ const start = async () => {
       }
 
       const completeProfileMatch = url.pathname.match(/^\/api\/candidates\/(\d+)\/complete-profile$/)
-      if (completeProfileMatch && req.method === 'POST') return completeCandidateProfile(pool, req, res, Number(completeProfileMatch[1]))
+      if (completeProfileMatch && req.method === 'POST') return await completeCandidateProfile(pool, req, res, Number(completeProfileMatch[1]))
 
       const candidateMatch = url.pathname.match(/^\/api\/candidates\/(\d+)$/)
       if (candidateMatch && req.method === 'DELETE') return deleteCandidate(pool, req, res, Number(candidateMatch[1]))

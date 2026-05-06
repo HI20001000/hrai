@@ -153,20 +153,15 @@ const validateRankedPayload = (payload, dictionary) => {
 }
 
 const validateSingleMatchPayload = (payload, job) => {
-  for (const key of ['jobKey', 'matchedPosition', 'reasonSummary']) {
-    assertString(payload[key], key, { allowEmpty: key === 'reasonSummary' })
+  for (const key of ['jobKey', 'matchedPosition']) {
+    if (payload[key] == null) continue
+    assertString(payload[key], key)
   }
+  assertString(payload.reasonSummary, 'reasonSummary')
   assertScore(payload.matchScore, 'matchScore')
   assertMatchLevel(payload.matchLevel, 'matchLevel')
   assertStringArray(payload.strengths, 'strengths', { min: 1, max: 3 })
   assertStringArray(payload.gaps, 'gaps', { min: 1, max: 3 })
-
-  if (payload.jobKey !== job.jobKey) {
-    throw new LlmOutputFormatError(`single match output jobKey must equal ${job.jobKey}`)
-  }
-  if (payload.matchedPosition !== job.title) {
-    throw new LlmOutputFormatError(`single match output matchedPosition must equal ${job.title}`)
-  }
 }
 
 export const buildCandidateProfile = (extracted = {}) => {
@@ -349,7 +344,7 @@ export const matchCandidateToJobPost = async (extracted, jobSnapshot) => {
   return {
     jobKey: job.jobKey,
     jobTitle: job.title,
-    matchedPosition: normalizeText(payload.matchedPosition),
+    matchedPosition: job.title,
     matchScore: normalizeScore(payload.matchScore),
     matchLevel: normalizeMatchLevel(payload.matchLevel),
     strengths: normalizeList(payload.strengths, 3),
