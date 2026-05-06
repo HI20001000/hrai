@@ -668,8 +668,36 @@ onMounted(async () => {
 
 .directory-filters {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px auto;
-  gap: 0.8rem;
+  grid-template-columns: minmax(320px, 1fr) minmax(168px, 200px) minmax(92px, auto);
+  align-items: stretch;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: calc(var(--radius-md) - 4px);
+  background: rgba(245, 248, 252, 0.58);
+}
+
+.directory-filters .search-input,
+.directory-filters :deep(.app-select),
+.directory-filters .secondary-btn {
+  min-width: 0;
+}
+
+.directory-filters .search-input,
+.directory-filters :deep(.app-select-trigger),
+.directory-filters .secondary-btn {
+  min-height: 48px;
+}
+
+.directory-filters .search-input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.directory-filters .secondary-btn {
+  align-self: stretch;
+  min-width: 92px;
+  padding-inline: 1rem;
 }
 
 .directory-table tbody tr {
@@ -711,10 +739,29 @@ onMounted(async () => {
   }
 }
 
+@media (max-width: 860px) {
+  .directory-filters {
+    grid-template-columns: minmax(0, 1fr) minmax(160px, 200px);
+  }
+
+  .directory-filters .secondary-btn {
+    grid-column: 2;
+  }
+}
+
 @media (max-width: 720px) {
   .directory-filters,
   .editor-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .directory-filters {
+    padding: 0.75rem;
+  }
+
+  .directory-filters .secondary-btn {
+    grid-column: auto;
+    width: 100%;
   }
 
   .header-main,
