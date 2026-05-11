@@ -12,11 +12,20 @@ export const buildLlmChatCompletionsUrl = (baseUrl) => {
   return `${normalized}/chat/completions`
 }
 
+const formatCurrentTaskDate = () => {
+  const now = new Date()
+  const pad = (value) => String(value).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
 export const buildCvLlmInputContent = (cvText, fileName = '') =>
-  `${getCvLlmPrompt()}\n\nCV file name:\n${String(fileName || '')}\n\nCV text content:\n${String(cvText || '')}`
+  `${getCvLlmPrompt()}\n\nCurrent task date:\n${formatCurrentTaskDate()}\n\nCV file name:\n${String(fileName || '')}\n\nCV text content:\n${String(cvText || '')}`
 
 export const buildCvLlmRetryInputContent = (cvText, fileName = '', previousContent = '') => [
   getCvLlmPrompt(),
+  '',
+  'Current task date:',
+  formatCurrentTaskDate(),
   '',
   '重要補充要求：',
   '1. 上一次輸出不是完整合法 JSON，可能被截斷或格式錯誤。',

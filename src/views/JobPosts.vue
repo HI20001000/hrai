@@ -64,6 +64,7 @@ const statusOptions = [
   { value: 'draft', label: '草稿' },
   { value: 'closed', label: '已關閉' },
 ]
+const statusOptionValues = new Set(statusOptions.map((option) => option.value))
 
 const selectedDictionaryTitle = computed(() =>
   String(jobPostForm.value.jobKey || '').trim() ||
@@ -156,7 +157,7 @@ const saveJobPost = async () => {
   const payload = {
     title: String(jobPostForm.value.title || '').trim(),
     jobKey: String(jobPostForm.value.jobKey || '').trim(),
-    status: String(jobPostForm.value.status || 'open').trim(),
+    status: String(jobPostForm.value.status || 'open').trim().toLowerCase(),
   }
 
   if (!payload.title) {
@@ -165,6 +166,10 @@ const saveJobPost = async () => {
   }
   if (!payload.jobKey) {
     message.value = '請先選擇職位字典'
+    return
+  }
+  if (!statusOptionValues.has(payload.status)) {
+    message.value = '請選擇有效的職位狀態'
     return
   }
 
@@ -182,6 +187,11 @@ const saveJobPost = async () => {
     const data = await response.json()
     if (!response.ok) {
       message.value = data.message || '儲存職位失敗'
+      return
+    }
+    const savedStatus = String(data?.jobPost?.status || '').trim().toLowerCase()
+    if (savedStatus && savedStatus !== payload.status) {
+      message.value = '職位狀態未成功更新，請重新整理後再試'
       return
     }
 
@@ -432,9 +442,10 @@ onUnmounted(() => {
           <label class="field select-field status-field">
             <span>狀態</span>
             <AppSelect
-              v-model="jobPostForm.status"
+              :model-value="jobPostForm.status"
               :options="statusOptions"
               placeholder="請選擇狀態"
+              @update:model-value="jobPostForm.status = $event"
             />
           </label>
         </div>

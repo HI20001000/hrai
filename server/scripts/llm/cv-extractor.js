@@ -33,7 +33,7 @@ export const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType
     throw new LlmOutputFormatError(`CV extraction output schema mismatch: ${error?.message || error}`)
   }
 
-  const normalized = normalizeExtractedFields(parsed)
+  const normalized = normalizeExtractedFields(parsed, { sourceText: cvText })
   return {
     ...normalized,
     llmJson: parsed,

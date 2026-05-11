@@ -168,6 +168,8 @@ const getRemarkDraft = (row) => {
     : String(row?.remark || '')
 }
 
+const getRemarkTooltip = (row) => String(getRemarkDraft(row) || '').trim() || undefined
+
 const isStatusSaving = (applicationId) => savingStatusIds.value.includes(Number(applicationId))
 const isBlacklistSaving = (applicationId) => addingBlacklistIds.value.includes(Number(applicationId))
 
@@ -592,13 +594,14 @@ const quickAddToBlacklist = async (row) => {
                 v-if="editableStatus"
                 class="remark-input"
                 :value="getRemarkDraft(row)"
+                :title="getRemarkTooltip(row)"
                 :disabled="isRemarkSaving(row.applicationId)"
                 rows="2"
                 placeholder="輸入原因或跟進記錄"
                 @input="remarkDrafts = { ...remarkDrafts, [Number(row.applicationId)]: $event.target.value }"
                 @blur="saveApplicationRemark(row)"
               ></textarea>
-              <div v-else class="remark-text" :title="row.remark || ''">
+              <div v-else class="remark-text" :title="String(row.remark || '').trim() || undefined">
                 {{ row.remark || '--' }}
               </div>
             </td>
@@ -1061,6 +1064,10 @@ const quickAddToBlacklist = async (row) => {
 }
 
 .status-tone-screening,
+.status-tone-screening_hr_approved,
+.status-tone-screening_hr_rejected,
+.status-tone-screening_department_approved,
+.status-tone-screening_department_rejected,
 .status-tone-screening_rejected,
 .status-tone-hr_interview,
 .status-tone-hr_interview_rejected,

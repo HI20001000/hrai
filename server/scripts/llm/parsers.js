@@ -193,7 +193,213 @@ const mergeStringArrays = (...values) => {
   return [...new Set(merged)]
 }
 
-const normalizeProfileFields = (raw = {}) => {
+const WORK_SECTION_HEADER_PATTERN =
+  /^(工作经历|工作經歷|工作经验|工作經驗|任职经历|任職經歷|职业经历|職業經歷|employment history|work experience|professional experience)$/i
+
+const NON_WORK_SECTION_HEADER_PATTERN =
+  /^(教育背景|教育经历|教育經歷|教育|学历|學歷|项目经验|項目經歷|项目经历|項目经历|校园经历|校園經歷|社团经历|社團經歷|培训经历|培訓經歷|专业技能|專業技能|技能|证书|證書|语言能力|語言能力|自我评价|自我評價|个人信息|個人信息|education|project experience|projects|skills|professional skills|certifications|languages|summary)$/i
+
+const NON_WORK_RANGE_CONTEXT_PATTERN =
+  /(教育|学历|學歷|本科|硕士|碩士|博士|大学|大學|学院|學院|学校|學校|校园|校園|社团|社團|培训|培訓|课程|課程|证书|證書|education|university|college|school|course|certification|certificate)/i
+
+const PROJECT_RANGE_CONTEXT_PATTERN = /(项目|項目|project)/i
+
+const WORK_RANGE_CONTEXT_PATTERN =
+  /(工作|任职|任職|职位|職位|岗位|崗位|公司|有限公司|集团|集團|银行|銀行|科技|顾问|顧問|经理|經理|工程师|工程師|employment|experience|company|corp|ltd|inc|manager|analyst|engineer|developer|consultant|officer|specialist)/i
+
+const PRESENT_DATE_TOKEN_PATTERN = /^(至今|現在|现在|現今|现今|目前|present|current|now)$/i
+
+const normalizeHeaderText = (line) =>
+  String(line || '')
+    .trim()
+    .replace(/[：:]\s*$/, '')
+    .replace(/\s+/g, ' ')
+
+const isWorkSectionHeader = (line) => WORK_SECTION_HEADER_PATTERN.test(normalizeHeaderText(line))
+const isNonWorkSectionHeader = (line) => NON_WORK_SECTION_HEADER_PATTERN.test(normalizeHeaderText(line))
+const isResumeSectionHeader = (line) => isWorkSectionHeader(line) || isNonWorkSectionHeader(line)
+
+const getWorkScopedText = (sourceText) => {
+  const lines = String(sourceText || '')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const hasWorkSection = lines.some((line) => isWorkSectionHeader(line))
+
+  if (hasWorkSection) {
+    const collected = []
+    let inWorkSection = false
+    for (const line of lines) {
+      if (isWorkSectionHeader(line)) {
+        inWorkSection = true
+        continue
+      }
+      if (inWorkSection && isResumeSectionHeader(line)) {
+        inWorkSection = false
+      }
+      if (inWorkSection) collected.push(line)
+    }
+    return { text: collected.join('\n'), hasWorkSection }
+  }
+
+  const collected = []
+  let inExcludedSection = false
+  for (const line of lines) {
+    if (isNonWorkSectionHeader(line)) {
+      inExcludedSection = true
+      continue
+    }
+    if (isWorkSectionHeader(line)) {
+      inExcludedSection = false
+      continue
+    }
+    if (isResumeSectionHeader(line)) {
+      inExcludedSection = false
+      continue
+    }
+    if (!inExcludedSection) collected.push(line)
+  }
+  return { text: collected.join('\n'), hasWorkSection }
+}
+
+const formatWorkYearsNumber = (value, suffix = '') => {
+  const numeric = Number(value)
+  const normalized = Number.isFinite(numeric) && Number.isInteger(numeric)
+    ? String(numeric)
+    : String(value || '').trim()
+  if (!normalized) return ''
+  return `${normalized}年${suffix}`
+}
+
+const pickExplicitWorkYearsFromText = (sourceText) => {
+  const text = String(sourceText || '').replace(/\s+/g, ' ')
+  const patterns = [
+    /(?:工作年限|工作經驗|工作经验|工作经历|工作經歷|experience)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(\+|以上)?\s*(?:年|years?|yrs?)/i,
+    /(\d+(?:\.\d+)?)\s*(\+)?\s*(?:年|years?|yrs?)\s*(以上)?\s*(?:工作經驗|工作经验|工作经历|工作經歷|experience)/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    if (!match?.[1]) continue
+    const hasPlus = Boolean(match[2] || match[3])
+    return formatWorkYearsNumber(match[1], hasPlus ? '以上' : '')
+  }
+  return ''
+}
+
+const resolveCurrentYearMonth = (now = new Date()) => {
+  const date = now instanceof Date ? now : new Date(now)
+  if (Number.isNaN(date.getTime())) {
+    const fallback = new Date()
+    return { year: fallback.getFullYear(), month: fallback.getMonth() + 1 }
+  }
+  return { year: date.getFullYear(), month: date.getMonth() + 1 }
+}
+
+const parseYearMonthToken = (value, now = new Date()) => {
+  const text = String(value || '').trim()
+  if (!text) return null
+  if (PRESENT_DATE_TOKEN_PATTERN.test(text)) return resolveCurrentYearMonth(now)
+
+  let match = text.match(/^(\d{4})[./-](\d{1,2})$/)
+  if (match) {
+    const month = Number(match[2])
+    if (month >= 1 && month <= 12) return { year: Number(match[1]), month }
+  }
+
+  match = text.match(/^(\d{4})年\s*(\d{1,2})\s*月?$/)
+  if (match) {
+    const month = Number(match[2])
+    if (month >= 1 && month <= 12) return { year: Number(match[1]), month }
+  }
+
+  match = text.match(/^(\d{4})$/)
+  if (match) return { year: Number(match[1]), month: null }
+
+  return null
+}
+
+const toMonthIndex = ({ year, month }, fallbackMonth) => year * 12 + (month ?? fallbackMonth)
+
+const extractWorkDateRanges = (
+  sourceText,
+  { requireWorkContext = false, allowProjectContext = false, now = new Date() } = {}
+) => {
+  const lines = String(sourceText || '')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const ranges = []
+  const rangePattern =
+    /(\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?|\d{4})\s*(?:-|~|–|—|至|到|to)\s*(至今|現在|现在|現今|现今|目前|present|current|now|\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?|\d{4})/gi
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    const context = [lines[index - 1], line, lines[index + 1]].filter(Boolean).join(' ')
+    if (NON_WORK_RANGE_CONTEXT_PATTERN.test(context)) continue
+    if (!allowProjectContext && PROJECT_RANGE_CONTEXT_PATTERN.test(context)) continue
+    if (requireWorkContext && !WORK_RANGE_CONTEXT_PATTERN.test(context)) continue
+
+    for (const match of line.matchAll(rangePattern)) {
+      const start = parseYearMonthToken(match[1], now)
+      const end = parseYearMonthToken(match[2], now)
+      if (!start || !end) continue
+      const startMonth = toMonthIndex(start, 1)
+      const endMonth = toMonthIndex(end, 12)
+      if (endMonth < startMonth) continue
+      ranges.push({ startMonth, endMonth })
+    }
+  }
+
+  return ranges
+}
+
+const computeMergedRangeMonths = (ranges = []) => {
+  const sorted = ranges
+    .filter((range) => Number.isInteger(range?.startMonth) && Number.isInteger(range?.endMonth))
+    .sort((a, b) => a.startMonth - b.startMonth)
+  if (!sorted.length) return 0
+
+  const merged = []
+  for (const range of sorted) {
+    const previous = merged[merged.length - 1]
+    if (!previous || range.startMonth > previous.endMonth + 1) {
+      merged.push({ ...range })
+      continue
+    }
+    previous.endMonth = Math.max(previous.endMonth, range.endMonth)
+  }
+
+  return merged.reduce((total, range) => total + range.endMonth - range.startMonth + 1, 0)
+}
+
+const formatWorkDurationMonths = (months) => {
+  if (!Number.isInteger(months) || months <= 0 || months > 600) return ''
+  if (months < 12) return `${months}月`
+  const years = Math.floor(months / 12)
+  const remainingMonths = months % 12
+  return remainingMonths > 0 ? `${years}年${remainingMonths}月` : `${years}年`
+}
+
+export const extractWorkYearsFromText = (sourceText = '', now = new Date()) => {
+  const text = String(sourceText || '').replace(/\r/g, '\n')
+  if (!text.trim()) return ''
+
+  const explicitWorkYears = pickExplicitWorkYearsFromText(text)
+  if (explicitWorkYears) return explicitWorkYears
+
+  const scoped = getWorkScopedText(text)
+  const ranges = extractWorkDateRanges(scoped.text, {
+    requireWorkContext: !scoped.hasWorkSection,
+    allowProjectContext: scoped.hasWorkSection,
+    now,
+  })
+  return formatWorkDurationMonths(computeMergedRangeMonths(ranges))
+}
+
+const normalizeProfileFields = (raw = {}, options = {}) => {
   const root = raw && typeof raw === 'object' ? raw : {}
   const profile = root.profile && typeof root.profile === 'object' ? root.profile : {}
 
@@ -225,7 +431,8 @@ const normalizeProfileFields = (raw = {}) => {
       root.workYears,
       profile.workYears,
       basicAttributes.workYears,
-      basicAttributes.experienceYears
+      basicAttributes.experienceYears,
+      extractWorkYearsFromText(options.sourceText, options.now)
     ),
     languages: mergeStringArrays(root.languages, profile.languages, basicAttributes.languages).slice(0, 20),
     technicalLanguages: mergeStringArrays(
@@ -278,8 +485,8 @@ const normalizeProfileFields = (raw = {}) => {
   }
 }
 
-export const normalizeExtractedFields = (raw = {}) => {
-  const profile = normalizeProfileFields(raw)
+export const normalizeExtractedFields = (raw = {}, options = {}) => {
+  const profile = normalizeProfileFields(raw, options)
   const extracted = {
     fullName: pickFirstString(raw.fullName, raw.name, raw.candidateName),
     email: normalizeString(raw.email).toLowerCase(),
@@ -354,13 +561,7 @@ const pickEducationFromText = (normalized) => {
 }
 
 const pickWorkYearsFromText = (normalized) => {
-  const plusYear = normalized.match(/(\d+)\s*\+\s*(?:年|years?)/i)
-  if (plusYear?.[1]) return `${plusYear[1]}年以上`
-  const yearRange = normalized.match(/(\d+\s*[-~至]\s*\d+)\s*年/i)
-  if (yearRange?.[1]) return `${yearRange[1].replace(/\s+/g, '')}年`
-  const yearCount = normalized.match(/(\d+)\s*(?:年|years?)/i)
-  if (yearCount?.[1]) return `${yearCount[1]}年`
-  return ''
+  return extractWorkYearsFromText(normalized)
 }
 
 const pickIndustryFromText = (normalized) => {
@@ -480,7 +681,7 @@ export const extractCandidateInfoByRegexText = (text) => {
     industry,
     projectExperience,
     targetPosition,
-  })
+  }, { sourceText: normalized })
 }
 
 export const extractCandidateInfoByRegex = (buffer) => extractCandidateInfoByRegexText(buffer.toString('utf8'))

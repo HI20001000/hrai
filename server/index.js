@@ -544,7 +544,8 @@ const createJobPost = async (pool, req, res) => {
   const body = await parseBody(req)
   const title = normalizeText(body?.title)
   const jobKey = normalizeText(body?.jobKey)
-  const status = normalizeJobPostStatus(body?.status)
+  const statusResult = resolveJobPostStatusInput(body?.status, 'open')
+  const status = statusResult.status
   const dictionary = getJobDictionary()
   const dictionaryJob = dictionary?.[jobKey]
 
@@ -558,6 +559,10 @@ const createJobPost = async (pool, req, res) => {
   }
   if (!dictionaryJob) {
     sendJson(res, 400, { message: 'Invalid jobKey' })
+    return
+  }
+  if (!statusResult.valid) {
+    sendJson(res, 400, { message: 'Invalid status' })
     return
   }
 
@@ -610,7 +615,8 @@ const updateJobPost = async (pool, req, res, jobPostId) => {
   const body = await parseBody(req)
   const title = normalizeText(body?.title)
   const jobKey = normalizeText(body?.jobKey || existing.jobKey)
-  const status = normalizeJobPostStatus(body?.status || existing.status)
+  const statusResult = resolveJobPostStatusInput(body?.status, existing.status)
+  const status = statusResult.status
   const dictionary = getJobDictionary()
   const dictionaryJob = dictionary?.[jobKey]
   if (!title) {
@@ -623,6 +629,10 @@ const updateJobPost = async (pool, req, res, jobPostId) => {
   }
   if (!dictionaryJob) {
     sendJson(res, 400, { message: 'Invalid jobKey' })
+    return
+  }
+  if (!statusResult.valid) {
+    sendJson(res, 400, { message: 'Invalid status' })
     return
   }
 
@@ -1325,14 +1335,26 @@ const normalizeList = (value, limit = 20) => {
 
 const stringifyJson = (value) => JSON.stringify(value ?? null)
 
-const normalizeJobPostStatus = (value) => {
+const JOB_POST_STATUS_VALUES = new Set(['open', 'draft', 'closed'])
+
+const normalizeJobPostStatus = (value, fallback = 'open') => {
   const status = normalizeText(value).toLowerCase()
-  if (status === 'open' || status === 'draft' || status === 'closed') return status
-  return 'open'
+  return JOB_POST_STATUS_VALUES.has(status) ? status : fallback
+}
+
+const resolveJobPostStatusInput = (value, fallback = 'open') => {
+  const status = normalizeText(value).toLowerCase()
+  if (!status) return { valid: true, status: fallback }
+  if (JOB_POST_STATUS_VALUES.has(status)) return { valid: true, status }
+  return { valid: false, status: fallback }
 }
 
 const APPLICATION_STATUS_VALUES = new Set([
   'screening',
+  'screening_hr_approved',
+  'screening_hr_rejected',
+  'screening_department_approved',
+  'screening_department_rejected',
   'screening_rejected',
   'hr_interview',
   'hr_interview_rejected',
