@@ -1,5 +1,9 @@
 export const CANDIDATE_APPLICATION_STATUS_OPTIONS = [
-  { value: 'screening', label: '簡歷篩選' },
+  { value: 'screening', label: '簡歷篩選中' },
+  { value: 'screening_hr_approved', label: '簡歷篩選 - HR通過' },
+  { value: 'screening_hr_rejected', label: '簡歷篩選 - HR不通過' },
+  { value: 'screening_department_approved', label: '簡歷篩選 - 部門通過' },
+  { value: 'screening_department_rejected', label: '簡歷篩選 - 部門不通過' },
   { value: 'screening_rejected', label: '簡歷篩選不通過' },
   { value: 'hr_interview', label: 'HR面試' },
   { value: 'hr_interview_rejected', label: 'HR面試不通過' },
