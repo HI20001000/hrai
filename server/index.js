@@ -615,10 +615,7 @@ const updateJobPost = async (pool, req, res, jobPostId) => {
   const body = await parseBody(req)
   const title = normalizeText(body?.title)
   const jobKey = normalizeText(body?.jobKey || existing.jobKey)
-<<<<<<< HEAD
   const isJobKeyChanged = jobKey !== existing.jobKey
-=======
->>>>>>> 5433079dfcf4cca462e8d85ff65aaa1a3baab60f
   const statusResult = resolveJobPostStatusInput(body?.status, existing.status)
   const status = statusResult.status
   const dictionary = getJobDictionary()
