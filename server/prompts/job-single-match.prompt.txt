@@ -17,8 +17,9 @@
 6. 若候選人資料不足，必須保守評分，不可編造不存在的經歷、技能、項目、證書或成果。
 7. 不可因 CV 中出現相似關鍵詞就直接認定匹配，必須判斷是否有真實工作證據。
 8. 必須根據不同候選人的匹配深度拉開分數，不要讓所有候選人都集中在 70-80 分。
-9. requiredSkills、projectExperience、industry、coreResponsibilities、certifications、workYears、candidatePreference 需要整體判斷，不可機械平均。
-10. job.weights 代表不同維度的重要性，高權重維度缺失時應明顯降低 matchScore。
+9. requiredSkills、projectExperience、workExperience、internshipExperience、industry、coreResponsibilities、certifications、workYears、candidatePreference 需要整體判斷，不可機械平均。
+10. workExperience 是正式任職證據，internshipExperience 只能作為輔助證據，不可等價替代正式工作經驗或工作年限門檻。
+11. job.weights 代表不同維度的重要性，高權重維度缺失時應明顯降低 matchScore。
 
 ====================
 二、第一步：理解 job 的真實招聘意圖
@@ -93,7 +94,8 @@
    評估 candidate 是否實際做過 job.coreResponsibilities 中的主要工作。
 
 3. 項目 / 工作經驗匹配
-   評估 candidate 是否做過與 job.projectExperience 類似的項目、產品、系統、客戶或業務場景。
+   評估 candidate 的 projectExperience 與 workExperience 是否證明其做過與 job.projectExperience 類似的項目、產品、系統、客戶或業務場景。
+   internshipExperience 可補充初階證據，但不得取代正式工作經驗。
 
 4. 行業 / 業務場景匹配
    評估 candidate 是否具備 job.industry 所要求的行業背景。

@@ -13,6 +13,7 @@ import {
 } from './scripts/database/index.js'
 import { HttpError } from './scripts/errors.js'
 import { extractCandidateInfoFromCv } from './scripts/llm/cv-extractor.js'
+import { normalizeExperienceItems } from './scripts/llm/experiences.js'
 import { hasProjectExperiences, normalizeProjectExperiences } from './scripts/llm/project-experiences.js'
 import { extractTextFromBuffer } from './scripts/llm/text-extractors.js'
 import { getJobDictionary, loadJobDictionary, saveJobDictionary } from './scripts/jobs/dictionary.js'
@@ -727,6 +728,7 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
     `SELECT
         app.id AS applicationId,
         app.application_status AS applicationStatus,
+        app.first_interview_arrangement AS firstInterviewArrangement,
         app.remark AS remark,
         app.matched_score AS matchedScore,
         app.matched_level AS matchedLevel,
@@ -766,6 +768,7 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
       return {
         applicationId: Number(row.applicationId),
         applicationStatus: normalizeApplicationStatus(row.applicationStatus),
+        firstInterviewArrangement: normalizeFirstInterviewArrangement(row.firstInterviewArrangement),
         remark: normalizeText(row.remark),
         candidateId: Number(row.candidateId),
         fullName: normalizeText(row.fullName),
@@ -796,6 +799,7 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
         app.candidate_id AS candidateId,
         app.candidate_cv_id AS candidateCvId,
         app.application_status AS applicationStatus,
+        app.first_interview_arrangement AS firstInterviewArrangement,
         app.remark AS remark,
         app.matched_score AS matchedScore,
         app.matched_level AS matchedLevel,
@@ -826,6 +830,7 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
       candidateId: Number(row.candidateId),
       candidateCvId: Number(row.candidateCvId),
       applicationStatus: normalizeApplicationStatus(row.applicationStatus),
+      firstInterviewArrangement: normalizeFirstInterviewArrangement(row.firstInterviewArrangement),
       remark: normalizeText(row.remark),
       matchedScore: Number(row.matchedScore || 0),
       matchedLevel: normalizeText(row.matchedLevel),
@@ -841,7 +846,14 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
 
 const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => {
   const [rows] = await pool.query(
-    'SELECT id, application_status AS applicationStatus, remark FROM job_post_applications WHERE id = ? LIMIT 1',
+    `SELECT
+        id,
+        application_status AS applicationStatus,
+        first_interview_arrangement AS firstInterviewArrangement,
+        remark
+      FROM job_post_applications
+      WHERE id = ?
+      LIMIT 1`,
     [applicationId]
   )
   const existing = rows[0]
@@ -852,9 +864,11 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
 
   const body = await parseBody(req)
   const hasStatus = body && Object.prototype.hasOwnProperty.call(body, 'applicationStatus')
+  const hasFirstInterviewArrangement =
+    body && Object.prototype.hasOwnProperty.call(body, 'firstInterviewArrangement')
   const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
-  if (!hasStatus && !hasRemark) {
-    sendJson(res, 400, { message: 'applicationStatus or remark is required' })
+  if (!hasStatus && !hasFirstInterviewArrangement && !hasRemark) {
+    sendJson(res, 400, { message: 'applicationStatus, firstInterviewArrangement or remark is required' })
     return
   }
 
@@ -866,13 +880,35 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
     return
   }
 
+  const currentStatus = normalizeApplicationStatus(existing.applicationStatus)
+  const arrangementResult = hasFirstInterviewArrangement
+    ? resolveFirstInterviewArrangementInput(body?.firstInterviewArrangement, '')
+    : {
+        valid: true,
+        value: normalizeFirstInterviewArrangement(existing.firstInterviewArrangement),
+      }
+  if (!arrangementResult.valid) {
+    sendJson(res, 400, { message: 'Invalid firstInterviewArrangement' })
+    return
+  }
+  if (
+    hasFirstInterviewArrangement &&
+    currentStatus !== 'screening_hr_approved' &&
+    nextStatus !== 'screening_hr_approved'
+  ) {
+    sendJson(res, 400, {
+      message: 'firstInterviewArrangement can only be updated when HR screening is approved',
+    })
+    return
+  }
+
   const nextRemark = hasRemark ? normalizeApplicationRemark(body?.remark) : normalizeApplicationRemark(existing.remark)
 
   await pool.query(
     `UPDATE job_post_applications
-      SET application_status = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+      SET application_status = ?, first_interview_arrangement = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [nextStatus, nextRemark, applicationId]
+    [nextStatus, arrangementResult.value || null, nextRemark, applicationId]
   )
 
   sendJson(res, 200, {
@@ -880,6 +916,7 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
     application: {
       applicationId,
       applicationStatus: nextStatus,
+      firstInterviewArrangement: arrangementResult.value,
       remark: nextRemark || '',
     },
   })
@@ -1372,6 +1409,8 @@ const APPLICATION_STATUS_VALUES = new Set([
   'hr_withdrew_onboarding',
 ])
 
+const FIRST_INTERVIEW_ARRANGEMENT_VALUES = new Set(['can_invite', 'unsuitable'])
+
 const normalizeApplicationStatus = (value, fallback = 'screening') => {
   const normalized = normalizeText(value).toLowerCase()
   const mapped = normalized === 'submitted'
@@ -1380,6 +1419,21 @@ const normalizeApplicationStatus = (value, fallback = 'screening') => {
       ? 'screening_rejected'
       : normalized
   return APPLICATION_STATUS_VALUES.has(mapped) ? mapped : fallback
+}
+
+const normalizeFirstInterviewArrangement = (value, fallback = '') => {
+  const normalized = normalizeText(value).toLowerCase()
+  if (!normalized) return ''
+  return FIRST_INTERVIEW_ARRANGEMENT_VALUES.has(normalized) ? normalized : fallback
+}
+
+const resolveFirstInterviewArrangementInput = (value, fallback = '') => {
+  const normalized = normalizeText(value).toLowerCase()
+  if (!normalized) return { valid: true, value: '' }
+  if (FIRST_INTERVIEW_ARRANGEMENT_VALUES.has(normalized)) {
+    return { valid: true, value: normalized }
+  }
+  return { valid: false, value: fallback }
 }
 
 const normalizeApplicationRemark = (value) => {
@@ -2315,6 +2369,8 @@ const applyExtractedFieldUpdate = (extracted, fieldKey, inputValue) => {
     technicalCertificates: { kind: 'list', target: 'profile', limit: 20 },
     industry: { kind: 'text', target: 'profile' },
     projectExperiences: { kind: 'project-experiences', target: 'profile' },
+    workExperiences: { kind: 'experiences', target: 'profile' },
+    internshipExperiences: { kind: 'experiences', target: 'profile' },
     targetPosition: { kind: 'list', target: 'profile', limit: 10 },
     expectedSalary: { kind: 'text', target: 'profile' },
     onboardingPreference: { kind: 'text', target: 'profile' },
@@ -2339,6 +2395,13 @@ const applyExtractedFieldUpdate = (extracted, fieldKey, inputValue) => {
       root[fieldKey] = groups
       delete root.projectExperience
     }
+    return { extracted: root }
+  }
+
+  if (config.kind === 'experiences') {
+    const items = normalizeExperienceItems(inputValue)
+    if (config.target === 'profile') root.profile[fieldKey] = items
+    else root[fieldKey] = items
     return { extracted: root }
   }
 
@@ -2374,6 +2437,8 @@ const applyEditedExtractedPayload = (baseExtracted, editedExtracted) => {
     ['technicalCertificates', sourceProfile.technicalCertificates],
     ['industry', sourceProfile.industry],
     ['projectExperiences', sourceProfile.projectExperiences],
+    ['workExperiences', sourceProfile.workExperiences],
+    ['internshipExperiences', sourceProfile.internshipExperiences],
     ['targetPosition', sourceProfile.targetPosition],
     ['expectedSalary', sourceProfile.expectedSalary],
     ['onboardingPreference', sourceProfile.onboardingPreference],
@@ -2825,6 +2890,7 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
     `SELECT
         app.id AS applicationId,
         app.application_status AS applicationStatus,
+        app.first_interview_arrangement AS firstInterviewArrangement,
         app.remark AS remark,
         app.matched_score AS matchedScore,
         app.matched_level AS matchedLevel,
@@ -2860,6 +2926,7 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
       return {
         applicationId: Number(row.applicationId),
         applicationStatus: normalizeApplicationStatus(row.applicationStatus),
+        firstInterviewArrangement: normalizeFirstInterviewArrangement(row.firstInterviewArrangement),
         remark: normalizeText(row.remark),
         matchedScore: Number(row.matchedScore || 0),
         matchedLevel: normalizeText(row.matchedLevel),

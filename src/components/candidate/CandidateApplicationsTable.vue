@@ -4,8 +4,11 @@ import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
 import AppSelect from '../AppSelect.vue'
 import {
   CANDIDATE_APPLICATION_STATUS_OPTIONS,
+  FIRST_INTERVIEW_ARRANGEMENT_OPTIONS,
   getCandidateApplicationStatusLabel,
+  getFirstInterviewArrangementLabel,
   normalizeCandidateApplicationStatus,
+  normalizeFirstInterviewArrangement,
 } from '../../scripts/candidateApplicationStatus.js'
 import CandidateTextPreviewModal from './CandidateTextPreviewModal.vue'
 
@@ -96,7 +99,7 @@ const props = defineProps({
   },
   searchPlaceholder: {
     type: String,
-    default: '搜尋候選人 / 狀態 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案',
+    default: '搜尋候選人 / 狀態 / 一面安排 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案',
   },
 })
 
@@ -114,6 +117,8 @@ const emit = defineEmits([
 const searchKeyword = ref('')
 const statusOverrides = ref({})
 const savingStatusIds = ref([])
+const firstInterviewOverrides = ref({})
+const savingFirstInterviewIds = ref([])
 const remarkDrafts = ref({})
 const savingRemarkIds = ref([])
 const addingBlacklistIds = ref([])
@@ -171,6 +176,7 @@ const getRemarkDraft = (row) => {
 const getRemarkTooltip = (row) => String(getRemarkDraft(row) || '').trim() || undefined
 
 const isStatusSaving = (applicationId) => savingStatusIds.value.includes(Number(applicationId))
+const isFirstInterviewSaving = (applicationId) => savingFirstInterviewIds.value.includes(Number(applicationId))
 const isBlacklistSaving = (applicationId) => addingBlacklistIds.value.includes(Number(applicationId))
 
 const displayRows = computed(() =>
@@ -179,6 +185,9 @@ const displayRows = computed(() =>
     applicationStatus:
       statusOverrides.value[Number(row.applicationId)] ??
       normalizeCandidateApplicationStatus(row.applicationStatus),
+    firstInterviewArrangement:
+      firstInterviewOverrides.value[Number(row.applicationId)] ??
+      normalizeFirstInterviewArrangement(row.firstInterviewArrangement),
   }))
 )
 
@@ -191,6 +200,7 @@ const filteredRows = computed(() => {
       props.showJobColumn ? row.jobPostTitle : '',
       row.fullName,
       getCandidateApplicationStatusLabel(row.applicationStatus),
+      getFirstInterviewArrangementLabel(row.firstInterviewArrangement),
       row.targetPosition,
       row.matchedPosition,
       row.phone,
@@ -210,7 +220,7 @@ const filteredRows = computed(() => {
 const selectedCount = computed(() => props.selectedIds.length)
 
 const tableColumnCount = computed(() => {
-  let count = 9
+  let count = 10
   if (props.showJobColumn) count += 1
   return count
 })
@@ -393,6 +403,59 @@ const updateApplicationStatus = async (row, nextStatus) => {
   }
 }
 
+const canEditFirstInterviewArrangement = (row) =>
+  props.editableStatus &&
+  normalizeCandidateApplicationStatus(row?.applicationStatus) === 'screening_hr_approved'
+
+const updateFirstInterviewArrangement = async (row, nextValue) => {
+  const applicationId = Number(row?.applicationId)
+  const previousValue = normalizeFirstInterviewArrangement(row?.firstInterviewArrangement)
+  const normalizedValue = normalizeFirstInterviewArrangement(nextValue, '')
+
+  if (!applicationId || normalizedValue === previousValue) {
+    firstInterviewOverrides.value = {
+      ...firstInterviewOverrides.value,
+      [applicationId]: previousValue,
+    }
+    return
+  }
+
+  savingFirstInterviewIds.value = [...savingFirstInterviewIds.value, applicationId]
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstInterviewArrangement: normalizedValue }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.message || '更新一面安排失敗')
+    }
+
+    firstInterviewOverrides.value = {
+      ...firstInterviewOverrides.value,
+      [applicationId]: normalizeFirstInterviewArrangement(data?.application?.firstInterviewArrangement),
+    }
+    emit('rows-updated')
+    emit('notify', {
+      type: 'success',
+      message: `已更新 ${row?.fullName || '候選人'} 的一面安排為「${getFirstInterviewArrangementLabel(normalizedValue)}」`,
+    })
+    window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
+  } catch (error) {
+    firstInterviewOverrides.value = {
+      ...firstInterviewOverrides.value,
+      [applicationId]: previousValue,
+    }
+    emit('notify', {
+      type: 'error',
+      message: error?.message || '更新一面安排失敗',
+    })
+  } finally {
+    savingFirstInterviewIds.value = savingFirstInterviewIds.value.filter((id) => id !== applicationId)
+  }
+}
+
 const quickAddToBlacklist = async (row) => {
   const applicationId = Number(row?.applicationId)
   if (!applicationId || row?.isBlacklisted || isBlacklistSaving(applicationId)) return
@@ -517,6 +580,7 @@ const quickAddToBlacklist = async (row) => {
             <th v-if="showJobColumn" class="job-col">職位</th>
             <th class="name-col">候選人名稱</th>
             <th class="status-col">候選人狀態</th>
+            <th class="first-interview-col">是否安排一面</th>
             <th class="remark-col">備註</th>
             <th class="position-col">期望職位</th>
             <th class="position-col">匹配職位</th>
@@ -587,6 +651,25 @@ const quickAddToBlacklist = async (row) => {
               </div>
               <span v-else class="status-chip" :class="getStatusToneClass(row.applicationStatus)">
                 {{ getCandidateApplicationStatusLabel(row.applicationStatus) }}
+              </span>
+            </td>
+            <td class="first-interview-col">
+              <div
+                v-if="canEditFirstInterviewArrangement(row)"
+                class="first-interview-select-wrap"
+                :class="{ saving: isFirstInterviewSaving(row.applicationId) }"
+              >
+                <AppSelect
+                  class="first-interview-select"
+                  :model-value="row.firstInterviewArrangement"
+                  :options="FIRST_INTERVIEW_ARRANGEMENT_OPTIONS"
+                  placeholder="請選擇"
+                  :disabled="isFirstInterviewSaving(row.applicationId)"
+                  @update:model-value="updateFirstInterviewArrangement(row, $event)"
+                />
+              </div>
+              <span v-else class="first-interview-text">
+                {{ getFirstInterviewArrangementLabel(row.firstInterviewArrangement) || '--' }}
               </span>
             </td>
             <td class="remark-col">
@@ -843,6 +926,10 @@ const quickAddToBlacklist = async (row) => {
   min-width: 220px;
 }
 
+.first-interview-col {
+  min-width: 180px;
+}
+
 .position-col {
   min-width: 160px;
 }
@@ -949,6 +1036,40 @@ const quickAddToBlacklist = async (row) => {
     border-color 180ms ease,
     box-shadow 180ms ease,
     transform 180ms ease;
+}
+
+.first-interview-select-wrap {
+  min-width: 156px;
+  max-width: 188px;
+}
+
+.first-interview-select-wrap.saving {
+  opacity: 0.68;
+}
+
+.first-interview-select {
+  width: 100%;
+}
+
+.first-interview-select-wrap :deep(.app-select-trigger) {
+  min-height: 36px;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+}
+
+.first-interview-select-wrap :deep(.app-select-menu) {
+  min-width: 100%;
+  width: max-content;
+}
+
+.first-interview-select-wrap :deep(.app-select-value),
+.first-interview-select-wrap :deep(.app-select-option-label) {
+  font-size: 0.82rem;
+}
+
+.first-interview-text {
+  color: var(--text-base);
+  font-weight: 600;
 }
 
 .status-select-wrap:hover {

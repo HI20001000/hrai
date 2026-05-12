@@ -5,11 +5,12 @@
 規則：
 1. 只可對輸入中的 jobs 進行排序，不可新增 jobKey。
 2. 請參考每個 job 的 weights 理解重要性，高權重維度應更影響 matchScore。
-3. requiredSkills、projectExperience、industry、coreResponsibilities、certifications、workYears、candidatePreference 需整體判斷，不可機械平均。
-4. matchScore 範圍為 0-100。
-5. matchLevel 只能是 high、medium、low。
-6. strengths 與 gaps 各返回 1-3 條，內容要簡潔。
-7. rankedJobs 最多返回 3 個，並按匹配度由高到低排序。
+3. requiredSkills、projectExperience、workExperience、internshipExperience、industry、coreResponsibilities、certifications、workYears、candidatePreference 需整體判斷，不可機械平均。
+4. workExperience 是主要經驗證據；internshipExperience 只能作為輔助證據，不可等價替代正式工作門檻。
+5. matchScore 範圍為 0-100。
+6. matchLevel 只能是 high、medium、low。
+7. strengths 與 gaps 各返回 1-3 條，內容要簡潔。
+8. rankedJobs 最多返回 3 個，並按匹配度由高到低排序。
 
 輸出要求：
 - 只輸出 JSON

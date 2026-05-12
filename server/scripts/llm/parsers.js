@@ -2,6 +2,9 @@ import {
   hasProjectExperiences,
   normalizeProjectExperiences,
 } from './project-experiences.js'
+import {
+  normalizeExperienceItems,
+} from './experiences.js'
 
 export const safeJsonParse = (value) => {
   if (typeof value !== 'string') return null
@@ -77,6 +80,28 @@ const assertProjectExperiencesField = (payload, key) => {
   }
 }
 
+const assertExperienceItemsField = (payload, key) => {
+  if (!(key in payload)) throw new Error(`Missing field: ${key}`)
+  if (!Array.isArray(payload[key])) throw new Error(`Field ${key} must be an array`)
+
+  for (const [index, item] of payload[key].entries()) {
+    if (!isPlainObject(item)) throw new Error(`Field ${key}[${index}] must be an object`)
+    for (const fieldKey of ['companyName', 'roleTitle', 'durationText']) {
+      if (typeof item[fieldKey] !== 'string') {
+        throw new Error(`Field ${key}[${index}].${fieldKey} must be a string`)
+      }
+    }
+    if (!Array.isArray(item.highlights)) {
+      throw new Error(`Field ${key}[${index}].highlights must be an array`)
+    }
+    for (const highlight of item.highlights) {
+      if (typeof highlight !== 'string') {
+        throw new Error(`Field ${key}[${index}].highlights must contain only strings`)
+      }
+    }
+  }
+}
+
 export const validateCvExtractionPayload = (payload) => {
   if (!isPlainObject(payload)) throw new Error('CV extraction output must be a JSON object')
 
@@ -89,6 +114,8 @@ export const validateCvExtractionPayload = (payload) => {
   }
 
   assertProjectExperiencesField(payload, 'projectExperiences')
+  assertExperienceItemsField(payload, 'workExperiences')
+  assertExperienceItemsField(payload, 'internshipExperiences')
 
   return payload
 }
@@ -206,6 +233,9 @@ const PROJECT_RANGE_CONTEXT_PATTERN = /(项目|項目|project)/i
 
 const WORK_RANGE_CONTEXT_PATTERN =
   /(工作|任职|任職|职位|職位|岗位|崗位|公司|有限公司|集团|集團|银行|銀行|科技|顾问|顧問|经理|經理|工程师|工程師|employment|experience|company|corp|ltd|inc|manager|analyst|engineer|developer|consultant|officer|specialist)/i
+
+const INTERNSHIP_RANGE_CONTEXT_PATTERN =
+  /(實習|实习|internship|intern\b|trainee)/i
 
 const PRESENT_DATE_TOKEN_PATTERN = /^(至今|現在|现在|現今|现今|目前|present|current|now)$/i
 
@@ -338,8 +368,10 @@ const extractWorkDateRanges = (
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]
     const context = [lines[index - 1], line, lines[index + 1]].filter(Boolean).join(' ')
+    const internshipContext = [lines[index - 1], line].filter(Boolean).join(' ')
     if (NON_WORK_RANGE_CONTEXT_PATTERN.test(context)) continue
     if (!allowProjectContext && PROJECT_RANGE_CONTEXT_PATTERN.test(context)) continue
+    if (INTERNSHIP_RANGE_CONTEXT_PATTERN.test(internshipContext)) continue
     if (requireWorkContext && !WORK_RANGE_CONTEXT_PATTERN.test(context)) continue
 
     for (const match of line.matchAll(rangePattern)) {
@@ -459,6 +491,12 @@ const normalizeProfileFields = (raw = {}, options = {}) => {
       root.projectExperiences,
       profile.projectExperiences,
       industryExperience.projectExperiences
+    ),
+    workExperiences: normalizeExperienceItems(
+      root.workExperiences ?? profile.workExperiences ?? industryExperience.workExperiences
+    ),
+    internshipExperiences: normalizeExperienceItems(
+      root.internshipExperiences ?? profile.internshipExperiences ?? industryExperience.internshipExperiences
     ),
     targetPosition: mergeStringArrays(
       root.targetPosition,

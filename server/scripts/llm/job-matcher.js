@@ -2,6 +2,7 @@ import { buildJsonTaskInputContent, callLlmPrompt } from './client.js'
 import { getLlmConfig } from './config.js'
 import { getJobRerankPrompt, getJobShortlistPrompt, getJobSingleMatchPrompt } from './prompt.js'
 import { parseLlmContentToJson } from './parsers.js'
+import { buildExperienceSummary, normalizeExperienceItems } from './experiences.js'
 import { buildProjectExperiencesSummary, normalizeProjectExperiences } from './project-experiences.js'
 import { LlmOutputFormatError } from '../errors.js'
 
@@ -167,6 +168,8 @@ const validateSingleMatchPayload = (payload, job) => {
 export const buildCandidateProfile = (extracted = {}) => {
   const profile = extracted?.profile && typeof extracted.profile === 'object' ? extracted.profile : {}
   const projectExperiences = normalizeProjectExperiences(profile.projectExperiences)
+  const workExperiences = normalizeExperienceItems(profile.workExperiences)
+  const internshipExperiences = normalizeExperienceItems(profile.internshipExperiences)
   return {
     fullName: normalizeText(extracted?.fullName),
     education: normalizeText(profile.education),
@@ -175,6 +178,8 @@ export const buildCandidateProfile = (extracted = {}) => {
     technicalLanguages: normalizeList(profile.technicalLanguages, 30),
     technicalCertificates: normalizeList(profile.technicalCertificates, 20),
     industry: normalizeText(profile.industry),
+    workExperience: buildExperienceSummary(workExperiences),
+    internshipExperience: buildExperienceSummary(internshipExperiences),
     projectExperience: buildProjectExperiencesSummary(projectExperiences, profile.projectExperience),
     targetPosition: normalizeList(profile.targetPosition, 10),
     expectedSalary: normalizeText(profile.expectedSalary),

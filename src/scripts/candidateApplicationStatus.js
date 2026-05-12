@@ -18,8 +18,17 @@ export const CANDIDATE_APPLICATION_STATUS_OPTIONS = [
   { value: 'hr_withdrew_onboarding', label: 'HR撤銷入職' },
 ]
 
+export const FIRST_INTERVIEW_ARRANGEMENT_OPTIONS = [
+  { value: 'can_invite', label: '可邀約' },
+  { value: 'unsuitable', label: '不合適' },
+]
+
 const STATUS_LABEL_MAP = Object.fromEntries(
   CANDIDATE_APPLICATION_STATUS_OPTIONS.map((item) => [item.value, item.label])
+)
+
+const FIRST_INTERVIEW_ARRANGEMENT_LABEL_MAP = Object.fromEntries(
+  FIRST_INTERVIEW_ARRANGEMENT_OPTIONS.map((item) => [item.value, item.label])
 )
 
 export const normalizeCandidateApplicationStatus = (value, fallback = 'screening') => {
@@ -31,3 +40,11 @@ export const normalizeCandidateApplicationStatus = (value, fallback = 'screening
 
 export const getCandidateApplicationStatusLabel = (value) =>
   STATUS_LABEL_MAP[normalizeCandidateApplicationStatus(value)] || STATUS_LABEL_MAP.screening
+
+export const normalizeFirstInterviewArrangement = (value, fallback = '') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return FIRST_INTERVIEW_ARRANGEMENT_LABEL_MAP[normalized] ? normalized : fallback
+}
+
+export const getFirstInterviewArrangementLabel = (value) =>
+  FIRST_INTERVIEW_ARRANGEMENT_LABEL_MAP[normalizeFirstInterviewArrangement(value)] || ''

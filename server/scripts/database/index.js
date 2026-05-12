@@ -161,6 +161,7 @@ export const ensureCvTables = async (pool) => {
       candidate_id BIGINT NOT NULL,
       candidate_cv_id BIGINT NOT NULL,
       application_status VARCHAR(40) NOT NULL DEFAULT 'screening',
+      first_interview_arrangement VARCHAR(40) NULL,
       remark TEXT NULL,
       matched_score INT NULL,
       matched_level VARCHAR(20) NULL,
@@ -183,6 +184,14 @@ export const ensureCvTables = async (pool) => {
 
   try {
     await pool.query('ALTER TABLE job_post_applications ADD COLUMN remark TEXT NULL AFTER application_status')
+  } catch (error) {
+    if (!/duplicate column name/i.test(String(error?.message || ''))) throw error
+  }
+
+  try {
+    await pool.query(
+      'ALTER TABLE job_post_applications ADD COLUMN first_interview_arrangement VARCHAR(40) NULL AFTER application_status'
+    )
   } catch (error) {
     if (!/duplicate column name/i.test(String(error?.message || ''))) throw error
   }

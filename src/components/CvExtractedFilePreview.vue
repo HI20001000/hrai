@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import ExperienceEntriesField from './ExperienceEntriesField.vue'
 import ProjectExperiencesField from './ProjectExperiencesField.vue'
 import { buildExtractedPreviewData, EXTRACTED_EMPTY_TEXT } from '../scripts/cvExtractedEditor.js'
 
@@ -21,6 +22,8 @@ const previewData = computed(() =>
 
 const basicRows = computed(() => previewData.value.basicRows || [])
 const dimensionRows = computed(() => previewData.value.dimensionRows || [])
+const workExperienceField = computed(() => previewData.value.workExperienceField || null)
+const internshipExperienceField = computed(() => previewData.value.internshipExperienceField || null)
 const projectExperienceField = computed(() => previewData.value.projectExperienceField || null)
 </script>
 
@@ -48,6 +51,28 @@ const projectExperienceField = computed(() => previewData.value.projectExperienc
           </tr>
         </tbody>
       </table>
+    </section>
+
+    <section v-if="workExperienceField" class="preview-section">
+      <h4>工作經驗</h4>
+      <div class="project-section">
+        <ExperienceEntriesField
+          :model-value="workExperienceField?.rawValue || []"
+          entry-label="工作經驗"
+          readonly
+        />
+      </div>
+    </section>
+
+    <section v-if="internshipExperienceField" class="preview-section">
+      <h4>實習經驗</h4>
+      <div class="project-section">
+        <ExperienceEntriesField
+          :model-value="internshipExperienceField?.rawValue || []"
+          entry-label="實習經驗"
+          readonly
+        />
+      </div>
     </section>
 
     <section v-if="projectExperienceField" class="preview-section">

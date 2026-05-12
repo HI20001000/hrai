@@ -356,7 +356,7 @@ onUnmounted(() => {
       :deleting="isBulkDeleting"
       title="候選人清單"
       empty-text="尚無候選人資料"
-      search-placeholder="搜尋職位 / 候選人 / 狀態 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案"
+      search-placeholder="搜尋職位 / 候選人 / 狀態 / 一面安排 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案"
       @selection-change="selectedApplicationIds = $event"
       @delete-selected="deleteSelectedApplications"
       @bulk-blacklist-selected="addSelectedToBlacklist"

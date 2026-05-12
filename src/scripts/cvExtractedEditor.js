@@ -5,6 +5,7 @@ export const EXTRACTED_UNTAGGED_TEXT = '（未標記）'
 export const PERSONAL_PROJECT_GROUP_NAME = '個人項目'
 
 const PROJECT_SKILL_LIMIT = 20
+const EXPERIENCE_HIGHLIGHT_LIMIT = 20
 const MAX_DURATION_MONTHS = 600
 
 export const EDITABLE_EXTRACTED_FIELDS = [
@@ -17,6 +18,20 @@ export const EDITABLE_EXTRACTED_FIELDS = [
   { fieldKey: 'technicalLanguages', label: '技術語言', valueType: 'list', inputType: 'textarea', target: 'profile', limit: 30 },
   { fieldKey: 'technicalCertificates', label: '技術證書', valueType: 'list', inputType: 'textarea', target: 'profile', limit: 20 },
   { fieldKey: 'industry', label: '所屬行業', valueType: 'text', inputType: 'input', target: 'profile' },
+  {
+    fieldKey: 'workExperiences',
+    label: '工作經驗',
+    valueType: 'experiences',
+    inputType: 'experiences',
+    target: 'profile',
+  },
+  {
+    fieldKey: 'internshipExperiences',
+    label: '實習經驗',
+    valueType: 'experiences',
+    inputType: 'experiences',
+    target: 'profile',
+  },
   {
     fieldKey: 'projectExperiences',
     label: '專案經歷',
@@ -68,6 +83,52 @@ export const normalizeList = (value, limit = 20) => {
 }
 
 export const normalizeProjectSkills = (value) => normalizeList(value, PROJECT_SKILL_LIMIT)
+export const normalizeExperienceHighlights = (value) => normalizeList(value, EXPERIENCE_HIGHLIGHT_LIMIT)
+
+export const createEmptyExperienceItem = () => ({
+  companyName: '',
+  roleTitle: '',
+  durationText: '',
+  highlights: [],
+})
+
+const normalizeExperienceItem = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+
+  const companyName = normalizeText(value.companyName || value.company || value.employer || value.organization)
+  const roleTitle = normalizeText(value.roleTitle || value.title || value.position || value.role)
+  const durationText = normalizeText(value.durationText || value.duration || value.period || value.timespan)
+  const highlights = normalizeExperienceHighlights(
+    value.highlights || value.responsibilities || value.achievements || value.details || value.content || value.bullets
+  )
+
+  if (!companyName && !roleTitle && !durationText && !highlights.length) return null
+  return { companyName, roleTitle, durationText, highlights }
+}
+
+export const normalizeExperienceItems = (value) => {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => normalizeExperienceItem(item)).filter(Boolean)
+}
+
+export const cloneExperienceItems = (value) =>
+  normalizeExperienceItems(JSON.parse(JSON.stringify(Array.isArray(value) ? value : [])))
+
+export const hasExperienceItems = (value) => normalizeExperienceItems(value).length > 0
+
+export const buildExperienceSummary = (value = []) => {
+  const items = normalizeExperienceItems(value)
+  if (!items.length) return ''
+
+  return items
+    .map((item) => {
+      const header = [item.companyName, item.roleTitle, item.durationText].filter(Boolean).join('｜')
+      const highlights = item.highlights.length ? `內容：${item.highlights.join('；')}` : ''
+      return [header, highlights].filter(Boolean).join('｜')
+    })
+    .filter(Boolean)
+    .join('\n')
+}
 
 const PRESENT_TOKEN_PATTERN = /^(至今|現在|现今|目前|present|current|now)$/i
 
@@ -327,6 +388,23 @@ const buildProjectExperienceField = (profile = {}) => {
   })
 }
 
+const buildExperienceField = (profile = {}, fieldKey, label) => {
+  const items = normalizeExperienceItems(profile[fieldKey])
+  const value = hasExperienceItems(items)
+    ? buildExperienceSummary(items)
+    : EXTRACTED_EMPTY_TEXT
+
+  return buildRow({
+    label,
+    value,
+    rawValue: items,
+    fieldKey,
+    editable: true,
+    valueType: 'experiences',
+    inputType: 'experiences',
+  })
+}
+
 export const buildExtractedPreviewData = ({
   content = '',
   extracted = null,
@@ -339,6 +417,8 @@ export const buildExtractedPreviewData = ({
   const parserLower = normalizeText(resolved.parser).toLowerCase()
   const parserLabel = parserLower === 'llm' ? 'LLM' : parserLower === 'regex' ? 'Regex Fallback' : EXTRACTED_UNTAGGED_TEXT
   const missingFieldLabels = resolved.missingFields.map((key) => missingFieldLabelMap[key] || key)
+  const workExperienceField = buildExperienceField(profile, 'workExperiences', '工作經驗')
+  const internshipExperienceField = buildExperienceField(profile, 'internshipExperiences', '實習經驗')
   const projectExperienceField = buildProjectExperienceField(profile)
 
   return {
@@ -363,6 +443,8 @@ export const buildExtractedPreviewData = ({
       buildRow({ label: '期望薪資', value: toDisplayText(profile.expectedSalary), rawValue: profile.expectedSalary, fieldKey: 'expectedSalary', editable: true }),
       buildRow({ label: '入職意願', value: toDisplayText(profile.onboardingPreference), rawValue: profile.onboardingPreference, fieldKey: 'onboardingPreference', editable: true }),
     ],
+    workExperienceField,
+    internshipExperienceField,
     projectExperienceField,
   }
 }
@@ -370,6 +452,8 @@ export const buildExtractedPreviewData = ({
 export const getEditableRows = (previewData) => {
   if (!previewData || typeof previewData !== 'object') return []
   const rows = [...(previewData.basicRows || []), ...(previewData.dimensionRows || [])]
+  if (previewData.workExperienceField) rows.push(previewData.workExperienceField)
+  if (previewData.internshipExperienceField) rows.push(previewData.internshipExperienceField)
   if (previewData.projectExperienceField) rows.push(previewData.projectExperienceField)
   return rows.filter((row) => row.editable && row.fieldKey)
 }
@@ -377,6 +461,7 @@ export const getEditableRows = (previewData) => {
 export const toDraftValue = (row) => {
   if (!row || typeof row !== 'object') return ''
   if (row.valueType === 'list') return normalizeList(row.rawValue, 50).join(', ')
+  if (row.valueType === 'experiences') return cloneExperienceItems(row.rawValue)
   if (row.valueType === 'project-experiences') return cloneProjectExperiences(row.rawValue)
   return normalizeText(row.rawValue)
 }
@@ -392,6 +477,7 @@ export const buildDraftFieldsFromRows = (rows = []) => {
 
 export const normalizeDraftForCompare = (row, value) => {
   if (row?.valueType === 'list') return normalizeList(value, 50).join('|')
+  if (row?.valueType === 'experiences') return JSON.stringify(normalizeExperienceItems(value))
   if (row?.valueType === 'project-experiences') return JSON.stringify(normalizeProjectExperiences(value))
   return normalizeText(value)
 }
@@ -432,6 +518,13 @@ export const buildEditedExtractedFromDraft = (draftFields = {}) => {
       const groups = normalizeProjectExperiences(rawValue)
       if (field.target === 'profile') extracted.profile[field.fieldKey] = groups
       else extracted[field.fieldKey] = groups
+      continue
+    }
+
+    if (field.valueType === 'experiences') {
+      const items = normalizeExperienceItems(rawValue)
+      if (field.target === 'profile') extracted.profile[field.fieldKey] = items
+      else extracted[field.fieldKey] = items
       continue
     }
 
