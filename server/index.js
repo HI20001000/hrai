@@ -805,13 +805,21 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
         app.matched_level AS matchedLevel,
         app.matched_position AS matchedPosition,
         app.created_at AS createdAt,
+        jp.title AS jobPostTitle,
         c.full_name AS fullName,
         c.email AS email,
         c.phone AS phone,
-        cv.original_filename AS cvFileName
+        cv.id AS cvId,
+        cv.original_filename AS cvFileName,
+        cv.storage_key AS storageKey,
+        COALESCE(extracts.target_position, '') AS targetPosition,
+        CASE WHEN extracts.cv_text IS NOT NULL AND extracts.cv_text <> '' THEN 1 ELSE 0 END AS hasCvPreview,
+        CASE WHEN extracts.extracted_text IS NOT NULL AND extracts.extracted_text <> '' THEN 1 ELSE 0 END AS hasExtractedPreview
       FROM job_post_applications app
+      INNER JOIN job_posts jp ON jp.id = app.job_post_id
       INNER JOIN candidates c ON c.id = app.candidate_id
       INNER JOIN candidate_cvs cv ON cv.id = app.candidate_cv_id
+      LEFT JOIN candidate_cv_extractions extracts ON extracts.candidate_cv_id = cv.id
       WHERE app.id = ?
       LIMIT 1`,
     [applicationId]
@@ -822,6 +830,13 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
     sendJson(res, 404, { message: 'Application not found' })
     return
   }
+
+  const blacklistEntries = await listCandidateBlacklistRows(pool)
+  const blacklistMatch = findCandidateBlacklistMatch(blacklistEntries, {
+    phone: row.phone,
+    email: row.email,
+  })
+  const statusHistory = await listJobPostApplicationStatusHistory(pool, applicationId)
 
   sendJson(res, 200, {
     application: {
@@ -835,11 +850,34 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
       matchedScore: Number(row.matchedScore || 0),
       matchedLevel: normalizeText(row.matchedLevel),
       matchedPosition: normalizeText(row.matchedPosition),
+      jobPostTitle: normalizeText(row.jobPostTitle),
       fullName: normalizeText(row.fullName),
-      email: normalizeText(row.email),
+      email: normalizeEmailIdentity(row.email),
       phone: normalizeText(row.phone),
+      cvId: Number(row.cvId),
       cvFileName: normalizeText(row.cvFileName),
+      extractedFileName: row.cvFileName ? `${row.cvFileName}.extracted.txt` : '',
+      targetPosition: normalizeText(row.targetPosition),
+      hasDownload: hasCandidateCvStoredFile(row.storageKey),
+      hasCvPreview: Number(row.hasCvPreview || 0) === 1,
+      hasExtractedPreview: Number(row.hasExtractedPreview || 0) === 1,
       createdAt: row.createdAt,
+      ...buildCandidateBlacklistFlags(blacklistMatch, {
+        phone: row.phone,
+        email: row.email,
+      }),
+      blacklistEntry: blacklistMatch
+        ? {
+            id: Number(blacklistMatch.id),
+            displayName: normalizeText(blacklistMatch.displayName),
+            phone: normalizeText(blacklistMatch.phone),
+            email: normalizeEmailIdentity(blacklistMatch.email),
+            reason: normalizeRemark(blacklistMatch.reason),
+            status: normalizeDirectoryStatus(blacklistMatch.status),
+            remark: normalizeRemark(blacklistMatch.remark),
+          }
+        : null,
+      statusHistory,
     },
   })
 }
@@ -909,6 +947,16 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
       SET application_status = ?, first_interview_arrangement = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
     [nextStatus, arrangementResult.value || null, nextRemark, applicationId]
+  )
+  await syncJobPostApplicationStatusHistory(
+    pool,
+    applicationId,
+    {
+      applicationStatus: nextStatus,
+      firstInterviewArrangement: arrangementResult.value,
+      remark: nextRemark,
+    },
+    { append: hasStatus && nextStatus !== currentStatus }
   )
 
   sendJson(res, 200, {
@@ -1439,6 +1487,81 @@ const resolveFirstInterviewArrangementInput = (value, fallback = '') => {
 const normalizeApplicationRemark = (value) => {
   const text = String(value ?? '').trim()
   return text ? text.slice(0, 4000) : null
+}
+
+const buildApplicationStatusHistoryPayload = (row = {}) => ({
+  id: Number(row.id || 0),
+  applicationId: Number(row.applicationId || 0),
+  applicationStatus: normalizeApplicationStatus(row.applicationStatus),
+  firstInterviewArrangement: normalizeFirstInterviewArrangement(row.firstInterviewArrangement),
+  remark: normalizeText(row.remark),
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+})
+
+const listJobPostApplicationStatusHistory = async (pool, applicationId) => {
+  const [rows] = await pool.query(
+    `SELECT
+        id,
+        application_id AS applicationId,
+        application_status AS applicationStatus,
+        first_interview_arrangement AS firstInterviewArrangement,
+        remark,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM job_post_application_status_history
+      WHERE application_id = ?
+      ORDER BY created_at ASC, id ASC`,
+    [applicationId]
+  )
+  return rows.map((row) => buildApplicationStatusHistoryPayload(row))
+}
+
+const syncJobPostApplicationStatusHistory = async (
+  pool,
+  applicationId,
+  { applicationStatus, firstInterviewArrangement = '', remark = '' } = {},
+  { append = false } = {}
+) => {
+  const nextStatus = normalizeApplicationStatus(applicationStatus)
+  const nextFirstInterviewArrangement = normalizeFirstInterviewArrangement(firstInterviewArrangement)
+  const nextRemark = normalizeApplicationRemark(remark)
+
+  if (append) {
+    await pool.query(
+      `INSERT INTO job_post_application_status_history
+        (application_id, application_status, first_interview_arrangement, remark)
+       VALUES (?, ?, ?, ?)`,
+      [applicationId, nextStatus, nextFirstInterviewArrangement || null, nextRemark]
+    )
+    return
+  }
+
+  const [rows] = await pool.query(
+    `SELECT id
+      FROM job_post_application_status_history
+      WHERE application_id = ?
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+    [applicationId]
+  )
+
+  if (!rows[0]) {
+    await pool.query(
+      `INSERT INTO job_post_application_status_history
+        (application_id, application_status, first_interview_arrangement, remark)
+       VALUES (?, ?, ?, ?)`,
+      [applicationId, nextStatus, nextFirstInterviewArrangement || null, nextRemark]
+    )
+    return
+  }
+
+  await pool.query(
+    `UPDATE job_post_application_status_history
+      SET application_status = ?, first_interview_arrangement = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [nextStatus, nextFirstInterviewArrangement || null, nextRemark, Number(rows[0].id)]
+  )
 }
 
 const parseJobSnapshot = (value) => {
@@ -2177,7 +2300,13 @@ const createJobPostApplication = async (pool, jobPostId, candidateId, candidateC
       match ? normalizeText(match.matchedPosition || match.jobTitle) || null : null,
     ]
   )
-  return Number(result.insertId)
+  const applicationId = Number(result.insertId)
+  await syncJobPostApplicationStatusHistory(pool, applicationId, {
+    applicationStatus: 'screening',
+    firstInterviewArrangement: '',
+    remark: '',
+  })
+  return applicationId
 }
 
 const updateJobPostApplicationMatch = async (pool, applicationId, match = null) => {

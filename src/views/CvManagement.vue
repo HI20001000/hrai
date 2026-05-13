@@ -4,20 +4,43 @@ import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import AppSelect from '../components/AppSelect.vue'
 import CandidateApplicationsTable from '../components/candidate/CandidateApplicationsTable.vue'
 import CandidateCvUploadModal from '../components/candidate/CandidateCvUploadModal.vue'
+import {
+  CANDIDATE_APPLICATION_STATUS_OPTIONS,
+  FIRST_INTERVIEW_ARRANGEMENT_OPTIONS,
+  getCandidateApplicationStatusLabel,
+  getFirstInterviewArrangementLabel,
+  normalizeCandidateApplicationStatus,
+  normalizeFirstInterviewArrangement,
+} from '../scripts/candidateApplicationStatus.js'
 
 const message = ref('')
 const applicationRows = ref([])
 const selectedApplicationIds = ref([])
 const isLoading = ref(false)
 const isBulkDeleting = ref(false)
-const isBulkBlacklisting = ref(false)
-const isBulkUnblacklisting = ref(false)
 const isUploadModalOpen = ref(false)
 const isProjectTransferModalOpen = ref(false)
 const isProjectTransferSaving = ref(false)
 const projectRows = ref([])
 const projectTransferCandidate = ref(null)
 const projectTransferForm = ref(createEmptyProjectTransferForm())
+
+const pageMode = ref('list')
+const activeApplicationId = ref(null)
+const activeApplication = ref(null)
+const isDetailLoading = ref(false)
+const detailError = ref('')
+const isStatusEditorOpen = ref(false)
+const isRemarkEditorOpen = ref(false)
+const isBlacklistEditorOpen = ref(false)
+const statusDraft = ref('')
+const remarkDraft = ref('')
+const firstInterviewDraft = ref('')
+const blacklistReasonDraft = ref('')
+const isSavingStatus = ref(false)
+const isSavingRemark = ref(false)
+const isSavingFirstInterview = ref(false)
+const isSavingBlacklist = ref(false)
 
 function createEmptyProjectTransferForm() {
   return {
@@ -28,21 +51,18 @@ function createEmptyProjectTransferForm() {
   }
 }
 
-const normalizeEmail = (value) => String(value ?? '').trim().toLowerCase()
-const normalizePhone = (value) => String(value ?? '').trim().replace(/[\s\-()]/g, '')
+const formatDateTime = (value) => {
+  if (!value) return '--'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 
 const selectedRows = computed(() => {
   const selectedSet = new Set(selectedApplicationIds.value.map((id) => Number(id)))
   return applicationRows.value.filter((row) => selectedSet.has(Number(row.applicationId)))
 })
-
-const bulkBlacklistDisabled = computed(
-  () => !selectedRows.value.some((row) => !row.isBlacklisted && (row.phone || row.email))
-)
-
-const bulkUnblacklistDisabled = computed(
-  () => !selectedRows.value.some((row) => row.isBlacklisted && Number(row.blacklistEntryId) > 0)
-)
 
 const bulkUploadDisabled = computed(() => false)
 
@@ -53,11 +73,67 @@ const projectOptions = computed(() =>
   }))
 )
 
+const pageTitle = computed(() => {
+  if (pageMode.value === 'detail') return '候選人詳情'
+  if (pageMode.value === 'edit') return '詳情修改'
+  return '候選人管理'
+})
+
+const pageDescription = computed(() => {
+  if (pageMode.value === 'detail') return '查看候選人投遞資料、Blacklist 命中結果與狀態歷史。'
+  if (pageMode.value === 'edit') return '集中更新候選人狀態、備註、一面安排與 Blacklist 原因。'
+  return '這裡集中查看所有職位下的候選人投遞與匹配結果；狀態與備註請進入修改頁處理。'
+})
+
+const activeStatusHistory = computed(() => {
+  const history = Array.isArray(activeApplication.value?.statusHistory)
+    ? activeApplication.value.statusHistory
+    : []
+  if (history.length) return history
+
+  if (!activeApplication.value) return []
+  return [
+    {
+      id: 0,
+      applicationStatus: activeApplication.value.applicationStatus,
+      firstInterviewArrangement: activeApplication.value.firstInterviewArrangement,
+      remark: activeApplication.value.remark,
+      createdAt: activeApplication.value.createdAt,
+      updatedAt: activeApplication.value.createdAt,
+    },
+  ]
+})
+
+const canEditFirstInterview = computed(
+  () => normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus) === 'screening_hr_approved'
+)
+
+const activeDownloadUrl = computed(() =>
+  activeApplication.value?.hasDownload && activeApplication.value?.cvId
+    ? `${apiBaseUrl}/api/candidate-cvs/${activeApplication.value.cvId}/download`
+    : ''
+)
+
+const isBlacklistReasonChanged = computed(() => {
+  const currentReason = String(activeApplication.value?.blacklistEntry?.reason || activeApplication.value?.blacklistReason || '').trim()
+  return String(blacklistReasonDraft.value || '').trim() !== currentReason
+})
+
 const fetchJson = async (endpoint, options = {}) => {
   const response = await fetch(endpoint, options)
   const data = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(data.message || 'Request failed')
   return data
+}
+
+const resetDetailDrafts = (application = activeApplication.value) => {
+  statusDraft.value = normalizeCandidateApplicationStatus(application?.applicationStatus)
+  firstInterviewDraft.value = normalizeFirstInterviewArrangement(application?.firstInterviewArrangement)
+  remarkDraft.value = String(application?.remark || '')
+  blacklistReasonDraft.value = String(application?.blacklistEntry?.reason || application?.blacklistReason || '')
+  isStatusEditorOpen.value = false
+  isRemarkEditorOpen.value = false
+  isBlacklistEditorOpen.value = false
 }
 
 const loadApplicationTable = async () => {
@@ -77,8 +153,55 @@ const loadApplicationTable = async () => {
   }
 }
 
+const loadApplicationDetail = async (applicationId, nextMode = pageMode.value) => {
+  const id = Number(applicationId)
+  if (!id) return
+
+  isDetailLoading.value = true
+  detailError.value = ''
+  try {
+    const data = await fetchJson(`${apiBaseUrl}/api/job-post-applications/${id}`)
+    activeApplication.value = data.application || null
+    activeApplicationId.value = Number(activeApplication.value?.applicationId || id)
+    pageMode.value = nextMode
+    resetDetailDrafts(activeApplication.value)
+  } catch (error) {
+    detailError.value = error?.message || '讀取候選人詳情失敗'
+    message.value = detailError.value
+  } finally {
+    isDetailLoading.value = false
+  }
+}
+
+const refreshActiveApplication = async () => {
+  if (!activeApplicationId.value) return
+  await loadApplicationTable()
+  await loadApplicationDetail(activeApplicationId.value, pageMode.value)
+  window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
+}
+
+const openApplicationDetail = async (row, mode = 'detail') => {
+  message.value = ''
+  activeApplicationId.value = Number(row?.applicationId || 0)
+  activeApplication.value = null
+  pageMode.value = mode
+  await loadApplicationDetail(activeApplicationId.value, mode)
+}
+
+const returnToList = async () => {
+  pageMode.value = 'list'
+  activeApplicationId.value = null
+  activeApplication.value = null
+  detailError.value = ''
+  resetDetailDrafts(null)
+  await loadApplicationTable()
+}
+
 const handleApplicationsUpdated = async () => {
   await loadApplicationTable()
+  if (pageMode.value !== 'list' && activeApplicationId.value) {
+    await loadApplicationDetail(activeApplicationId.value, pageMode.value)
+  }
 }
 
 const handleTableNotify = ({ message: nextMessage }) => {
@@ -101,105 +224,6 @@ const buildSelectedRowsPreview = (rows) => {
   const remainCount = Math.max(rows.length - names.length, 0)
   const namesBlock = names.map((name) => `- ${name}`).join('\n')
   return `${namesBlock || '- （未取得名稱）'}${remainCount > 0 ? `\n- ... 另 ${remainCount} 位` : ''}`
-}
-
-const getUniqueBlacklistTargets = (rows) => {
-  const seen = new Set()
-  return rows.filter((row) => {
-    const key = `${normalizeEmail(row.email)}|${normalizePhone(row.phone)}`
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-}
-
-const addSelectedToBlacklist = async () => {
-  const candidates = getUniqueBlacklistTargets(
-    selectedRows.value.filter((row) => !row.isBlacklisted && (row.phone || row.email))
-  )
-  if (!candidates.length) {
-    message.value = '已選資料中沒有可加入 Blacklist 的候選人'
-    return
-  }
-
-  const reason = window.prompt('請輸入加入 Blacklist 的原因', '由候選人管理批量加入')
-  if (reason === null) return
-  const normalizedReason = String(reason || '').trim()
-  if (!normalizedReason) {
-    message.value = '請先輸入 Blacklist 原因'
-    return
-  }
-
-  isBulkBlacklisting.value = true
-  try {
-    const results = await Promise.allSettled(
-      candidates.map(async (row) => {
-        const response = await fetch(`${apiBaseUrl}/api/candidate-blacklist`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            displayName: String(row.fullName || '').trim(),
-            phone: String(row.phone || '').trim(),
-            email: String(row.email || '').trim(),
-            reason: normalizedReason,
-            status: 'active',
-          }),
-        })
-        const data = await response.json()
-        if (!response.ok) throw new Error(data.message || '加入 Blacklist 失敗')
-        return data
-      })
-    )
-
-    const successCount = results.filter((result) => result.status === 'fulfilled').length
-    const failureCount = results.length - successCount
-    await loadApplicationTable()
-    window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
-    message.value = `批量加入 Blacklist 完成：成功 ${successCount} 位，失敗 ${failureCount} 位`
-  } catch {
-    message.value = '批量加入 Blacklist 失敗'
-  } finally {
-    isBulkBlacklisting.value = false
-  }
-}
-
-const removeSelectedFromBlacklist = async () => {
-  const blacklistEntryIds = [...new Set(
-    selectedRows.value
-      .map((row) => Number(row.blacklistEntryId))
-      .filter((id) => Number.isInteger(id) && id > 0)
-  )]
-  if (!blacklistEntryIds.length) {
-    message.value = '已選資料中沒有可取消的 Blacklist'
-    return
-  }
-
-  const confirmed = window.confirm(`確定將 ${blacklistEntryIds.length} 筆黑名單資料移除？`)
-  if (!confirmed) return
-
-  isBulkUnblacklisting.value = true
-  try {
-    const results = await Promise.allSettled(
-      blacklistEntryIds.map(async (id) => {
-        const response = await fetch(`${apiBaseUrl}/api/candidate-blacklist/${id}`, {
-          method: 'DELETE',
-        })
-        const data = await response.json()
-        if (!response.ok) throw new Error(data.message || '取消 Blacklist 失敗')
-        return data
-      })
-    )
-
-    const successCount = results.filter((result) => result.status === 'fulfilled').length
-    const failureCount = results.length - successCount
-    await loadApplicationTable()
-    window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
-    message.value = `取消 Blacklist 完成：成功 ${successCount} 筆，失敗 ${failureCount} 筆`
-  } catch {
-    message.value = '取消 Blacklist 失敗'
-  } finally {
-    isBulkUnblacklisting.value = false
-  }
 }
 
 const deleteSelectedApplications = async () => {
@@ -313,6 +337,190 @@ const submitProjectTransfer = async () => {
   }
 }
 
+const startStatusEditor = () => {
+  statusDraft.value = normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus)
+  isStatusEditorOpen.value = true
+}
+
+const cancelStatusEditor = () => {
+  statusDraft.value = normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus)
+  isStatusEditorOpen.value = false
+}
+
+const saveNewStatus = async () => {
+  const applicationId = Number(activeApplication.value?.applicationId || 0)
+  const nextStatus = normalizeCandidateApplicationStatus(statusDraft.value, '')
+  const currentStatus = normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus)
+  if (!applicationId || !nextStatus) {
+    message.value = '請先選擇有效狀態'
+    return
+  }
+  if (nextStatus === currentStatus) {
+    isStatusEditorOpen.value = false
+    return
+  }
+
+  isSavingStatus.value = true
+  try {
+    await fetchJson(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ applicationStatus: nextStatus }),
+    })
+    isStatusEditorOpen.value = false
+    message.value = `已更新狀態為「${getCandidateApplicationStatusLabel(nextStatus)}」`
+    await refreshActiveApplication()
+  } catch (error) {
+    message.value = error?.message || '更新候選人狀態失敗'
+  } finally {
+    isSavingStatus.value = false
+  }
+}
+
+const startRemarkEditor = () => {
+  remarkDraft.value = String(activeApplication.value?.remark || '')
+  isRemarkEditorOpen.value = true
+}
+
+const cancelRemarkEditor = () => {
+  remarkDraft.value = String(activeApplication.value?.remark || '')
+  isRemarkEditorOpen.value = false
+}
+
+const saveApplicationRemark = async () => {
+  const applicationId = Number(activeApplication.value?.applicationId || 0)
+  const nextRemark = String(remarkDraft.value || '').trim()
+  if (!applicationId) return
+
+  isSavingRemark.value = true
+  try {
+    await fetchJson(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remark: nextRemark }),
+    })
+    isRemarkEditorOpen.value = false
+    message.value = '已更新候選人備註'
+    await refreshActiveApplication()
+  } catch (error) {
+    message.value = error?.message || '更新備註失敗'
+  } finally {
+    isSavingRemark.value = false
+  }
+}
+
+const updateFirstInterviewArrangement = async (nextValue) => {
+  const applicationId = Number(activeApplication.value?.applicationId || 0)
+  const normalizedValue = normalizeFirstInterviewArrangement(nextValue, '')
+  const previousValue = normalizeFirstInterviewArrangement(activeApplication.value?.firstInterviewArrangement)
+  if (!applicationId || !canEditFirstInterview.value) {
+    firstInterviewDraft.value = previousValue
+    return
+  }
+  if (normalizedValue === previousValue) {
+    firstInterviewDraft.value = previousValue
+    return
+  }
+
+  firstInterviewDraft.value = normalizedValue
+  isSavingFirstInterview.value = true
+  try {
+    await fetchJson(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstInterviewArrangement: normalizedValue }),
+    })
+    message.value = `已更新一面安排為「${getFirstInterviewArrangementLabel(normalizedValue)}」`
+    await refreshActiveApplication()
+  } catch (error) {
+    firstInterviewDraft.value = previousValue
+    message.value = error?.message || '更新一面安排失敗'
+  } finally {
+    isSavingFirstInterview.value = false
+  }
+}
+
+const getBlacklistPayload = (reason) => {
+  const application = activeApplication.value || {}
+  const entry = application.blacklistEntry || {}
+  return {
+    displayName: String(application.fullName || entry.displayName || '').trim(),
+    phone: String(application.phone || entry.phone || '').trim(),
+    email: String(application.email || entry.email || '').trim(),
+    reason: String(reason || '').trim(),
+    status: entry.status || 'active',
+    remark: entry.remark || '',
+  }
+}
+
+const startBlacklistEditor = () => {
+  const payload = getBlacklistPayload('')
+  if (!payload.phone && !payload.email) {
+    message.value = `${activeApplication.value?.fullName || '此候選人'} 沒有電話或 Email，無法加入 Blacklist`
+    return
+  }
+  blacklistReasonDraft.value = ''
+  isBlacklistEditorOpen.value = true
+}
+
+const cancelBlacklistEditor = () => {
+  blacklistReasonDraft.value = String(activeApplication.value?.blacklistEntry?.reason || activeApplication.value?.blacklistReason || '')
+  isBlacklistEditorOpen.value = false
+}
+
+const saveBlacklistReason = async () => {
+  const reason = String(blacklistReasonDraft.value || '').trim()
+  if (!reason) {
+    message.value = '請先輸入 Blacklist 原因'
+    return
+  }
+
+  const application = activeApplication.value || {}
+  const payload = getBlacklistPayload(reason)
+  const blacklistEntryId = Number(application.blacklistEntryId || application.blacklistEntry?.id || 0)
+  const endpoint = blacklistEntryId
+    ? `${apiBaseUrl}/api/candidate-blacklist/${blacklistEntryId}`
+    : `${apiBaseUrl}/api/candidate-blacklist`
+  const method = blacklistEntryId ? 'PATCH' : 'POST'
+
+  isSavingBlacklist.value = true
+  try {
+    await fetchJson(endpoint, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    isBlacklistEditorOpen.value = false
+    message.value = blacklistEntryId ? '已更新 Blacklist 原因' : '已加入 Blacklist'
+    await refreshActiveApplication()
+  } catch (error) {
+    message.value = error?.message || '保存 Blacklist 失敗'
+  } finally {
+    isSavingBlacklist.value = false
+  }
+}
+
+const removeActiveFromBlacklist = async () => {
+  const blacklistEntryId = Number(activeApplication.value?.blacklistEntryId || activeApplication.value?.blacklistEntry?.id || 0)
+  if (!blacklistEntryId || isSavingBlacklist.value) return
+
+  const confirmed = window.confirm(`確定取消 ${activeApplication.value?.fullName || '此候選人'} 的 Blacklist？`)
+  if (!confirmed) return
+
+  isSavingBlacklist.value = true
+  try {
+    await fetchJson(`${apiBaseUrl}/api/candidate-blacklist/${blacklistEntryId}`, {
+      method: 'DELETE',
+    })
+    message.value = '已取消 Blacklist'
+    await refreshActiveApplication()
+  } catch (error) {
+    message.value = error?.message || '取消 Blacklist 失敗'
+  } finally {
+    isSavingBlacklist.value = false
+  }
+}
+
 onMounted(async () => {
   window.addEventListener('hrai-applications-updated', handleApplicationsUpdated)
   window.addEventListener('focus', handleApplicationsUpdated)
@@ -330,42 +538,243 @@ onUnmounted(() => {
     <header class="page-header">
       <div class="header-main">
         <div>
-          <h2>候選人管理</h2>
-          <p>這裡集中查看所有職位下的候選人投遞與匹配結果，並可直接更新候選人狀態。</p>
+          <h2>{{ pageTitle }}</h2>
+          <p>{{ pageDescription }}</p>
         </div>
+        <button v-if="pageMode !== 'list'" type="button" class="secondary-btn compact-btn" @click="returnToList">
+          返回
+        </button>
       </div>
       <p v-if="message" class="message">{{ message }}</p>
     </header>
 
     <CandidateApplicationsTable
+      v-if="pageMode === 'list'"
       :rows="applicationRows"
       :loading="isLoading"
       :show-job-column="true"
-      :editable-status="true"
-      :show-blacklist-action="true"
       :show-project-transfer-action="true"
-      :show-bulk-blacklist-actions="true"
       :show-bulk-upload-action="true"
-      :bulk-blacklisting="isBulkBlacklisting"
-      :bulk-unblacklisting="isBulkUnblacklisting"
-      :bulk-blacklist-disabled="bulkBlacklistDisabled"
-      :bulk-unblacklist-disabled="bulkUnblacklistDisabled"
       :bulk-upload-disabled="bulkUploadDisabled"
       :selectable="true"
       :selected-ids="selectedApplicationIds"
       :deleting="isBulkDeleting"
+      :show-row-actions="true"
       title="候選人清單"
       empty-text="尚無候選人資料"
       search-placeholder="搜尋職位 / 候選人 / 狀態 / 一面安排 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案"
       @selection-change="selectedApplicationIds = $event"
       @delete-selected="deleteSelectedApplications"
-      @bulk-blacklist-selected="addSelectedToBlacklist"
-      @bulk-unblacklist-selected="removeSelectedFromBlacklist"
       @upload-selected-cv="openUploadModal"
       @add-to-project="openProjectTransferModal"
+      @view-details="openApplicationDetail($event, 'detail')"
+      @edit-details="openApplicationDetail($event, 'edit')"
       @rows-updated="handleApplicationsUpdated"
       @notify="handleTableNotify"
     />
+
+    <section v-else class="candidate-detail-stack">
+      <p v-if="isDetailLoading" class="card hint">讀取中...</p>
+      <p v-else-if="detailError" class="card error">{{ detailError }}</p>
+
+      <template v-else-if="activeApplication">
+        <section class="card detail-card">
+          <div class="detail-header">
+            <div>
+              <h3>{{ pageMode === 'detail' ? '候選人詳情' : '詳情修改' }}</h3>
+              <p class="subtle">{{ activeApplication.fullName || '候選人' }}｜{{ activeApplication.jobPostTitle || '未標記職位' }}</p>
+            </div>
+
+            <div v-if="pageMode === 'edit'" class="blacklist-editor">
+              <button
+                v-if="activeApplication.isBlacklisted"
+                type="button"
+                class="danger-btn compact-btn"
+                :disabled="isSavingBlacklist"
+                @click="removeActiveFromBlacklist"
+              >
+                {{ isSavingBlacklist ? '取消中...' : '取消 Blacklist' }}
+              </button>
+              <button
+                v-else-if="!isBlacklistEditorOpen"
+                type="button"
+                class="danger-btn compact-btn"
+                :disabled="isSavingBlacklist"
+                @click="startBlacklistEditor"
+              >
+                加入 Blacklist
+              </button>
+              <input
+                v-model.trim="blacklistReasonDraft"
+                type="text"
+                class="blacklist-reason-input"
+                :disabled="!activeApplication.isBlacklisted && !isBlacklistEditorOpen"
+                placeholder="顯示原因原因原因"
+              />
+              <button
+                v-if="activeApplication.isBlacklisted || isBlacklistEditorOpen"
+                type="button"
+                class="confirm-btn compact-btn"
+                :disabled="isSavingBlacklist || !blacklistReasonDraft.trim() || (activeApplication.isBlacklisted && !isBlacklistReasonChanged)"
+                @click="saveBlacklistReason"
+              >
+                {{ isSavingBlacklist ? '保存中...' : '確認' }}
+              </button>
+              <button
+                v-if="isBlacklistEditorOpen && !activeApplication.isBlacklisted"
+                type="button"
+                class="secondary-btn compact-btn"
+                :disabled="isSavingBlacklist"
+                @click="cancelBlacklistEditor"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+
+          <div class="detail-table-wrap">
+            <table class="application-table detail-table">
+              <thead>
+                <tr>
+                  <th>職位</th>
+                  <th>候選人名稱</th>
+                  <th>期望職位</th>
+                  <th>匹配職位</th>
+                  <th>電話</th>
+                  <th>CV檔案</th>
+                  <th>AI分析檔案</th>
+                  <th>投遞時間</th>
+                  <th>是否加入黑名單</th>
+                  <th>備註</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>{{ activeApplication.jobPostTitle || '--' }}</td>
+                  <td>{{ activeApplication.fullName || '--' }}</td>
+                  <td>{{ activeApplication.targetPosition || '--' }}</td>
+                  <td>
+                    <template v-if="activeApplication.matchedPosition">
+                      {{ activeApplication.matchedPosition }}
+                      <span class="match-score">{{ activeApplication.matchedScore || 0 }}</span>
+                    </template>
+                    <span v-else>--</span>
+                  </td>
+                  <td>{{ activeApplication.phone || '--' }}</td>
+                  <td>
+                    <a v-if="activeDownloadUrl" class="link-btn file-link" :href="activeDownloadUrl">
+                      {{ activeApplication.cvFileName }}
+                    </a>
+                    <span v-else>{{ activeApplication.cvFileName || '--' }}</span>
+                  </td>
+                  <td>{{ activeApplication.extractedFileName || '--' }}</td>
+                  <td>{{ formatDateTime(activeApplication.createdAt) }}</td>
+                  <td>
+                    <span v-if="activeApplication.isBlacklisted" class="blacklist-badge">已拉黑</span>
+                    <span v-else class="soft-chip">未加入</span>
+                  </td>
+                  <td class="detail-remark-cell">{{ activeApplication.remark || '--' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card status-card">
+          <div class="status-header">
+            <h3>候選人狀態</h3>
+
+            <div v-if="pageMode === 'edit'" class="status-controls">
+              <button
+                v-if="!isStatusEditorOpen"
+                type="button"
+                class="create-status-btn"
+                :disabled="isSavingStatus"
+                @click="startStatusEditor"
+              >
+                點擊創建新狀態
+              </button>
+              <div v-else class="inline-editor status-inline-editor">
+                <AppSelect
+                  class="compact-select"
+                  :model-value="statusDraft"
+                  :options="CANDIDATE_APPLICATION_STATUS_OPTIONS"
+                  placeholder="請選擇狀態"
+                  :disabled="isSavingStatus"
+                  @update:model-value="statusDraft = $event"
+                />
+                <button type="button" class="secondary-btn compact-btn" :disabled="isSavingStatus" @click="cancelStatusEditor">
+                  取消
+                </button>
+                <button type="button" class="confirm-btn compact-btn" :disabled="isSavingStatus" @click="saveNewStatus">
+                  {{ isSavingStatus ? '保存中...' : '確認' }}
+                </button>
+              </div>
+
+              <div class="first-interview-editor">
+                <span>是否安排一面</span>
+                <AppSelect
+                  class="compact-select"
+                  :model-value="firstInterviewDraft"
+                  :options="FIRST_INTERVIEW_ARRANGEMENT_OPTIONS"
+                  placeholder="請選擇"
+                  :disabled="!canEditFirstInterview || isSavingFirstInterview"
+                  @update:model-value="updateFirstInterviewArrangement"
+                />
+              </div>
+
+              <button
+                v-if="!isRemarkEditorOpen"
+                type="button"
+                class="edit-btn compact-btn"
+                :disabled="isSavingRemark"
+                @click="startRemarkEditor"
+              >
+                修改備註
+              </button>
+              <div v-else class="inline-editor remark-inline-editor">
+                <textarea
+                  v-model.trim="remarkDraft"
+                  rows="3"
+                  :disabled="isSavingRemark"
+                  placeholder="輸入原因或跟進記錄"
+                ></textarea>
+                <button type="button" class="secondary-btn compact-btn" :disabled="isSavingRemark" @click="cancelRemarkEditor">
+                  取消
+                </button>
+                <button type="button" class="confirm-btn compact-btn" :disabled="isSavingRemark" @click="saveApplicationRemark">
+                  {{ isSavingRemark ? '保存中...' : '確認' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="status-timeline">
+            <div
+              v-for="(history, index) in activeStatusHistory"
+              :key="history.id || `${history.applicationStatus}-${index}`"
+              class="timeline-row"
+              :class="{ current: index === activeStatusHistory.length - 1 }"
+            >
+              <div class="timeline-label">
+                <span class="timeline-dot" aria-hidden="true"></span>
+                <span class="timeline-status">{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</span>
+              </div>
+              <div class="timeline-content">
+                <p class="timeline-meta">
+                  狀態創建時間 {{ formatDateTime(history.createdAt) }}
+                  <template v-if="history.updatedAt">｜狀態修改時間 {{ formatDateTime(history.updatedAt) }}</template>
+                </p>
+                <p>{{ history.remark || '未填寫備註' }}</p>
+                <p v-if="history.firstInterviewArrangement" class="timeline-extra">
+                  一面安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </template>
+    </section>
 
     <CandidateCvUploadModal
       :open="isUploadModalOpen"
@@ -421,23 +830,16 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.candidate-page {
-  color: var(--text-base);
-  gap: 0.8rem;
-}
-
-.header-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-}
-
-.project-transfer-modal {
+.candidate-page,
+.candidate-detail-stack {
   display: grid;
-  gap: 1rem;
+  gap: 0.9rem;
+  color: var(--text-base);
 }
 
+.header-main,
+.detail-header,
+.status-header,
 .modal-header,
 .modal-actions {
   display: flex;
@@ -446,8 +848,209 @@ onUnmounted(() => {
   gap: 1rem;
 }
 
-.modal-header h3 {
-  margin: 0;
+.compact-btn {
+  min-height: 36px;
+  padding: 0.48rem 0.9rem;
+  font-size: 0.84rem;
+}
+
+.detail-card,
+.status-card,
+.project-transfer-modal {
+  display: grid;
+  gap: 1rem;
+}
+
+.detail-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: calc(var(--radius-md) - 4px);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.detail-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.detail-table th,
+.detail-table td {
+  white-space: nowrap;
+}
+
+.detail-remark-cell {
+  min-width: 220px;
+  max-width: 320px;
+  white-space: pre-wrap;
+}
+
+.file-link {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.blacklist-editor {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.72rem;
+  flex-wrap: wrap;
+  min-width: min(520px, 100%);
+}
+
+.blacklist-reason-input {
+  width: min(240px, 100%);
+  min-height: 38px;
+  padding: 0.56rem 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  color: var(--text-strong);
+}
+
+.blacklist-reason-input:disabled {
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  cursor: not-allowed;
+}
+
+.blacklist-badge,
+.soft-chip,
+.match-score {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0.2rem 0.64rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.blacklist-badge {
+  color: #b42318;
+  background: rgba(217, 45, 32, 0.1);
+}
+
+.soft-chip,
+.match-score {
+  color: var(--text-base);
+  background: var(--surface-soft);
+}
+
+.status-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.72rem;
+  flex-wrap: wrap;
+}
+
+.create-status-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0.48rem 1.05rem;
+  border: 1px solid rgba(31, 143, 99, 0.2);
+  border-radius: var(--radius-pill);
+  color: #176b4c;
+  background: rgba(31, 143, 99, 0.18);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.inline-editor,
+.first-interview-editor {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.first-interview-editor > span {
+  color: var(--text-base);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.compact-select {
+  width: min(230px, 100%);
+}
+
+.compact-select :deep(.app-select-trigger) {
+  min-height: 38px;
+  padding: 0.48rem 0.85rem;
+  border-radius: var(--radius-pill);
+}
+
+.compact-select :deep(.app-select-menu) {
+  width: max-content;
+  min-width: 100%;
+}
+
+.remark-inline-editor textarea {
+  width: min(360px, 100%);
+  min-height: 72px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-strong);
+  resize: vertical;
+}
+
+.status-timeline {
+  display: grid;
+  gap: 1rem;
+}
+
+.timeline-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 250px) minmax(0, 1fr);
+  gap: 1rem;
+  color: var(--text-muted);
+}
+
+.timeline-label {
+  display: inline-flex;
+  align-items: center;
+  align-self: start;
+  gap: 0.5rem;
+  min-height: 38px;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  border-radius: var(--radius-pill);
+  background: var(--surface-muted);
+  color: var(--text-base);
+  font-weight: 800;
+}
+
+.timeline-row.current .timeline-label {
+  border-color: rgba(47, 111, 237, 0.14);
+  background: rgba(47, 111, 237, 0.13);
+  color: var(--accent);
+}
+
+.timeline-dot {
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.timeline-content {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.timeline-meta,
+.timeline-extra {
+  color: var(--text-soft);
+  font-size: 0.82rem;
 }
 
 .transfer-form-grid {
@@ -460,12 +1063,25 @@ onUnmounted(() => {
   grid-column: 1 / -1;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   .header-main,
+  .detail-header,
+  .status-header,
   .modal-header,
   .modal-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .blacklist-editor,
+  .status-controls,
+  .inline-editor,
+  .first-interview-editor {
+    justify-content: flex-start;
+  }
+
+  .timeline-row {
+    grid-template-columns: 1fr;
   }
 
   .transfer-form-grid {

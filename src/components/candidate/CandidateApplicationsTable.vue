@@ -45,6 +45,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  showRowActions: {
+    type: Boolean,
+    default: false,
+  },
   showBulkBlacklistActions: {
     type: Boolean,
     default: false,
@@ -110,6 +114,8 @@ const emit = defineEmits([
   'bulk-unblacklist-selected',
   'upload-selected-cv',
   'add-to-project',
+  'view-details',
+  'edit-details',
   'rows-updated',
   'notify',
 ])
@@ -222,6 +228,7 @@ const selectedCount = computed(() => props.selectedIds.length)
 const tableColumnCount = computed(() => {
   let count = 10
   if (props.showJobColumn) count += 1
+  if (props.showRowActions) count += 1
   return count
 })
 
@@ -588,6 +595,7 @@ const quickAddToBlacklist = async (row) => {
             <th class="file-col">CV檔案</th>
             <th class="file-col">AI分析檔案</th>
             <th class="time-col">投遞時間</th>
+            <th v-if="showRowActions" class="actions-col">修改</th>
           </tr>
         </thead>
         <tbody>
@@ -722,6 +730,12 @@ const quickAddToBlacklist = async (row) => {
               <span v-else class="file-link-text">--</span>
             </td>
             <td class="time-col">{{ formatDateTime(row.createdAt) }}</td>
+            <td v-if="showRowActions" class="actions-col">
+              <div class="row-actions">
+                <button type="button" class="row-action-btn" @click="emit('view-details', row)">詳情</button>
+                <button type="button" class="row-action-btn" @click="emit('edit-details', row)">修改</button>
+              </div>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -950,6 +964,11 @@ const quickAddToBlacklist = async (row) => {
   min-width: 168px;
 }
 
+.actions-col {
+  min-width: 132px;
+  text-align: center;
+}
+
 .file-column {
   min-width: 0;
   max-width: 220px;
@@ -989,6 +1008,26 @@ const quickAddToBlacklist = async (row) => {
   white-space: pre-wrap;
   line-height: 1.45;
   color: var(--text-base);
+}
+
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+}
+
+.row-action-btn {
+  color: var(--text-strong);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 180ms ease, transform 180ms ease;
+}
+
+.row-action-btn:hover {
+  color: var(--accent);
+  transform: translateY(-1px);
 }
 
 .match-score {

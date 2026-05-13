@@ -203,6 +203,39 @@ export const ensureCvTables = async (pool) => {
   `)
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_post_application_status_history (
+      id BIGINT PRIMARY KEY AUTO_INCREMENT,
+      application_id BIGINT NOT NULL,
+      application_status VARCHAR(40) NOT NULL DEFAULT 'screening',
+      first_interview_arrangement VARCHAR(40) NULL,
+      remark TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_application_status_history_application (application_id),
+      INDEX idx_application_status_history_created (created_at),
+      CONSTRAINT fk_application_status_history_application FOREIGN KEY (application_id) REFERENCES job_post_applications(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `)
+
+  await pool.query(`
+    INSERT INTO job_post_application_status_history
+      (application_id, application_status, first_interview_arrangement, remark, created_at, updated_at)
+    SELECT
+      app.id,
+      app.application_status,
+      app.first_interview_arrangement,
+      app.remark,
+      app.created_at,
+      app.updated_at
+    FROM job_post_applications app
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM job_post_application_status_history history
+      WHERE history.application_id = app.id
+    )
+  `)
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS personnel (
       id BIGINT PRIMARY KEY AUTO_INCREMENT,
       full_name VARCHAR(120) NOT NULL,
