@@ -1,7 +1,6 @@
 ﻿<script setup>
 import { computed, ref, watch } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
-import ExperienceEntriesField from '../ExperienceEntriesField.vue'
 import ProjectExperiencesField from '../ProjectExperiencesField.vue'
 import { parseJsonObject } from '../../scripts/cvExtractedPreview.js'
 import {
@@ -103,8 +102,6 @@ const editableRows = computed(() => {
 })
 
 const projectExperienceField = computed(() => extractedPreviewData.value?.projectExperienceField || null)
-const workExperienceField = computed(() => extractedPreviewData.value?.workExperienceField || null)
-const internshipExperienceField = computed(() => extractedPreviewData.value?.internshipExperienceField || null)
 
 const shouldRenderExtractedTable = computed(() => !!extractedPreviewData.value)
 
@@ -363,40 +360,6 @@ const saveAllEdits = async () => {
                   </tr>
                 </tbody>
               </table>
-            </section>
-
-            <section v-if="workExperienceField" class="preview-section">
-              <h4>工作經驗</h4>
-              <div class="project-section">
-                <ExperienceEntriesField
-                  v-if="isEditingAll"
-                  v-model="draftFields[workExperienceField.fieldKey]"
-                  entry-label="工作經驗"
-                />
-                <ExperienceEntriesField
-                  v-else
-                  :model-value="workExperienceField.rawValue || []"
-                  entry-label="工作經驗"
-                  readonly
-                />
-              </div>
-            </section>
-
-            <section v-if="internshipExperienceField" class="preview-section">
-              <h4>實習經驗</h4>
-              <div class="project-section">
-                <ExperienceEntriesField
-                  v-if="isEditingAll"
-                  v-model="draftFields[internshipExperienceField.fieldKey]"
-                  entry-label="實習經驗"
-                />
-                <ExperienceEntriesField
-                  v-else
-                  :model-value="internshipExperienceField.rawValue || []"
-                  entry-label="實習經驗"
-                  readonly
-                />
-              </div>
             </section>
 
             <section v-if="projectExperienceField" class="preview-section">

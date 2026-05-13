@@ -2,7 +2,6 @@
 import { computed, ref } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import CvExtractedFilePreview from './CvExtractedFilePreview.vue'
-import ExperienceEntriesField from './ExperienceEntriesField.vue'
 import ProjectExperiencesField from './ProjectExperiencesField.vue'
 import {
   EDITABLE_EXTRACTED_FIELDS,
@@ -86,7 +85,7 @@ const selectedFilesLabel = computed(() => {
 })
 
 const editFieldDefs = EDITABLE_EXTRACTED_FIELDS.filter(
-  (field) => !['projectExperiences', 'workExperiences', 'internshipExperiences'].includes(field.fieldKey)
+  (field) => !['projectExperiences'].includes(field.fieldKey)
 ).map((field) => ({
   key: field.fieldKey,
   label: field.label,
@@ -1227,20 +1226,6 @@ const clearBatchQueueLegacy = () => {
           </label>
         </div>
         <div class="project-editor-section">
-          <h5>工作經驗</h5>
-          <ExperienceEntriesField
-            v-model="batchDraftFields.workExperiences"
-            entry-label="工作經驗"
-          />
-        </div>
-        <div class="project-editor-section">
-          <h5>實習經驗</h5>
-          <ExperienceEntriesField
-            v-model="batchDraftFields.internshipExperiences"
-            entry-label="實習經驗"
-          />
-        </div>
-        <div class="project-editor-section">
           <h5>專案經歷</h5>
           <ProjectExperiencesField
             v-model="batchDraftFields.projectExperiences"
@@ -1307,20 +1292,6 @@ const clearBatchQueueLegacy = () => {
               :placeholder="field.required ? '必填' : '選填'"
             />
           </label>
-        </div>
-        <div class="project-editor-section">
-          <h5>工作經驗</h5>
-          <ExperienceEntriesField
-            v-model="draftFields.workExperiences"
-            entry-label="工作經驗"
-          />
-        </div>
-        <div class="project-editor-section">
-          <h5>實習經驗</h5>
-          <ExperienceEntriesField
-            v-model="draftFields.internshipExperiences"
-            entry-label="實習經驗"
-          />
         </div>
         <div class="project-editor-section">
           <h5>專案經歷</h5>

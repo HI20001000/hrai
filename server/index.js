@@ -14,7 +14,11 @@ import {
 import { HttpError } from './scripts/errors.js'
 import { extractCandidateInfoFromCv } from './scripts/llm/cv-extractor.js'
 import { normalizeExperienceItems } from './scripts/llm/experiences.js'
-import { hasProjectExperiences, normalizeProjectExperiences } from './scripts/llm/project-experiences.js'
+import {
+  buildProjectExperienceDurationLabels,
+  hasProjectExperiences,
+  normalizeProjectExperiences,
+} from './scripts/llm/project-experiences.js'
 import { extractTextFromBuffer } from './scripts/llm/text-extractors.js'
 import { getJobDictionary, loadJobDictionary, saveJobDictionary } from './scripts/jobs/dictionary.js'
 import { matchCandidateToJobPost, matchCandidateToJobs } from './scripts/llm/job-matcher.js'
@@ -2453,6 +2457,7 @@ const runJobPostApplicationMatching = async (pool, { applicationId = null, candi
 
 const computeMissingFields = (extracted = {}) => {
   const profile = extracted?.profile && typeof extracted.profile === 'object' ? extracted.profile : {}
+  const durationLabels = buildProjectExperienceDurationLabels(profile.projectExperiences)
 
   const isMissingValue = (value) => {
     if (Array.isArray(value)) return value.length === 0
@@ -2465,6 +2470,9 @@ const computeMissingFields = (extracted = {}) => {
     { key: 'phone', value: extracted?.phone },
     { key: 'education', value: profile.education },
     { key: 'workYears', value: profile.workYears },
+    { key: 'companyExperienceDuration', value: durationLabels.companyExperienceDuration || profile.companyExperienceDuration },
+    { key: 'internshipExperienceDuration', value: durationLabels.internshipExperienceDuration || profile.internshipExperienceDuration },
+    { key: 'projectExperienceDuration', value: durationLabels.projectExperienceDuration || profile.projectExperienceDuration },
     { key: 'languages', value: profile.languages },
     { key: 'technicalLanguages', value: profile.technicalLanguages },
     { key: 'technicalCertificates', value: profile.technicalCertificates },
@@ -2483,6 +2491,50 @@ const computeMissingFields = (extracted = {}) => {
     .map((field) => field.key)
 }
 
+const applyProjectExperienceDurationFields = (extracted = {}) => {
+  const root = extracted && typeof extracted === 'object' ? extracted : {}
+  root.profile = root.profile && typeof root.profile === 'object' ? root.profile : {}
+  const existingProjectExperiences = normalizeProjectExperiences(root.profile.projectExperiences)
+  if (!existingProjectExperiences.length) {
+    const legacyGroups = []
+    const appendLegacyItems = (items, groupType) => {
+      const groupMap = new Map()
+      for (const item of normalizeExperienceItems(items)) {
+        const companyName = normalizeText(item.companyName)
+        if (!companyName) continue
+        const key = `${groupType}:${companyName}`
+        const group = groupMap.get(key) || {
+          groupType,
+          companyName,
+          projects: [],
+        }
+        group.projects.push({
+          projectName: normalizeText(item.roleTitle) || companyName,
+          skills: [],
+          durationText: normalizeText(item.durationText),
+        })
+        groupMap.set(key, group)
+      }
+      legacyGroups.push(...groupMap.values())
+    }
+    appendLegacyItems(root.profile.workExperiences, 'company')
+    appendLegacyItems(root.profile.internshipExperiences, 'internship')
+    root.profile.projectExperiences = normalizeProjectExperiences(legacyGroups)
+  } else {
+    root.profile.projectExperiences = existingProjectExperiences
+  }
+  const durationLabels = buildProjectExperienceDurationLabels(root.profile.projectExperiences)
+  root.profile.companyExperienceDuration = durationLabels.companyExperienceDuration
+  root.profile.internshipExperienceDuration = durationLabels.internshipExperienceDuration
+  root.profile.projectExperienceDuration = durationLabels.projectExperienceDuration
+  if (!normalizeText(root.profile.workYears) && durationLabels.companyExperienceDuration) {
+    root.profile.workYears = durationLabels.companyExperienceDuration
+  }
+  delete root.profile.workExperiences
+  delete root.profile.internshipExperiences
+  return root
+}
+
 const applyExtractedFieldUpdate = (extracted, fieldKey, inputValue) => {
   const root = extracted && typeof extracted === 'object' ? extracted : {}
   root.profile = root.profile && typeof root.profile === 'object' ? root.profile : {}
@@ -2493,13 +2545,14 @@ const applyExtractedFieldUpdate = (extracted, fieldKey, inputValue) => {
     phone: { kind: 'text', target: 'root' },
     education: { kind: 'text', target: 'profile' },
     workYears: { kind: 'text', target: 'profile' },
+    companyExperienceDuration: { kind: 'computed', target: 'profile' },
+    internshipExperienceDuration: { kind: 'computed', target: 'profile' },
+    projectExperienceDuration: { kind: 'computed', target: 'profile' },
     languages: { kind: 'list', target: 'profile', limit: 20 },
     technicalLanguages: { kind: 'list', target: 'profile', limit: 30 },
     technicalCertificates: { kind: 'list', target: 'profile', limit: 20 },
     industry: { kind: 'text', target: 'profile' },
     projectExperiences: { kind: 'project-experiences', target: 'profile' },
-    workExperiences: { kind: 'experiences', target: 'profile' },
-    internshipExperiences: { kind: 'experiences', target: 'profile' },
     targetPosition: { kind: 'list', target: 'profile', limit: 10 },
     expectedSalary: { kind: 'text', target: 'profile' },
     onboardingPreference: { kind: 'text', target: 'profile' },
@@ -2507,12 +2560,13 @@ const applyExtractedFieldUpdate = (extracted, fieldKey, inputValue) => {
 
   const config = map[fieldKey]
   if (!config) return { error: 'fieldKey is not editable' }
+  if (config.kind === 'computed') return { error: `${fieldKey} is calculated by rules and is not editable` }
 
   if (config.kind === 'list') {
     const list = normalizeList(inputValue, config.limit || 20)
     if (config.target === 'profile') root.profile[fieldKey] = list
     else root[fieldKey] = list
-    return { extracted: root }
+    return { extracted: applyProjectExperienceDurationFields(root) }
   }
 
   if (config.kind === 'project-experiences') {
@@ -2524,14 +2578,7 @@ const applyExtractedFieldUpdate = (extracted, fieldKey, inputValue) => {
       root[fieldKey] = groups
       delete root.projectExperience
     }
-    return { extracted: root }
-  }
-
-  if (config.kind === 'experiences') {
-    const items = normalizeExperienceItems(inputValue)
-    if (config.target === 'profile') root.profile[fieldKey] = items
-    else root[fieldKey] = items
-    return { extracted: root }
+    return { extracted: applyProjectExperienceDurationFields(root) }
   }
 
   let text = normalizeText(inputValue)
@@ -2541,7 +2588,7 @@ const applyExtractedFieldUpdate = (extracted, fieldKey, inputValue) => {
   if (config.target === 'profile') root.profile[fieldKey] = text
   else root[fieldKey] = text
 
-  return { extracted: root }
+  return { extracted: applyProjectExperienceDurationFields(root) }
 }
 
 const applyEditedExtractedPayload = (baseExtracted, editedExtracted) => {
@@ -2566,8 +2613,6 @@ const applyEditedExtractedPayload = (baseExtracted, editedExtracted) => {
     ['technicalCertificates', sourceProfile.technicalCertificates],
     ['industry', sourceProfile.industry],
     ['projectExperiences', sourceProfile.projectExperiences],
-    ['workExperiences', sourceProfile.workExperiences],
-    ['internshipExperiences', sourceProfile.internshipExperiences],
     ['targetPosition', sourceProfile.targetPosition],
     ['expectedSalary', sourceProfile.expectedSalary],
     ['onboardingPreference', sourceProfile.onboardingPreference],
@@ -2581,7 +2626,7 @@ const applyEditedExtractedPayload = (baseExtracted, editedExtracted) => {
     next = result.extracted
   }
 
-  return { extracted: next }
+  return { extracted: applyProjectExperienceDurationFields(next) }
 }
 
 const insertCandidateCvExtraction = async (

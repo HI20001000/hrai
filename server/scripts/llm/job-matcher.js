@@ -3,7 +3,11 @@ import { getLlmConfig } from './config.js'
 import { getJobRerankPrompt, getJobShortlistPrompt, getJobSingleMatchPrompt } from './prompt.js'
 import { parseLlmContentToJson } from './parsers.js'
 import { buildExperienceSummary, normalizeExperienceItems } from './experiences.js'
-import { buildProjectExperiencesSummary, normalizeProjectExperiences } from './project-experiences.js'
+import {
+  buildProjectExperienceDurationLabels,
+  buildProjectExperiencesSummary,
+  normalizeProjectExperiences,
+} from './project-experiences.js'
 import { LlmOutputFormatError } from '../errors.js'
 
 const normalizeText = (value) => String(value ?? '').trim()
@@ -168,18 +172,24 @@ const validateSingleMatchPayload = (payload, job) => {
 export const buildCandidateProfile = (extracted = {}) => {
   const profile = extracted?.profile && typeof extracted.profile === 'object' ? extracted.profile : {}
   const projectExperiences = normalizeProjectExperiences(profile.projectExperiences)
-  const workExperiences = normalizeExperienceItems(profile.workExperiences)
-  const internshipExperiences = normalizeExperienceItems(profile.internshipExperiences)
+  const companyProjectExperiences = projectExperiences.filter((group) => group.groupType === 'company')
+  const internshipProjectExperiences = projectExperiences.filter((group) => group.groupType === 'internship')
+  const legacyWorkExperiences = normalizeExperienceItems(profile.workExperiences)
+  const legacyInternshipExperiences = normalizeExperienceItems(profile.internshipExperiences)
+  const durationLabels = buildProjectExperienceDurationLabels(projectExperiences)
   return {
     fullName: normalizeText(extracted?.fullName),
     education: normalizeText(profile.education),
     workYears: normalizeText(profile.workYears),
+    companyExperienceDuration: durationLabels.companyExperienceDuration || normalizeText(profile.companyExperienceDuration),
+    internshipExperienceDuration: durationLabels.internshipExperienceDuration || normalizeText(profile.internshipExperienceDuration),
+    projectExperienceDuration: durationLabels.projectExperienceDuration || normalizeText(profile.projectExperienceDuration),
     languages: normalizeList(profile.languages, 20),
     technicalLanguages: normalizeList(profile.technicalLanguages, 30),
     technicalCertificates: normalizeList(profile.technicalCertificates, 20),
     industry: normalizeText(profile.industry),
-    workExperience: buildExperienceSummary(workExperiences),
-    internshipExperience: buildExperienceSummary(internshipExperiences),
+    workExperience: buildProjectExperiencesSummary(companyProjectExperiences) || buildExperienceSummary(legacyWorkExperiences),
+    internshipExperience: buildProjectExperiencesSummary(internshipProjectExperiences) || buildExperienceSummary(legacyInternshipExperiences),
     projectExperience: buildProjectExperiencesSummary(projectExperiences, profile.projectExperience),
     targetPosition: normalizeList(profile.targetPosition, 10),
     expectedSalary: normalizeText(profile.expectedSalary),

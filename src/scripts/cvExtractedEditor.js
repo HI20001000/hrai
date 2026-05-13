@@ -2,11 +2,13 @@ import { parseJsonObject } from './cvExtractedPreview.js'
 
 export const EXTRACTED_EMPTY_TEXT = '（未提取）'
 export const EXTRACTED_UNTAGGED_TEXT = '（未標記）'
-export const PERSONAL_PROJECT_GROUP_NAME = '個人項目'
+export const PROJECT_GROUP_NAME = '專案'
+export const PERSONAL_PROJECT_GROUP_NAME = PROJECT_GROUP_NAME
 
 const PROJECT_SKILL_LIMIT = 20
 const EXPERIENCE_HIGHLIGHT_LIMIT = 20
 const MAX_DURATION_MONTHS = 600
+const PROJECT_GROUP_TYPES = new Set(['company', 'internship', 'project'])
 
 export const EDITABLE_EXTRACTED_FIELDS = [
   { fieldKey: 'fullName', label: '姓名', valueType: 'text', inputType: 'input', target: 'root', required: true },
@@ -18,20 +20,6 @@ export const EDITABLE_EXTRACTED_FIELDS = [
   { fieldKey: 'technicalLanguages', label: '技術語言', valueType: 'list', inputType: 'textarea', target: 'profile', limit: 30 },
   { fieldKey: 'technicalCertificates', label: '技術證書', valueType: 'list', inputType: 'textarea', target: 'profile', limit: 20 },
   { fieldKey: 'industry', label: '所屬行業', valueType: 'text', inputType: 'input', target: 'profile' },
-  {
-    fieldKey: 'workExperiences',
-    label: '工作經驗',
-    valueType: 'experiences',
-    inputType: 'experiences',
-    target: 'profile',
-  },
-  {
-    fieldKey: 'internshipExperiences',
-    label: '實習經驗',
-    valueType: 'experiences',
-    inputType: 'experiences',
-    target: 'profile',
-  },
   {
     fieldKey: 'projectExperiences',
     label: '專案經歷',
@@ -50,6 +38,9 @@ const missingFieldLabelMap = {
   phone: '電話',
   education: '學歷',
   workYears: '工作年限',
+  companyExperienceDuration: '公司經歷時長',
+  internshipExperienceDuration: '實習經歷時長',
+  projectExperienceDuration: '專案經歷時長',
   languages: '語言',
   technicalLanguages: '技術語言',
   technicalCertificates: '技術證書',
@@ -130,6 +121,44 @@ export const buildExperienceSummary = (value = []) => {
     .join('\n')
 }
 
+const legacyExperienceItemsToProjectGroups = (value, groupType) => {
+  const groups = new Map()
+  for (const item of normalizeExperienceItems(value)) {
+    const companyName = normalizeText(item.companyName)
+    if (!companyName) continue
+    const key = `${groupType}:${companyName}`
+    const existing = groups.get(key) || {
+      groupType,
+      companyName,
+      projects: [],
+    }
+    existing.projects.push({
+      projectName: normalizeText(item.roleTitle) || companyName,
+      skills: [],
+      durationText: normalizeText(item.durationText),
+    })
+    groups.set(key, existing)
+  }
+  return [...groups.values()]
+}
+
+const mergeProjectExperienceGroups = (...values) => {
+  const grouped = new Map()
+  for (const value of values) {
+    for (const group of normalizeProjectExperiences(value)) {
+      const key = `${group.groupType}:${group.companyName}`
+      const existing = grouped.get(key) || {
+        groupType: group.groupType,
+        companyName: group.companyName,
+        projects: [],
+      }
+      existing.projects.push(...group.projects)
+      grouped.set(key, existing)
+    }
+  }
+  return [...grouped.values()]
+}
+
 const PRESENT_TOKEN_PATTERN = /^(至今|現在|现今|目前|present|current|now)$/i
 
 const resolveCurrentYearMonth = () => {
@@ -180,23 +209,52 @@ const computeRangeMonths = (startToken, endToken) => {
   return months
 }
 
+export const parseProjectDurationRange = (value) => {
+  const text = normalizeText(value)
+  if (!text) return null
+
+  const match = text.match(
+    /(\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?|\d{4})\s*(?:-|~|–|—|至|到|to)\s*(至今|現在|现今|目前|present|current|now|\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?|\d{4})/i
+  )
+  if (!match) return null
+
+  const start = parseYearMonthToken(match[1])
+  const end = parseYearMonthToken(match[2])
+  if (!start || !end) return null
+
+  const startMonth = start.year * 12 + (start.month ?? 1)
+  const endMonth = end.year * 12 + (end.month ?? 12)
+  if (endMonth < startMonth) return null
+
+  const months = endMonth - startMonth + 1
+  if (!Number.isInteger(months) || months <= 0 || months > MAX_DURATION_MONTHS) return null
+  return { startMonth, endMonth }
+}
+
 export const computeProjectDurationMonths = (value) => {
   const text = normalizeText(value)
   if (!text) return null
 
+  const range = parseProjectDurationRange(text)
+  if (range) return range.endMonth - range.startMonth + 1
+
   let match = text.match(/(\d+)\s*年\s*(\d+)\s*(?:個月|个月|月|months?|mos?)/i)
-  if (match) return Number(match[1]) * 12 + Number(match[2])
+  if (match) {
+    const months = Number(match[1]) * 12 + Number(match[2])
+    return months > 0 && months <= MAX_DURATION_MONTHS ? months : null
+  }
 
   match = text.match(/(\d+)\s*(?:個月|个月|月|months?|mos?)/i)
-  if (match) return Number(match[1])
+  if (match) {
+    const months = Number(match[1])
+    return months > 0 && months <= MAX_DURATION_MONTHS ? months : null
+  }
 
   match = text.match(/(\d+)\s*(?:年|years?|yrs?)/i)
-  if (match) return Number(match[1]) * 12
-
-  match = text.match(
-    /(\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?|\d{4})\s*(?:-|~|–|—|至|到|to)\s*(至今|現在|现今|目前|present|current|now|\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?|\d{4})/i
-  )
-  if (match) return computeRangeMonths(match[1], match[2])
+  if (match) {
+    const months = Number(match[1]) * 12
+    return months > 0 && months <= MAX_DURATION_MONTHS ? months : null
+  }
 
   return null
 }
@@ -227,9 +285,18 @@ export const createEmptyProjectExperienceItem = () => ({
   durationMonths: null,
 })
 
+const normalizeProjectGroupType = (value, companyName = '') => {
+  const text = normalizeText(value).toLowerCase()
+  if (text === 'internship' || text === 'intern' || text === '實習' || text === '实习') return 'internship'
+  if (text === 'project' || text === 'personal' || text === '專案' || text === '项目') return 'project'
+  if (text === 'company' || text === 'work' || text === 'employment' || text === '公司') return 'company'
+  if ([PROJECT_GROUP_NAME, '個人項目'].includes(normalizeText(companyName))) return 'project'
+  return PROJECT_GROUP_TYPES.has(text) ? text : 'company'
+}
+
 export const createEmptyProjectExperienceGroup = (groupType = 'company') => ({
-  groupType: groupType === 'personal' ? 'personal' : 'company',
-  companyName: groupType === 'personal' ? PERSONAL_PROJECT_GROUP_NAME : '',
+  groupType: normalizeProjectGroupType(groupType),
+  companyName: normalizeProjectGroupType(groupType) === 'project' ? PROJECT_GROUP_NAME : '',
   projects: [createEmptyProjectExperienceItem()],
 })
 
@@ -261,18 +328,15 @@ export const normalizeProjectExperiences = (value) => {
   for (const rawGroup of value) {
     if (!rawGroup || typeof rawGroup !== 'object' || Array.isArray(rawGroup)) continue
 
-    const groupTypeValue = normalizeText(rawGroup.groupType).toLowerCase()
-    const groupType =
-      groupTypeValue === 'personal' || normalizeText(rawGroup.companyName) === PERSONAL_PROJECT_GROUP_NAME
-        ? 'personal'
-        : 'company'
-    const companyName = groupType === 'personal' ? PERSONAL_PROJECT_GROUP_NAME : normalizeText(rawGroup.companyName)
+    const rawCompanyName = normalizeText(rawGroup.companyName || rawGroup.company || rawGroup.employer || rawGroup.organization)
+    const groupType = normalizeProjectGroupType(rawGroup.groupType, rawCompanyName)
+    const companyName = groupType === 'project' ? PROJECT_GROUP_NAME : rawCompanyName
     const projects = Array.isArray(rawGroup.projects)
       ? rawGroup.projects.map((item) => normalizeProjectExperienceItem(item)).filter(Boolean)
       : []
 
     if (!projects.length) continue
-    if (groupType === 'company' && !companyName) continue
+    if ((groupType === 'company' || groupType === 'internship') && !companyName) continue
 
     groups.push({
       groupType,
@@ -282,6 +346,66 @@ export const normalizeProjectExperiences = (value) => {
   }
 
   return groups
+}
+
+const mergeDurationRanges = (ranges = []) => {
+  const sorted = ranges
+    .filter((range) => Number.isInteger(range?.startMonth) && Number.isInteger(range?.endMonth))
+    .sort((a, b) => a.startMonth - b.startMonth)
+  if (!sorted.length) return 0
+
+  const merged = []
+  for (const range of sorted) {
+    const previous = merged[merged.length - 1]
+    if (!previous || range.startMonth > previous.endMonth + 1) {
+      merged.push({ ...range })
+      continue
+    }
+    previous.endMonth = Math.max(previous.endMonth, range.endMonth)
+  }
+
+  return merged.reduce((total, range) => total + range.endMonth - range.startMonth + 1, 0)
+}
+
+export const computeProjectExperienceDurationMonthsByType = (value = []) => {
+  const buckets = {
+    company: { ranges: [], fallbackMonths: 0 },
+    internship: { ranges: [], fallbackMonths: 0 },
+    project: { ranges: [], fallbackMonths: 0 },
+  }
+
+  for (const group of normalizeProjectExperiences(value)) {
+    const bucket = buckets[group.groupType]
+    if (!bucket) continue
+    for (const project of group.projects || []) {
+      const range = parseProjectDurationRange(project.durationText)
+      if (range) {
+        bucket.ranges.push(range)
+        continue
+      }
+
+      const months = Number(project.durationMonths || computeProjectDurationMonths(project.durationText) || 0)
+      if (Number.isInteger(months) && months > 0 && months <= MAX_DURATION_MONTHS) {
+        bucket.fallbackMonths += months
+      }
+    }
+  }
+
+  return Object.fromEntries(
+    Object.entries(buckets).map(([key, bucket]) => [
+      key,
+      mergeDurationRanges(bucket.ranges) + bucket.fallbackMonths,
+    ])
+  )
+}
+
+export const buildProjectExperienceDurationLabels = (value = []) => {
+  const durations = computeProjectExperienceDurationMonthsByType(value)
+  return {
+    companyExperienceDuration: formatProjectDurationMonthsLabel(durations.company),
+    internshipExperienceDuration: formatProjectDurationMonthsLabel(durations.internship),
+    projectExperienceDuration: formatProjectDurationMonthsLabel(durations.project),
+  }
 }
 
 export const cloneProjectExperiences = (value) =>
@@ -305,7 +429,8 @@ export const buildProjectExperiencesSummary = (value, legacyText = '') => {
           return parts.join('｜')
         })
         .filter(Boolean)
-      return `${group.companyName}：${projects.join('；')}`
+      const label = group.groupType === 'internship' ? '實習' : group.groupType === 'project' ? '專案' : '公司'
+      return `${label} - ${group.companyName}：${projects.join('；')}`
     })
     .join('\n')
 }
@@ -370,7 +495,11 @@ export const resolveExtractedPayload = ({
 }
 
 const buildProjectExperienceField = (profile = {}) => {
-  const projectExperiences = normalizeProjectExperiences(profile.projectExperiences)
+  const projectExperiences = mergeProjectExperienceGroups(
+    profile.projectExperiences,
+    legacyExperienceItemsToProjectGroups(profile.workExperiences, 'company'),
+    legacyExperienceItemsToProjectGroups(profile.internshipExperiences, 'internship')
+  )
   const legacyText = normalizeText(profile.projectExperience)
   const value = hasProjectExperiences(projectExperiences, legacyText)
     ? buildProjectExperiencesSummary(projectExperiences, legacyText)
@@ -388,23 +517,6 @@ const buildProjectExperienceField = (profile = {}) => {
   })
 }
 
-const buildExperienceField = (profile = {}, fieldKey, label) => {
-  const items = normalizeExperienceItems(profile[fieldKey])
-  const value = hasExperienceItems(items)
-    ? buildExperienceSummary(items)
-    : EXTRACTED_EMPTY_TEXT
-
-  return buildRow({
-    label,
-    value,
-    rawValue: items,
-    fieldKey,
-    editable: true,
-    valueType: 'experiences',
-    inputType: 'experiences',
-  })
-}
-
 export const buildExtractedPreviewData = ({
   content = '',
   extracted = null,
@@ -417,9 +529,11 @@ export const buildExtractedPreviewData = ({
   const parserLower = normalizeText(resolved.parser).toLowerCase()
   const parserLabel = parserLower === 'llm' ? 'LLM' : parserLower === 'regex' ? 'Regex Fallback' : EXTRACTED_UNTAGGED_TEXT
   const missingFieldLabels = resolved.missingFields.map((key) => missingFieldLabelMap[key] || key)
-  const workExperienceField = buildExperienceField(profile, 'workExperiences', '工作經驗')
-  const internshipExperienceField = buildExperienceField(profile, 'internshipExperiences', '實習經驗')
   const projectExperienceField = buildProjectExperienceField(profile)
+  const durationLabels = buildProjectExperienceDurationLabels(projectExperienceField.rawValue)
+  const companyExperienceDuration = durationLabels.companyExperienceDuration || normalizeText(profile.companyExperienceDuration)
+  const internshipExperienceDuration = durationLabels.internshipExperienceDuration || normalizeText(profile.internshipExperienceDuration)
+  const projectExperienceDuration = durationLabels.projectExperienceDuration || normalizeText(profile.projectExperienceDuration)
 
   return {
     extracted: extractedObj,
@@ -435,6 +549,9 @@ export const buildExtractedPreviewData = ({
     dimensionRows: [
       buildRow({ label: '學歷', value: toDisplayText(profile.education), rawValue: profile.education, fieldKey: 'education', editable: true }),
       buildRow({ label: '工作年限', value: toDisplayText(profile.workYears), rawValue: profile.workYears, fieldKey: 'workYears', editable: true }),
+      buildRow({ label: '公司經歷時長', value: toDisplayText(companyExperienceDuration), rawValue: companyExperienceDuration }),
+      buildRow({ label: '實習經歷時長', value: toDisplayText(internshipExperienceDuration), rawValue: internshipExperienceDuration }),
+      buildRow({ label: '專案經歷時長', value: toDisplayText(projectExperienceDuration), rawValue: projectExperienceDuration }),
       buildRow({ label: '語言', value: toDisplayList(profile.languages, 20), rawValue: profile.languages, fieldKey: 'languages', editable: true, valueType: 'list', inputType: 'textarea' }),
       buildRow({ label: '技術語言', value: toDisplayList(profile.technicalLanguages, 30), rawValue: profile.technicalLanguages, fieldKey: 'technicalLanguages', editable: true, valueType: 'list', inputType: 'textarea' }),
       buildRow({ label: '技術證書', value: toDisplayList(profile.technicalCertificates, 20), rawValue: profile.technicalCertificates, fieldKey: 'technicalCertificates', editable: true, valueType: 'list', inputType: 'textarea' }),
@@ -443,8 +560,6 @@ export const buildExtractedPreviewData = ({
       buildRow({ label: '期望薪資', value: toDisplayText(profile.expectedSalary), rawValue: profile.expectedSalary, fieldKey: 'expectedSalary', editable: true }),
       buildRow({ label: '入職意願', value: toDisplayText(profile.onboardingPreference), rawValue: profile.onboardingPreference, fieldKey: 'onboardingPreference', editable: true }),
     ],
-    workExperienceField,
-    internshipExperienceField,
     projectExperienceField,
   }
 }
@@ -452,8 +567,6 @@ export const buildExtractedPreviewData = ({
 export const getEditableRows = (previewData) => {
   if (!previewData || typeof previewData !== 'object') return []
   const rows = [...(previewData.basicRows || []), ...(previewData.dimensionRows || [])]
-  if (previewData.workExperienceField) rows.push(previewData.workExperienceField)
-  if (previewData.internshipExperienceField) rows.push(previewData.internshipExperienceField)
   if (previewData.projectExperienceField) rows.push(previewData.projectExperienceField)
   return rows.filter((row) => row.editable && row.fieldKey)
 }
@@ -484,17 +597,26 @@ export const normalizeDraftForCompare = (row, value) => {
 
 export const computeMissingFields = (extracted = {}) => {
   const profile = extracted?.profile && typeof extracted.profile === 'object' ? extracted.profile : {}
+  const projectExperiences = mergeProjectExperienceGroups(
+    profile.projectExperiences,
+    legacyExperienceItemsToProjectGroups(profile.workExperiences, 'company'),
+    legacyExperienceItemsToProjectGroups(profile.internshipExperiences, 'internship')
+  )
+  const durationLabels = buildProjectExperienceDurationLabels(projectExperiences)
   const requiredFieldDefs = [
     { key: 'fullName', value: extracted?.fullName },
     { key: 'email', value: extracted?.email },
     { key: 'phone', value: extracted?.phone },
     { key: 'education', value: profile.education },
     { key: 'workYears', value: profile.workYears },
+    { key: 'companyExperienceDuration', value: durationLabels.companyExperienceDuration || profile.companyExperienceDuration },
+    { key: 'internshipExperienceDuration', value: durationLabels.internshipExperienceDuration || profile.internshipExperienceDuration },
+    { key: 'projectExperienceDuration', value: durationLabels.projectExperienceDuration || profile.projectExperienceDuration },
     { key: 'languages', value: profile.languages },
     { key: 'technicalLanguages', value: profile.technicalLanguages },
     { key: 'technicalCertificates', value: profile.technicalCertificates },
     { key: 'industry', value: profile.industry },
-    { key: 'projectExperiences', value: hasProjectExperiences(profile.projectExperiences, profile.projectExperience) },
+    { key: 'projectExperiences', value: hasProjectExperiences(projectExperiences, profile.projectExperience) },
     { key: 'targetPosition', value: profile.targetPosition },
     { key: 'expectedSalary', value: profile.expectedSalary },
     { key: 'onboardingPreference', value: profile.onboardingPreference },
@@ -532,6 +654,13 @@ export const buildEditedExtractedFromDraft = (draftFields = {}) => {
     if (field.lower) text = text.toLowerCase()
     if (field.target === 'profile') extracted.profile[field.fieldKey] = text
     else extracted[field.fieldKey] = text
+  }
+  const durationLabels = buildProjectExperienceDurationLabels(extracted.profile.projectExperiences)
+  extracted.profile.companyExperienceDuration = durationLabels.companyExperienceDuration
+  extracted.profile.internshipExperienceDuration = durationLabels.internshipExperienceDuration
+  extracted.profile.projectExperienceDuration = durationLabels.projectExperienceDuration
+  if (!normalizeText(extracted.profile.workYears) && durationLabels.companyExperienceDuration) {
+    extracted.profile.workYears = durationLabels.companyExperienceDuration
   }
   return extracted
 }

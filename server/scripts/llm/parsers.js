@@ -1,4 +1,5 @@
 import {
+  buildProjectExperienceDurationLabels,
   hasProjectExperiences,
   normalizeProjectExperiences,
 } from './project-experiences.js'
@@ -46,8 +47,8 @@ const assertProjectExperiencesField = (payload, key) => {
     if (typeof group.groupType !== 'string') {
       throw new Error(`Field ${key}[${groupIndex}].groupType must be a string`)
     }
-    if (!['company', 'personal'].includes(group.groupType)) {
-      throw new Error(`Field ${key}[${groupIndex}].groupType must be company or personal`)
+    if (!['company', 'internship', 'project', 'personal'].includes(group.groupType)) {
+      throw new Error(`Field ${key}[${groupIndex}].groupType must be company, internship or project`)
     }
     if (typeof group.companyName !== 'string') {
       throw new Error(`Field ${key}[${groupIndex}].companyName must be a string`)
@@ -105,8 +106,27 @@ const assertExperienceItemsField = (payload, key) => {
 export const validateCvExtractionPayload = (payload) => {
   if (!isPlainObject(payload)) throw new Error('CV extraction output must be a JSON object')
 
-  for (const key of ['fullName', 'email', 'phone', 'education', 'workYears', 'industry', 'expectedSalary', 'onboardingPreference']) {
+  for (const key of [
+    'fullName',
+    'email',
+    'phone',
+    'education',
+    'workYears',
+    'industry',
+    'expectedSalary',
+    'onboardingPreference',
+  ]) {
     assertStringField(payload, key)
+  }
+
+  for (const key of [
+    'companyExperienceDuration',
+    'internshipExperienceDuration',
+    'projectExperienceDuration',
+  ]) {
+    if (key in payload && typeof payload[key] !== 'string') {
+      throw new Error(`Field ${key} must be a string`)
+    }
   }
 
   for (const key of ['languages', 'technicalLanguages', 'technicalCertificates', 'targetPosition']) {
@@ -114,8 +134,6 @@ export const validateCvExtractionPayload = (payload) => {
   }
 
   assertProjectExperiencesField(payload, 'projectExperiences')
-  assertExperienceItemsField(payload, 'workExperiences')
-  assertExperienceItemsField(payload, 'internshipExperiences')
 
   return payload
 }
@@ -199,6 +217,45 @@ const pickFirstProjectExperienceGroups = (...values) => {
     if (groups.length) return groups
   }
   return []
+}
+
+const legacyExperienceItemsToProjectGroups = (value, groupType) => {
+  const items = normalizeExperienceItems(value)
+  const groups = new Map()
+  for (const item of items) {
+    const companyName = normalizeString(item.companyName)
+    if (!companyName) continue
+    const key = `${groupType}:${companyName}`
+    const existing = groups.get(key) || {
+      groupType,
+      companyName,
+      projects: [],
+    }
+    existing.projects.push({
+      projectName: normalizeString(item.roleTitle) || companyName,
+      skills: [],
+      durationText: normalizeString(item.durationText),
+    })
+    groups.set(key, existing)
+  }
+  return [...groups.values()]
+}
+
+const mergeProjectExperienceGroups = (...values) => {
+  const grouped = new Map()
+  for (const value of values) {
+    for (const group of normalizeProjectExperiences(value)) {
+      const key = `${group.groupType}:${group.companyName}`
+      const existing = grouped.get(key) || {
+        groupType: group.groupType,
+        companyName: group.companyName,
+        projects: [],
+      }
+      existing.projects.push(...group.projects)
+      grouped.set(key, existing)
+    }
+  }
+  return [...grouped.values()]
 }
 
 const normalizeStringArray = (value, max = 20) => {
@@ -451,6 +508,24 @@ const normalizeProfileFields = (raw = {}, options = {}) => {
     (root.roleFit && typeof root.roleFit === 'object' ? root.roleFit : null) ||
     (profile.roleFit && typeof profile.roleFit === 'object' ? profile.roleFit : {})
 
+  const projectExperiences = mergeProjectExperienceGroups(
+    pickFirstProjectExperienceGroups(
+      root.projectExperiences,
+      profile.projectExperiences,
+      industryExperience.projectExperiences
+    ),
+    legacyExperienceItemsToProjectGroups(
+      root.workExperiences ?? profile.workExperiences ?? industryExperience.workExperiences,
+      'company'
+    ),
+    legacyExperienceItemsToProjectGroups(
+      root.internshipExperiences ?? profile.internshipExperiences ?? industryExperience.internshipExperiences,
+      'internship'
+    )
+  )
+  const durationLabels = buildProjectExperienceDurationLabels(projectExperiences)
+  const workYearsFromProjects = durationLabels.companyExperienceDuration
+
   return {
     education: pickFirstString(
       root.education,
@@ -464,8 +539,12 @@ const normalizeProfileFields = (raw = {}, options = {}) => {
       profile.workYears,
       basicAttributes.workYears,
       basicAttributes.experienceYears,
+      workYearsFromProjects,
       extractWorkYearsFromText(options.sourceText, options.now)
     ),
+    companyExperienceDuration: durationLabels.companyExperienceDuration,
+    internshipExperienceDuration: durationLabels.internshipExperienceDuration,
+    projectExperienceDuration: durationLabels.projectExperienceDuration,
     languages: mergeStringArrays(root.languages, profile.languages, basicAttributes.languages).slice(0, 20),
     technicalLanguages: mergeStringArrays(
       root.technicalLanguages,
@@ -487,17 +566,7 @@ const normalizeProfileFields = (raw = {}, options = {}) => {
       industryExperience.industry,
       industryExperience.industries
     ),
-    projectExperiences: pickFirstProjectExperienceGroups(
-      root.projectExperiences,
-      profile.projectExperiences,
-      industryExperience.projectExperiences
-    ),
-    workExperiences: normalizeExperienceItems(
-      root.workExperiences ?? profile.workExperiences ?? industryExperience.workExperiences
-    ),
-    internshipExperiences: normalizeExperienceItems(
-      root.internshipExperiences ?? profile.internshipExperiences ?? industryExperience.internshipExperiences
-    ),
+    projectExperiences,
     targetPosition: mergeStringArrays(
       root.targetPosition,
       root.targetRole,
@@ -543,6 +612,9 @@ export const normalizeExtractedFields = (raw = {}, options = {}) => {
     { key: 'phone', value: extracted.phone },
     { key: 'education', value: extracted.profile.education },
     { key: 'workYears', value: extracted.profile.workYears },
+    { key: 'companyExperienceDuration', value: extracted.profile.companyExperienceDuration },
+    { key: 'internshipExperienceDuration', value: extracted.profile.internshipExperienceDuration },
+    { key: 'projectExperienceDuration', value: extracted.profile.projectExperienceDuration },
     { key: 'languages', value: extracted.profile.languages },
     { key: 'technicalLanguages', value: extracted.profile.technicalLanguages },
     { key: 'technicalCertificates', value: extracted.profile.technicalCertificates },

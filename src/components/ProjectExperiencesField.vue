@@ -10,7 +10,7 @@ import {
   normalizeProjectExperiences,
   normalizeProjectSkills,
   normalizeText,
-  PERSONAL_PROJECT_GROUP_NAME,
+  PROJECT_GROUP_NAME,
 } from '../scripts/cvExtractedEditor.js'
 
 const props = defineProps({
@@ -34,25 +34,38 @@ const cloneEditableGroups = (value) => {
   if (!Array.isArray(value)) return []
   return value
     .filter((group) => group && typeof group === 'object' && !Array.isArray(group))
-    .map((group) => ({
-      groupType: normalizeText(group.groupType).toLowerCase() === 'personal' ? 'personal' : 'company',
-      companyName:
-        normalizeText(group.groupType).toLowerCase() === 'personal'
-          ? PERSONAL_PROJECT_GROUP_NAME
-          : normalizeText(group.companyName),
-      projects: Array.isArray(group.projects) && group.projects.length
-        ? group.projects.map((project) => ({
-          projectName: normalizeText(project?.projectName),
-          skills: normalizeProjectSkills(project?.skills),
-          durationText: normalizeText(project?.durationText),
-          durationMonths: computeProjectDurationMonths(project?.durationText),
-        }))
-        : [createEmptyProjectExperienceItem()],
-    }))
+    .map((group) => {
+      const rawType = normalizeText(group.groupType).toLowerCase()
+      const groupType = rawType === 'internship'
+        ? 'internship'
+        : rawType === 'project' || rawType === 'personal' || normalizeText(group.companyName) === '個人項目'
+          ? 'project'
+          : 'company'
+      return {
+        groupType,
+        companyName: groupType === 'project' ? PROJECT_GROUP_NAME : normalizeText(group.companyName),
+        projects: Array.isArray(group.projects) && group.projects.length
+          ? group.projects.map((project) => ({
+            projectName: normalizeText(project?.projectName),
+            skills: normalizeProjectSkills(project?.skills),
+            durationText: normalizeText(project?.durationText),
+            durationMonths: Number(project?.durationMonths || 0) > 0
+              ? Math.round(Number(project.durationMonths))
+              : computeProjectDurationMonths(project?.durationText),
+          }))
+          : [createEmptyProjectExperienceItem()],
+      }
+    })
 }
 
 const groups = computed(() => (props.readonly ? normalizeProjectExperiences(props.modelValue) : cloneEditableGroups(props.modelValue)))
-const hasPersonalGroup = computed(() => groups.value.some((group) => group.groupType === 'personal'))
+const hasProjectGroup = computed(() => groups.value.some((group) => group.groupType === 'project'))
+
+const getGroupTypeLabel = (groupType) => {
+  if (groupType === 'internship') return '實習'
+  if (groupType === 'project') return '專案'
+  return '公司'
+}
 
 const updateGroups = (nextGroups) => {
   emit('update:modelValue', cloneEditableGroups(nextGroups))
@@ -60,7 +73,7 @@ const updateGroups = (nextGroups) => {
 
 const addGroup = (groupType) => {
   if (props.readonly) return
-  if (groupType === 'personal' && hasPersonalGroup.value) return
+  if (groupType === 'project' && hasProjectGroup.value) return
   updateGroups([...groups.value, createEmptyProjectExperienceGroup(groupType)])
 }
 
@@ -73,7 +86,7 @@ const updateCompanyName = (groupIndex, value) => {
   if (props.readonly) return
   const nextGroups = cloneEditableGroups(groups.value)
   const target = nextGroups[groupIndex]
-  if (!target || target.groupType !== 'company') return
+  if (!target || target.groupType === 'project') return
   target.companyName = normalizeText(value)
   updateGroups(nextGroups)
 }
@@ -105,6 +118,10 @@ const updateProjectField = (groupIndex, projectIndex, fieldKey, value) => {
 
   if (fieldKey === 'skills') {
     targetProject.skills = normalizeProjectSkills(value)
+  } else if (fieldKey === 'durationText') {
+    const durationText = normalizeText(value)
+    targetProject.durationText = durationText
+    targetProject.durationMonths = computeProjectDurationMonths(durationText)
   } else {
     targetProject[fieldKey] = normalizeText(value)
   }
@@ -117,13 +134,14 @@ const updateProjectField = (groupIndex, projectIndex, fieldKey, value) => {
   <div class="project-experiences-field">
     <div v-if="!readonly" class="project-toolbar">
       <button type="button" class="secondary-btn small-btn" @click="addGroup('company')">新增公司</button>
+      <button type="button" class="secondary-btn small-btn" @click="addGroup('internship')">新增實習</button>
       <button
         type="button"
         class="secondary-btn small-btn"
-        :disabled="hasPersonalGroup"
-        @click="addGroup('personal')"
+        :disabled="hasProjectGroup"
+        @click="addGroup('project')"
       >
-        新增個人項目
+        新增專案
       </button>
     </div>
 
@@ -137,16 +155,16 @@ const updateProjectField = (groupIndex, projectIndex, fieldKey, value) => {
     <div v-for="(group, groupIndex) in groups" :key="`${group.groupType}-${groupIndex}`" class="group-card">
       <div class="group-header">
         <div class="group-title-wrap">
-          <span class="group-badge">{{ group.groupType === 'personal' ? '個人項目' : '公司' }}</span>
-          <template v-if="readonly || group.groupType === 'personal'">
-            <strong>{{ group.companyName || PERSONAL_PROJECT_GROUP_NAME }}</strong>
+          <span class="group-badge">{{ getGroupTypeLabel(group.groupType) }}</span>
+          <template v-if="readonly || group.groupType === 'project'">
+            <strong>{{ group.companyName || PROJECT_GROUP_NAME }}</strong>
           </template>
           <input
             v-else
             :value="group.companyName"
             type="text"
             class="group-name-input"
-            placeholder="請輸入公司名稱"
+            :placeholder="group.groupType === 'internship' ? '請輸入實習公司名稱' : '請輸入公司名稱'"
             @input="updateCompanyName(groupIndex, $event.target.value)"
           />
         </div>

@@ -1,7 +1,9 @@
-export const PERSONAL_PROJECT_GROUP_NAME = '個人項目'
+export const PROJECT_GROUP_NAME = '專案'
+export const PERSONAL_PROJECT_GROUP_NAME = PROJECT_GROUP_NAME
 
 const MAX_PROJECT_SKILLS = 20
 const MAX_DURATION_MONTHS = 600
+const PROJECT_GROUP_TYPES = new Set(['company', 'internship', 'project'])
 
 const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value)
 
@@ -84,23 +86,52 @@ const computeRangeMonths = (startToken, endToken) => {
   return months
 }
 
+export const parseProjectDurationRange = (value) => {
+  const text = normalizeProjectText(value)
+  if (!text) return null
+
+  const match = text.match(
+    /(\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?|\d{4})\s*(?:-|~|–|—|至|到|to)\s*(至今|現在|现今|目前|present|current|now|\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?|\d{4})/i
+  )
+  if (!match) return null
+
+  const start = parseYearMonthToken(match[1])
+  const end = parseYearMonthToken(match[2])
+  if (!start || !end) return null
+
+  const startMonth = start.year * 12 + (start.month ?? 1)
+  const endMonth = end.year * 12 + (end.month ?? 12)
+  if (endMonth < startMonth) return null
+
+  const months = endMonth - startMonth + 1
+  if (!Number.isInteger(months) || months <= 0 || months > MAX_DURATION_MONTHS) return null
+  return { startMonth, endMonth }
+}
+
 export const computeProjectDurationMonths = (value) => {
   const text = normalizeProjectText(value)
   if (!text) return null
 
+  const range = parseProjectDurationRange(text)
+  if (range) return range.endMonth - range.startMonth + 1
+
   let match = text.match(/(\d+)\s*年\s*(\d+)\s*(?:個月|个月|月|months?|mos?)/i)
-  if (match) return Number(match[1]) * 12 + Number(match[2])
+  if (match) {
+    const months = Number(match[1]) * 12 + Number(match[2])
+    return months > 0 && months <= MAX_DURATION_MONTHS ? months : null
+  }
 
   match = text.match(/(\d+)\s*(?:個月|个月|月|months?|mos?)/i)
-  if (match) return Number(match[1])
+  if (match) {
+    const months = Number(match[1])
+    return months > 0 && months <= MAX_DURATION_MONTHS ? months : null
+  }
 
   match = text.match(/(\d+)\s*(?:年|years?|yrs?)/i)
-  if (match) return Number(match[1]) * 12
-
-  match = text.match(
-    /(\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?|\d{4})\s*(?:-|~|–|—|至|到|to)\s*(至今|現在|现今|目前|present|current|now|\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?|\d{4})/i
-  )
-  if (match) return computeRangeMonths(match[1], match[2])
+  if (match) {
+    const months = Number(match[1]) * 12
+    return months > 0 && months <= MAX_DURATION_MONTHS ? months : null
+  }
 
   return null
 }
@@ -148,6 +179,15 @@ export const normalizeProjectItem = (value) => {
   return { projectName, skills, durationText, durationMonths }
 }
 
+const normalizeProjectGroupType = (value, companyName = '') => {
+  const text = normalizeProjectText(value).toLowerCase()
+  if (text === 'internship' || text === 'intern' || text === '實習' || text === '实习') return 'internship'
+  if (text === 'project' || text === 'personal' || text === '專案' || text === '项目') return 'project'
+  if (text === 'company' || text === 'work' || text === 'employment' || text === '公司') return 'company'
+  if ([PROJECT_GROUP_NAME, '個人項目'].includes(normalizeProjectText(companyName))) return 'project'
+  return PROJECT_GROUP_TYPES.has(text) ? text : 'company'
+}
+
 export const normalizeProjectExperiences = (value) => {
   if (!Array.isArray(value)) return []
 
@@ -155,7 +195,6 @@ export const normalizeProjectExperiences = (value) => {
   for (const rawGroup of value) {
     if (!isPlainObject(rawGroup)) continue
 
-    const groupTypeValue = normalizeProjectText(rawGroup.groupType).toLowerCase()
     const rawCompanyName = pickFirstProjectText(
       rawGroup.companyName,
       rawGroup.company,
@@ -163,17 +202,14 @@ export const normalizeProjectExperiences = (value) => {
       rawGroup.organization,
       rawGroup.groupName
     )
-    const groupType =
-      groupTypeValue === 'personal' || rawCompanyName === PERSONAL_PROJECT_GROUP_NAME
-        ? 'personal'
-        : 'company'
-    const companyName = groupType === 'personal' ? PERSONAL_PROJECT_GROUP_NAME : rawCompanyName
+    const groupType = normalizeProjectGroupType(rawGroup.groupType, rawCompanyName)
+    const companyName = groupType === 'project' ? PROJECT_GROUP_NAME : rawCompanyName
     const projects = Array.isArray(rawGroup.projects)
       ? rawGroup.projects.map((project) => normalizeProjectItem(project)).filter(Boolean)
       : []
 
     if (!projects.length) continue
-    if (groupType === 'company' && !companyName) continue
+    if ((groupType === 'company' || groupType === 'internship') && !companyName) continue
 
     groups.push({
       groupType,
@@ -183,6 +219,67 @@ export const normalizeProjectExperiences = (value) => {
   }
 
   return groups
+}
+
+const mergeDurationRanges = (ranges = []) => {
+  const sorted = ranges
+    .filter((range) => Number.isInteger(range?.startMonth) && Number.isInteger(range?.endMonth))
+    .sort((a, b) => a.startMonth - b.startMonth)
+  if (!sorted.length) return 0
+
+  const merged = []
+  for (const range of sorted) {
+    const previous = merged[merged.length - 1]
+    if (!previous || range.startMonth > previous.endMonth + 1) {
+      merged.push({ ...range })
+      continue
+    }
+    previous.endMonth = Math.max(previous.endMonth, range.endMonth)
+  }
+
+  return merged.reduce((total, range) => total + range.endMonth - range.startMonth + 1, 0)
+}
+
+export const computeProjectExperienceDurationMonthsByType = (groups = []) => {
+  const buckets = {
+    company: { ranges: [], fallbackMonths: 0 },
+    internship: { ranges: [], fallbackMonths: 0 },
+    project: { ranges: [], fallbackMonths: 0 },
+  }
+
+  for (const group of normalizeProjectExperiences(groups)) {
+    const bucket = buckets[group.groupType]
+    if (!bucket) continue
+
+    for (const project of group.projects || []) {
+      const range = parseProjectDurationRange(project.durationText)
+      if (range) {
+        bucket.ranges.push(range)
+        continue
+      }
+
+      const months = Number(project.durationMonths || computeProjectDurationMonths(project.durationText) || 0)
+      if (Number.isInteger(months) && months > 0 && months <= MAX_DURATION_MONTHS) {
+        bucket.fallbackMonths += months
+      }
+    }
+  }
+
+  return Object.fromEntries(
+    Object.entries(buckets).map(([key, bucket]) => [
+      key,
+      mergeDurationRanges(bucket.ranges) + bucket.fallbackMonths,
+    ])
+  )
+}
+
+export const buildProjectExperienceDurationLabels = (groups = []) => {
+  const durations = computeProjectExperienceDurationMonthsByType(groups)
+  return {
+    companyExperienceDuration: formatProjectDurationMonthsLabel(durations.company),
+    internshipExperienceDuration: formatProjectDurationMonthsLabel(durations.internship),
+    projectExperienceDuration: formatProjectDurationMonthsLabel(durations.project),
+  }
 }
 
 export const hasProjectExperiences = (groups = [], legacyText = '') => {
@@ -204,7 +301,8 @@ export const buildProjectExperiencesSummary = (groups = [], legacyText = '') => 
           return parts.join(' | ')
         })
         .filter(Boolean)
-      return `${group.companyName}: ${projects.join('; ')}`
+      const label = group.groupType === 'internship' ? '實習' : group.groupType === 'project' ? '專案' : '公司'
+      return `${label} - ${group.companyName}: ${projects.join('; ')}`
     })
     .filter(Boolean)
     .join('\n')
