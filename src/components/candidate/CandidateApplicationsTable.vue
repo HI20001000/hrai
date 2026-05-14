@@ -57,6 +57,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  statusActionable: {
+    type: Boolean,
+    default: false,
+  },
   showBulkBlacklistActions: {
     type: Boolean,
     default: false,
@@ -131,7 +135,7 @@ const props = defineProps({
   },
   searchPlaceholder: {
     type: String,
-    default: '搜尋候選人 / 狀態 / 一面安排 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案',
+    default: '搜尋候選人 / 狀態 / 面試安排 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案',
   },
 })
 
@@ -144,6 +148,7 @@ const emit = defineEmits([
   'add-to-project',
   'view-details',
   'edit-details',
+  'edit-status',
   'rows-updated',
   'notify',
 ])
@@ -195,6 +200,9 @@ const getStatusToneClass = (status) => {
   const normalized = normalizeCandidateApplicationStatus(status)
   return `status-tone-${normalized}`
 }
+
+const isCurrentStatus = (row, status) =>
+  normalizeCandidateApplicationStatus(row?.applicationStatus, '') === status
 
 const getBlacklistMatchedByLabel = (value) => {
   const normalized = String(value || '').trim().toLowerCase()
@@ -564,7 +572,7 @@ const updateFirstInterviewArrangement = async (row, nextValue) => {
     })
     const data = await response.json()
     if (!response.ok) {
-      throw new Error(data.message || '更新一面安排失敗')
+      throw new Error(data.message || '更新面試安排失敗')
     }
 
     firstInterviewOverrides.value = {
@@ -574,7 +582,7 @@ const updateFirstInterviewArrangement = async (row, nextValue) => {
     emit('rows-updated')
     emit('notify', {
       type: 'success',
-      message: `已更新 ${row?.fullName || '候選人'} 的一面安排為「${getFirstInterviewArrangementLabel(normalizedValue)}」`,
+      message: `已更新 ${row?.fullName || '候選人'} 的面試安排為「${getFirstInterviewArrangementLabel(normalizedValue)}」`,
     })
     window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
   } catch (error) {
@@ -584,7 +592,7 @@ const updateFirstInterviewArrangement = async (row, nextValue) => {
     }
     emit('notify', {
       type: 'error',
-      message: error?.message || '更新一面安排失敗',
+      message: error?.message || '更新面試安排失敗',
     })
   } finally {
     savingFirstInterviewIds.value = savingFirstInterviewIds.value.filter((id) => id !== applicationId)
@@ -741,7 +749,7 @@ const quickAddToBlacklist = async (row) => {
             <th v-if="showJobColumn" class="job-col">職位</th>
             <th class="name-col">候選人名稱</th>
             <th class="status-col">候選人狀態</th>
-            <th class="first-interview-col">是否安排一面</th>
+            <th class="first-interview-col">是否安排面試</th>
             <th class="remark-col">備註</th>
             <th v-if="showTargetPositionColumn" class="position-col">期望職位</th>
             <th class="position-col">匹配職位</th>
@@ -796,24 +804,49 @@ const quickAddToBlacklist = async (row) => {
               </div>
             </td>
             <td class="status-col">
-              <div
-                v-if="editableStatus"
-                class="status-select-wrap"
-                :class="[getStatusToneClass(row.applicationStatus), { saving: isStatusSaving(row.applicationId) }]"
-              >
-                <span class="status-dot" aria-hidden="true"></span>
-                <AppSelect
-                  class="status-select"
-                  :model-value="row.applicationStatus"
-                  :options="CANDIDATE_APPLICATION_STATUS_OPTIONS"
-                  placeholder="請選擇狀態"
-                  :disabled="isStatusSaving(row.applicationId)"
-                  @update:model-value="updateApplicationStatus(row, $event)"
-                />
+              <div class="status-cell-wrap" :class="{ actionable: statusActionable }">
+                <div
+                  v-if="editableStatus"
+                  class="status-select-wrap"
+                  :class="[getStatusToneClass(row.applicationStatus), { saving: isStatusSaving(row.applicationId) }]"
+                >
+                  <span class="status-dot" aria-hidden="true"></span>
+                  <AppSelect
+                    class="status-select"
+                    :model-value="row.applicationStatus"
+                    :options="CANDIDATE_APPLICATION_STATUS_OPTIONS"
+                    placeholder="請選擇狀態"
+                    :disabled="isStatusSaving(row.applicationId)"
+                    @update:model-value="updateApplicationStatus(row, $event)"
+                  />
+                </div>
+                <button
+                  v-else-if="statusActionable"
+                  type="button"
+                  class="status-chip status-action-chip"
+                  :class="getStatusToneClass(row.applicationStatus)"
+                  @click.stop="emit('edit-status', row)"
+                >
+                  {{ getCandidateApplicationStatusLabel(row.applicationStatus) }}
+                </button>
+                <span v-else class="status-chip" :class="getStatusToneClass(row.applicationStatus)">
+                  {{ getCandidateApplicationStatusLabel(row.applicationStatus) }}
+                </span>
+
+                <div v-if="statusActionable" class="status-flow-popover" role="tooltip">
+                  <p class="status-flow-title">狀態流程</p>
+                  <ol class="status-flow-list">
+                    <li
+                      v-for="option in CANDIDATE_APPLICATION_STATUS_OPTIONS"
+                      :key="option.value"
+                      :class="{ current: isCurrentStatus(row, option.value) }"
+                    >
+                      <span class="flow-dot" aria-hidden="true"></span>
+                      <span>{{ option.label }}</span>
+                    </li>
+                  </ol>
+                </div>
               </div>
-              <span v-else class="status-chip" :class="getStatusToneClass(row.applicationStatus)">
-                {{ getCandidateApplicationStatusLabel(row.applicationStatus) }}
-              </span>
             </td>
             <td class="first-interview-col">
               <div
@@ -1208,6 +1241,7 @@ const quickAddToBlacklist = async (row) => {
 
 .status-col {
   min-width: 220px;
+  position: relative;
 }
 
 .first-interview-col {
@@ -1485,12 +1519,103 @@ const quickAddToBlacklist = async (row) => {
   font-weight: 700;
 }
 
+.status-action-chip {
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.status-action-chip:hover {
+  box-shadow: 0 8px 18px rgba(47, 111, 237, 0.12);
+  transform: translateY(-1px);
+}
+
 .status-chip::before {
   content: '';
   width: 0.46rem;
   height: 0.46rem;
   border-radius: 999px;
   background: currentColor;
+}
+
+.status-cell-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.status-cell-wrap.actionable {
+  z-index: 8;
+}
+
+.status-flow-popover {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 0.55rem);
+  z-index: 160;
+  display: none;
+  width: 292px;
+  max-height: 380px;
+  overflow: auto;
+  padding: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 24px 54px rgba(15, 23, 42, 0.14),
+    0 8px 20px rgba(47, 111, 237, 0.08);
+  white-space: normal;
+}
+
+.status-cell-wrap.actionable:hover .status-flow-popover,
+.status-cell-wrap.actionable:focus-within .status-flow-popover {
+  display: block;
+}
+
+.status-flow-title {
+  margin: 0 0 0.6rem;
+  color: var(--text-strong);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.status-flow-list {
+  display: grid;
+  gap: 0.42rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status-flow-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  color: var(--text-base);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.status-flow-list li.current {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.flow-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+  opacity: 0.52;
+}
+
+.status-flow-list li.current .flow-dot {
+  background: currentColor;
+  opacity: 1;
 }
 
 .status-tone-screening,

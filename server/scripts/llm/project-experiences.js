@@ -2,6 +2,7 @@ export const PROJECT_GROUP_NAME = '專案'
 export const PERSONAL_PROJECT_GROUP_NAME = PROJECT_GROUP_NAME
 
 const MAX_PROJECT_SKILLS = 20
+const MAX_PROJECT_RESPONSIBILITIES = 20
 const MAX_DURATION_MONTHS = 600
 const PROJECT_GROUP_TYPES = new Set(['company', 'internship', 'project'])
 
@@ -26,6 +27,25 @@ export const normalizeProjectSkillList = (value, limit = MAX_PROJECT_SKILLS) => 
     if (skills.length >= limit) break
   }
   return skills
+}
+
+export const normalizeProjectResponsibilityList = (value, limit = MAX_PROJECT_RESPONSIBILITIES) => {
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(/[\n,，;；、|]+/)
+      : []
+
+  const responsibilities = []
+  const seen = new Set()
+  for (const raw of source.flatMap((item) => (Array.isArray(item) ? item : [item]))) {
+    const text = normalizeProjectText(raw).replace(/^[-*•·]\s*/, '')
+    if (!text || seen.has(text)) continue
+    seen.add(text)
+    responsibilities.push(text)
+    if (responsibilities.length >= limit) break
+  }
+  return responsibilities
 }
 
 const pickFirstProjectText = (...values) => {
@@ -170,13 +190,26 @@ export const normalizeProjectItem = (value) => {
     value.timespan,
     value.period
   )
+  const responsibilities = normalizeProjectResponsibilityList(
+    value.responsibilities ??
+      value.responsibilityText ??
+      value.responsibility ??
+      value.projectResponsibilities ??
+      value.roleResponsibilities ??
+      value.details ??
+      value.content ??
+      value.highlights ??
+      value.achievements ??
+      value.tasks,
+    MAX_PROJECT_RESPONSIBILITIES
+  )
   const durationMonths =
     typeof value.durationMonths === 'number' && Number.isFinite(value.durationMonths) && value.durationMonths > 0
       ? Math.round(value.durationMonths)
       : computeProjectDurationMonths(durationText)
 
-  if (!projectName && !skills.length && !durationText) return null
-  return { projectName, skills, durationText, durationMonths }
+  if (!projectName && !skills.length && !durationText && !responsibilities.length) return null
+  return { projectName, skills, durationText, durationMonths, responsibilities }
 }
 
 const normalizeProjectGroupType = (value, companyName = '') => {
@@ -298,6 +331,7 @@ export const buildProjectExperiencesSummary = (groups = [], legacyText = '') => 
           if (project.projectName) parts.push(project.projectName)
           if (project.skills.length) parts.push(`技能: ${project.skills.join('、')}`)
           if (project.durationText) parts.push(`時長: ${formatProjectDurationDisplay(project.durationText)}`)
+          if (project.responsibilities.length) parts.push(`負責內容: ${project.responsibilities.join('、')}`)
           return parts.join(' | ')
         })
         .filter(Boolean)

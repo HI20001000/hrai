@@ -92,12 +92,15 @@ projectExperiences
 {
   "projectName": "",
   "skills": [],
-  "durationText": ""
+  "durationText": "",
+  "responsibilities": []
 }
 規則：
-- 只保留這三個欄位，不要增加描述、角色、成果等欄位
-- projectName、skills、durationText 都只能提取履歷原文實際出現的資訊；若公司或實習經歷沒有明確專案名稱，可用原文中的職位/角色名稱作為 projectName
+- 只保留這四個欄位，不要增加描述、角色、成果等欄位
+- projectName、skills、durationText、responsibilities 都只能提取履歷原文實際出現的資訊；若公司或實習經歷沒有明確專案名稱，可用原文中的職位/角色名稱作為 projectName
 - durationText 只保留履歷原文時長，不要自行推算
+- responsibilities 用陣列輸出候選人在該項目 / 工作 / 實習中實際負責的內容，例如「負責接口開發」「參與需求分析」「維護報表系統」；沒有明確負責內容時輸出 []
+- responsibilities 不要輸出模型推測、能力評價或泛化總結，只能摘取或輕度整理履歷原文中的職責 / 工作內容
 
 targetPosition
 

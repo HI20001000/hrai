@@ -77,6 +77,16 @@ const assertProjectExperiencesField = (payload, key) => {
       if (typeof project.durationText !== 'string') {
         throw new Error(`Field ${key}[${groupIndex}].projects[${projectIndex}].durationText must be a string`)
       }
+      if (!Array.isArray(project.responsibilities)) {
+        throw new Error(`Field ${key}[${groupIndex}].projects[${projectIndex}].responsibilities must be an array`)
+      }
+      for (const responsibility of project.responsibilities) {
+        if (typeof responsibility !== 'string') {
+          throw new Error(
+            `Field ${key}[${groupIndex}].projects[${projectIndex}].responsibilities must contain only strings`
+          )
+        }
+      }
     }
   }
 }
@@ -174,6 +184,8 @@ const normalizeLongText = (value, depth = 0) => {
       'content',
       'experience',
       'responsibilities',
+      'responsibilityText',
+      'projectResponsibilities',
       'achievements',
       'highlights',
       'project',
@@ -235,6 +247,7 @@ const legacyExperienceItemsToProjectGroups = (value, groupType) => {
       projectName: normalizeString(item.roleTitle) || companyName,
       skills: [],
       durationText: normalizeString(item.durationText),
+      responsibilities: item.highlights,
     })
     groups.set(key, existing)
   }

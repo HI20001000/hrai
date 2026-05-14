@@ -8,6 +8,7 @@ import {
   formatProjectDurationDisplay,
   formatProjectDurationMonthsLabel,
   normalizeProjectExperiences,
+  normalizeProjectResponsibilities,
   normalizeProjectSkills,
   normalizeText,
   PROJECT_GROUP_NAME,
@@ -52,6 +53,18 @@ const cloneEditableGroups = (value) => {
             durationMonths: Number(project?.durationMonths || 0) > 0
               ? Math.round(Number(project.durationMonths))
               : computeProjectDurationMonths(project?.durationText),
+            responsibilities: normalizeProjectResponsibilities(
+              project?.responsibilities ||
+                project?.responsibilityText ||
+                project?.responsibility ||
+                project?.projectResponsibilities ||
+                project?.roleResponsibilities ||
+                project?.details ||
+                project?.content ||
+                project?.highlights ||
+                project?.achievements ||
+                project?.tasks
+            ),
           }))
           : [createEmptyProjectExperienceItem()],
       }
@@ -118,6 +131,8 @@ const updateProjectField = (groupIndex, projectIndex, fieldKey, value) => {
 
   if (fieldKey === 'skills') {
     targetProject.skills = normalizeProjectSkills(value)
+  } else if (fieldKey === 'responsibilities') {
+    targetProject.responsibilities = normalizeProjectResponsibilities(value)
   } else if (fieldKey === 'durationText') {
     const durationText = normalizeText(value)
     targetProject.durationText = durationText
@@ -192,6 +207,13 @@ const updateProjectField = (groupIndex, projectIndex, fieldKey, value) => {
               <p class="project-duration-text">{{ project.durationText ? formatProjectDurationDisplay(project.durationText) : EXTRACTED_EMPTY_TEXT }}</p>
             </div>
             <p><span>所用技能：</span>{{ project.skills.length ? project.skills.join('、') : EXTRACTED_EMPTY_TEXT }}</p>
+            <div class="responsibility-copy">
+              <span>負責內容：</span>
+              <ul v-if="project.responsibilities.length">
+                <li v-for="responsibility in project.responsibilities" :key="responsibility">{{ responsibility }}</li>
+              </ul>
+              <p v-else>{{ EXTRACTED_EMPTY_TEXT }}</p>
+            </div>
           </div>
 
           <div v-else class="project-form">
@@ -229,6 +251,16 @@ const updateProjectField = (groupIndex, projectIndex, fieldKey, value) => {
                 placeholder="請用逗號分隔技能"
                 @input="updateProjectField(groupIndex, projectIndex, 'skills', $event.target.value)"
               />
+            </label>
+            <label class="project-field">
+              <span>負責內容</span>
+              <textarea
+                :value="project.responsibilities.join('\n')"
+                rows="4"
+                class="edit-input responsibility-input"
+                placeholder="請輸入在此項目負責的內容，每行一條"
+                @input="updateProjectField(groupIndex, projectIndex, 'responsibilities', $event.target.value)"
+              ></textarea>
             </label>
           </div>
         </article>
@@ -347,6 +379,28 @@ const updateProjectField = (groupIndex, projectIndex, fieldKey, value) => {
   word-break: break-word;
 }
 
+.responsibility-copy {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.responsibility-copy > span {
+  color: var(--text-base);
+  font-weight: 600;
+}
+
+.responsibility-copy ul {
+  display: grid;
+  gap: 0.28rem;
+  margin: 0;
+  padding-left: 1.15rem;
+  color: var(--text-base);
+}
+
+.responsibility-copy p {
+  margin: 0;
+}
+
 .project-main-row {
   display: flex;
   align-items: flex-start;
@@ -397,6 +451,11 @@ const updateProjectField = (groupIndex, projectIndex, fieldKey, value) => {
 .duration-hint {
   color: var(--text-muted);
   line-height: 1.4;
+}
+
+.responsibility-input {
+  min-height: 96px;
+  resize: vertical;
 }
 
 .danger-text {

@@ -20,6 +20,8 @@ const selectedApplicationIds = ref([])
 const isLoading = ref(false)
 const isBulkDeleting = ref(false)
 const isUploadModalOpen = ref(false)
+const isStatusModalOpen = ref(false)
+const isSavingStatusModal = ref(false)
 const isProjectTransferModalOpen = ref(false)
 const isProjectTransferSaving = ref(false)
 const projectRows = ref([])
@@ -82,7 +84,7 @@ const pageTitle = computed(() => {
 
 const pageDescription = computed(() => {
   if (pageMode.value === 'detail') return '查看候選人投遞資料、Blacklist 命中結果與狀態歷史。'
-  if (pageMode.value === 'edit') return '集中更新候選人狀態、備註、一面安排與 Blacklist 原因。'
+  if (pageMode.value === 'edit') return '集中更新候選人狀態、備註、面試安排與 Blacklist 原因。'
   return '這裡集中查看所有職位下的候選人投遞與匹配結果；狀態與備註請進入修改頁處理。'
 })
 
@@ -108,6 +110,12 @@ const activeStatusHistory = computed(() => {
 const canEditFirstInterview = computed(
   () => normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus) === 'screening_hr_approved'
 )
+
+const canEditFirstInterviewDraft = computed(
+  () => normalizeCandidateApplicationStatus(statusDraft.value, '') === 'screening_hr_approved'
+)
+
+const isStatusModalBusy = computed(() => isDetailLoading.value || isSavingStatusModal.value)
 
 const activeDownloadUrl = computed(() =>
   activeApplication.value?.hasDownload && activeApplication.value?.cvId
@@ -187,6 +195,75 @@ const openApplicationDetail = async (row, mode = 'detail') => {
   activeApplication.value = null
   pageMode.value = mode
   await loadApplicationDetail(activeApplicationId.value, mode)
+}
+
+const openApplicationStatusModal = async (row) => {
+  const applicationId = Number(row?.applicationId || 0)
+  if (!applicationId) return
+
+  message.value = ''
+  activeApplicationId.value = applicationId
+  activeApplication.value = null
+  isStatusModalOpen.value = true
+  await loadApplicationDetail(applicationId, 'list')
+}
+
+const closeApplicationStatusModal = () => {
+  if (isStatusModalBusy.value) return
+  isStatusModalOpen.value = false
+  activeApplicationId.value = null
+  activeApplication.value = null
+  detailError.value = ''
+  resetDetailDrafts(null)
+}
+
+const saveStatusModalChanges = async () => {
+  const applicationId = Number(activeApplication.value?.applicationId || 0)
+  const nextStatus = normalizeCandidateApplicationStatus(statusDraft.value, '')
+  if (!applicationId || !nextStatus) {
+    message.value = '請先選擇有效狀態'
+    return
+  }
+
+  const payload = {}
+  const currentStatus = normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus)
+  if (nextStatus !== currentStatus) {
+    payload.applicationStatus = nextStatus
+  }
+
+  const nextRemark = String(remarkDraft.value || '').trim()
+  const currentRemark = String(activeApplication.value?.remark || '').trim()
+  if (nextRemark !== currentRemark) {
+    payload.remark = nextRemark
+  }
+
+  const nextFirstInterview = normalizeFirstInterviewArrangement(firstInterviewDraft.value, '')
+  const currentFirstInterview = normalizeFirstInterviewArrangement(activeApplication.value?.firstInterviewArrangement)
+  if (canEditFirstInterviewDraft.value && nextFirstInterview !== currentFirstInterview) {
+    payload.firstInterviewArrangement = nextFirstInterview
+  }
+
+  if (!Object.keys(payload).length) {
+    message.value = '沒有變更可儲存'
+    return
+  }
+
+  isSavingStatusModal.value = true
+  try {
+    await fetchJson(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    message.value = '已更新候選人狀態'
+    await loadApplicationTable()
+    await loadApplicationDetail(applicationId, 'list')
+    window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
+  } catch (error) {
+    message.value = error?.message || '更新候選人狀態失敗'
+  } finally {
+    isSavingStatusModal.value = false
+  }
 }
 
 const returnToList = async () => {
@@ -431,11 +508,11 @@ const updateFirstInterviewArrangement = async (nextValue) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ firstInterviewArrangement: normalizedValue }),
     })
-    message.value = `已更新一面安排為「${getFirstInterviewArrangementLabel(normalizedValue)}」`
+    message.value = `已更新面試安排為「${getFirstInterviewArrangementLabel(normalizedValue)}」`
     await refreshActiveApplication()
   } catch (error) {
     firstInterviewDraft.value = previousValue
-    message.value = error?.message || '更新一面安排失敗'
+    message.value = error?.message || '更新面試安排失敗'
   } finally {
     isSavingFirstInterview.value = false
   }
@@ -562,20 +639,19 @@ onUnmounted(() => {
       :show-status-filter="true"
       :paginated="true"
       :page-size="30"
+      :status-actionable="true"
       :bulk-upload-disabled="bulkUploadDisabled"
       :selectable="true"
       :selected-ids="selectedApplicationIds"
       :deleting="isBulkDeleting"
-      :show-row-actions="true"
       title="候選人清單"
       empty-text="尚無候選人資料"
-      search-placeholder="搜尋職位 / 候選人 / 狀態 / 一面安排 / 匹配職位 / 備註 / 檔案"
+      search-placeholder="搜尋職位 / 候選人 / 狀態 / 面試安排 / 匹配職位 / 備註 / 檔案"
       @selection-change="selectedApplicationIds = $event"
       @delete-selected="deleteSelectedApplications"
       @upload-selected-cv="openUploadModal"
       @add-to-project="openProjectTransferModal"
-      @view-details="openApplicationDetail($event, 'detail')"
-      @edit-details="openApplicationDetail($event, 'edit')"
+      @edit-status="openApplicationStatusModal"
       @rows-updated="handleApplicationsUpdated"
       @notify="handleTableNotify"
     />
@@ -729,7 +805,7 @@ onUnmounted(() => {
               </div>
 
               <div class="first-interview-editor">
-                <span>是否安排一面</span>
+                <span>是否安排面試</span>
                 <AppSelect
                   class="compact-select"
                   :model-value="firstInterviewDraft"
@@ -784,7 +860,7 @@ onUnmounted(() => {
                 </p>
                 <p>{{ history.remark || '未填寫備註' }}</p>
                 <p v-if="history.firstInterviewArrangement" class="timeline-extra">
-                  一面安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
+                  面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
                 </p>
               </div>
             </div>
@@ -798,6 +874,99 @@ onUnmounted(() => {
       @close="closeUploadModal"
       @uploaded="handleUploadCompleted"
     />
+
+    <div v-if="isStatusModalOpen" class="modal-backdrop" @click.self="closeApplicationStatusModal">
+      <div class="modal-panel status-modal">
+        <header class="modal-header">
+          <div>
+            <h3>候選人狀態</h3>
+            <p class="subtle">
+              {{ activeApplication?.fullName || '候選人' }}
+              <template v-if="activeApplication?.jobPostTitle">｜{{ activeApplication.jobPostTitle }}</template>
+            </p>
+          </div>
+          <button type="button" class="ghost-btn" :disabled="isStatusModalBusy" @click="closeApplicationStatusModal">關閉</button>
+        </header>
+
+        <p v-if="isDetailLoading" class="hint">讀取中...</p>
+        <p v-else-if="detailError" class="error">{{ detailError }}</p>
+
+        <template v-else-if="activeApplication">
+          <div class="status-modal-editor">
+            <label class="field">
+              <span>候選人狀態</span>
+              <AppSelect
+                :model-value="statusDraft"
+                :options="CANDIDATE_APPLICATION_STATUS_OPTIONS"
+                placeholder="請選擇狀態"
+                :disabled="isSavingStatusModal"
+                @update:model-value="statusDraft = $event"
+              />
+            </label>
+
+            <label class="field">
+              <span>是否安排面試</span>
+              <AppSelect
+                :model-value="firstInterviewDraft"
+                :options="FIRST_INTERVIEW_ARRANGEMENT_OPTIONS"
+                placeholder="請選擇"
+                :disabled="!canEditFirstInterviewDraft || isSavingStatusModal"
+                @update:model-value="firstInterviewDraft = $event"
+              />
+            </label>
+
+            <label class="field full-span">
+              <span>備註</span>
+              <textarea
+                v-model.trim="remarkDraft"
+                rows="4"
+                :disabled="isSavingStatusModal"
+                placeholder="輸入原因或跟進記錄"
+              ></textarea>
+            </label>
+          </div>
+
+          <section class="status-history-section">
+            <h4>狀態流程</h4>
+            <div class="status-timeline">
+              <div
+                v-for="(history, index) in activeStatusHistory"
+                :key="history.id || `${history.applicationStatus}-${index}`"
+                class="timeline-row"
+                :class="{ current: index === activeStatusHistory.length - 1 }"
+              >
+                <div class="timeline-label">
+                  <span class="timeline-dot" aria-hidden="true"></span>
+                  <span class="timeline-status">{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</span>
+                </div>
+                <div class="timeline-content">
+                  <p class="timeline-meta">
+                    狀態創建時間 {{ formatDateTime(history.createdAt) }}
+                    <template v-if="history.updatedAt">｜狀態修改時間 {{ formatDateTime(history.updatedAt) }}</template>
+                  </p>
+                  <p>{{ history.remark || '未填寫備註' }}</p>
+                  <p v-if="history.firstInterviewArrangement" class="timeline-extra">
+                    面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+        </template>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" :disabled="isStatusModalBusy" @click="closeApplicationStatusModal">取消</button>
+          <button
+            type="button"
+            class="primary-btn"
+            :disabled="isStatusModalBusy || !activeApplication"
+            @click="saveStatusModalChanges"
+          >
+            {{ isSavingStatusModal ? '保存中...' : '保存' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div v-if="isProjectTransferModalOpen" class="modal-backdrop" @click.self="closeProjectTransferModal">
       <div class="modal-panel project-transfer-modal">
@@ -873,6 +1042,7 @@ onUnmounted(() => {
 
 .detail-card,
 .status-card,
+.status-modal,
 .project-transfer-modal {
   display: grid;
   gap: 1rem;
@@ -1033,6 +1203,33 @@ onUnmounted(() => {
   gap: 1rem;
 }
 
+.status-modal {
+  width: min(920px, calc(100vw - 2rem));
+}
+
+.status-modal-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.status-modal-editor textarea {
+  min-height: 98px;
+  resize: vertical;
+}
+
+.status-history-section {
+  display: grid;
+  gap: 0.85rem;
+  padding-top: 0.2rem;
+}
+
+.status-history-section h4 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 1rem;
+}
+
 .timeline-row {
   display: grid;
   grid-template-columns: minmax(190px, 250px) minmax(0, 1fr);
@@ -1111,6 +1308,10 @@ onUnmounted(() => {
   }
 
   .transfer-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .status-modal-editor {
     grid-template-columns: 1fr;
   }
 }

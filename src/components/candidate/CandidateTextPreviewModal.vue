@@ -411,7 +411,7 @@ const saveAllEdits = async () => {
 .preview-panel {
   display: grid;
   grid-template-rows: auto 1fr;
-  width: min(1180px, calc(100vw - 2rem));
+  width: min(1360px, calc(100vw - 2rem));
 }
 
 .header-actions {
@@ -501,7 +501,7 @@ const saveAllEdits = async () => {
 }
 
 .structured-table th {
-  width: 150px;
+  width: 180px;
 }
 
 .structured-table td {
