@@ -3403,7 +3403,41 @@ const updateCandidateCvExtractedFields = async (pool, req, res, candidateCvId) =
   })
 }
 
-const downloadCandidateCv = async (pool, _req, res, candidateCvId) => {
+const parseByteRange = (rangeHeader, fileSize) => {
+  const match = String(rangeHeader || '').match(/^bytes=(\d*)-(\d*)$/)
+  if (!match || fileSize <= 0) return null
+
+  const [, startText, endText] = match
+  if (!startText && !endText) return null
+
+  if (!startText) {
+    const suffixLength = Number(endText)
+    if (!Number.isInteger(suffixLength) || suffixLength <= 0) return null
+    return {
+      start: Math.max(fileSize - suffixLength, 0),
+      end: fileSize - 1,
+    }
+  }
+
+  const start = Number(startText)
+  const end = endText ? Number(endText) : fileSize - 1
+  if (
+    !Number.isInteger(start) ||
+    !Number.isInteger(end) ||
+    start < 0 ||
+    end < start ||
+    start >= fileSize
+  ) {
+    return null
+  }
+
+  return {
+    start,
+    end: Math.min(end, fileSize - 1),
+  }
+}
+
+const streamCandidateCvFile = async (pool, req, res, candidateCvId, { disposition = 'attachment' } = {}) => {
   const [rows] = await pool.query(
     `SELECT id, storage_key AS storageKey, original_filename AS originalFileName, mime_type AS mimeType
      FROM candidate_cvs
@@ -3426,14 +3460,41 @@ const downloadCandidateCv = async (pool, _req, res, candidateCvId) => {
 
   const safeDownloadName = sanitizeFileName(row.originalFileName || `candidate-cv-${candidateCvId}`)
   const encodedName = encodeURIComponent(safeDownloadName)
+  const fileStat = fs.statSync(storagePath)
+  const contentType = row.mimeType || 'application/octet-stream'
+  const contentDisposition = `${disposition}; filename*=UTF-8''${encodedName}`
+  const baseHeaders = {
+    'Content-Type': contentType,
+    'Content-Disposition': contentDisposition,
+    'Accept-Ranges': 'bytes',
+  }
 
   withCors(res)
-  res.writeHead(200, {
-    'Content-Type': row.mimeType || 'application/octet-stream',
-    'Content-Disposition': `attachment; filename*=UTF-8''${encodedName}`,
-  })
+  const range = parseByteRange(req?.headers?.range, fileStat.size)
+  if (req?.headers?.range && !range) {
+    res.writeHead(416, {
+      ...baseHeaders,
+      'Content-Range': `bytes */${fileStat.size}`,
+    })
+    res.end()
+    return
+  }
 
-  const stream = fs.createReadStream(storagePath)
+  const streamOptions = range ? { start: range.start, end: range.end } : undefined
+  if (range) {
+    res.writeHead(206, {
+      ...baseHeaders,
+      'Content-Length': range.end - range.start + 1,
+      'Content-Range': `bytes ${range.start}-${range.end}/${fileStat.size}`,
+    })
+  } else {
+    res.writeHead(200, {
+      ...baseHeaders,
+      'Content-Length': fileStat.size,
+    })
+  }
+
+  const stream = fs.createReadStream(storagePath, streamOptions)
   stream.on('error', () => {
     if (!res.headersSent) {
       sendJson(res, 500, { message: 'Failed to read CV file' })
@@ -3443,6 +3504,12 @@ const downloadCandidateCv = async (pool, _req, res, candidateCvId) => {
   })
   stream.pipe(res)
 }
+
+const previewCandidateCvFile = async (pool, req, res, candidateCvId) =>
+  streamCandidateCvFile(pool, req, res, candidateCvId, { disposition: 'inline' })
+
+const downloadCandidateCv = async (pool, req, res, candidateCvId) =>
+  streamCandidateCvFile(pool, req, res, candidateCvId, { disposition: 'attachment' })
 
 const deleteCandidate = async (pool, _req, res, candidateId) => {
   const [rows] = await pool.query('SELECT id FROM candidates WHERE id = ? LIMIT 1', [candidateId])
@@ -4281,6 +4348,11 @@ const start = async () => {
       const jobMatchesMatch = url.pathname.match(/^\/api\/candidate-cvs\/(\d+)\/job-matches$/)
       if (jobMatchesMatch && req.method === 'GET') {
         return getCandidateCvJobMatches(pool, req, res, Number(jobMatchesMatch[1]))
+      }
+
+      const filePreviewMatch = url.pathname.match(/^\/api\/candidate-cvs\/(\d+)\/file-preview$/)
+      if (filePreviewMatch && req.method === 'GET') {
+        return previewCandidateCvFile(pool, req, res, Number(filePreviewMatch[1]))
       }
 
       const updateExtractedMatch = url.pathname.match(/^\/api\/candidate-cvs\/(\d+)\/extracted-field$/)

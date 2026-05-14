@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
 import AppSelect from '../AppSelect.vue'
 import {
@@ -33,6 +33,14 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  showTargetPositionColumn: {
+    type: Boolean,
+    default: true,
+  },
+  showPhoneColumn: {
+    type: Boolean,
+    default: true,
+  },
   editableStatus: {
     type: Boolean,
     default: false,
@@ -56,6 +64,26 @@ const props = defineProps({
   showBulkUploadAction: {
     type: Boolean,
     default: false,
+  },
+  showStatusFilter: {
+    type: Boolean,
+    default: false,
+  },
+  showJobFilter: {
+    type: Boolean,
+    default: false,
+  },
+  paginated: {
+    type: Boolean,
+    default: false,
+  },
+  pageSize: {
+    type: Number,
+    default: 30,
+  },
+  tableMaxHeight: {
+    type: String,
+    default: 'min(66vh, 760px)',
   },
   bulkBlacklisting: {
     type: Boolean,
@@ -121,6 +149,9 @@ const emit = defineEmits([
 ])
 
 const searchKeyword = ref('')
+const statusFilter = ref('')
+const jobFilter = ref('')
+const currentPage = ref(1)
 const statusOverrides = ref({})
 const savingStatusIds = ref([])
 const firstInterviewOverrides = ref({})
@@ -139,8 +170,10 @@ const isPreviewLoading = ref(false)
 const previewError = ref('')
 const previewDownloadUrl = ref('')
 const previewDownloadFileName = ref('')
+const previewFileUrl = ref('')
 
 const normalizeSearchText = (value) => String(value ?? '').trim().toLowerCase()
+const normalizeFilterText = (value) => String(value ?? '').trim()
 
 const formatDateTime = (value) => {
   if (!value) return '--'
@@ -197,19 +230,52 @@ const displayRows = computed(() =>
   }))
 )
 
+const statusFilterOptions = computed(() => [
+  { value: '', label: '全部' },
+  ...CANDIDATE_APPLICATION_STATUS_OPTIONS,
+])
+
+const jobFilterOptions = computed(() => {
+  const seen = new Set()
+  const options = []
+
+  for (const row of displayRows.value) {
+    const title = normalizeFilterText(row.jobPostTitle)
+    if (!title || seen.has(title)) continue
+    seen.add(title)
+    options.push({ value: title, label: title })
+  }
+
+  return [{ value: '', label: '全部' }, ...options]
+})
+
 const filteredRows = computed(() => {
   const keyword = normalizeSearchText(searchKeyword.value)
-  if (!keyword) return displayRows.value
+  const selectedStatus = normalizeCandidateApplicationStatus(statusFilter.value, '')
+  const selectedJob = normalizeFilterText(jobFilter.value)
 
   return displayRows.value.filter((row) => {
+    if (
+      selectedStatus &&
+      normalizeCandidateApplicationStatus(row.applicationStatus, '') !== selectedStatus
+    ) {
+      return false
+    }
+
+    if (selectedJob && normalizeFilterText(row.jobPostTitle) !== selectedJob) {
+      return false
+    }
+
+    if (!keyword) return true
+
     const haystack = [
       props.showJobColumn ? row.jobPostTitle : '',
       row.fullName,
       getCandidateApplicationStatusLabel(row.applicationStatus),
       getFirstInterviewArrangementLabel(row.firstInterviewArrangement),
-      row.targetPosition,
+      props.showTargetPositionColumn ? row.targetPosition : '',
       row.matchedPosition,
-      row.phone,
+      props.showPhoneColumn ? row.phone : '',
       row.cvFileName,
       row.extractedFileName,
       row.remark,
@@ -223,13 +289,66 @@ const filteredRows = computed(() => {
   })
 })
 
+const effectivePageSize = computed(() => Math.max(1, Number(props.pageSize) || 30))
+
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(filteredRows.value.length / effectivePageSize.value))
+)
+
+const visibleRows = computed(() => {
+  if (!props.paginated) return filteredRows.value
+
+  const start = (currentPage.value - 1) * effectivePageSize.value
+  return filteredRows.value.slice(start, start + effectivePageSize.value)
+})
+
+const paginationPages = computed(() => {
+  const pageCount = totalPages.value
+  if (pageCount <= 5) {
+    return Array.from({ length: pageCount }, (_, index) => index + 1)
+  }
+
+  const start = Math.max(1, Math.min(currentPage.value - 2, pageCount - 4))
+  return Array.from({ length: 5 }, (_, index) => start + index)
+})
+
+const paginationStart = computed(() =>
+  filteredRows.value.length ? (currentPage.value - 1) * effectivePageSize.value + 1 : 0
+)
+
+const paginationEnd = computed(() =>
+  Math.min(currentPage.value * effectivePageSize.value, filteredRows.value.length)
+)
+
+const tableWrapStyle = computed(() =>
+  props.paginated
+    ? { '--application-table-max-height': props.tableMaxHeight }
+    : undefined
+)
+
 const selectedCount = computed(() => props.selectedIds.length)
 
 const tableColumnCount = computed(() => {
-  let count = 10
+  let count = 8
   if (props.showJobColumn) count += 1
+  if (props.showTargetPositionColumn) count += 1
+  if (props.showPhoneColumn) count += 1
   if (props.showRowActions) count += 1
   return count
+})
+
+const goToPage = (page) => {
+  currentPage.value = Math.max(1, Math.min(Number(page) || 1, totalPages.value))
+}
+
+watch([searchKeyword, statusFilter, jobFilter], () => {
+  currentPage.value = 1
+})
+
+watch(totalPages, (nextTotal) => {
+  if (currentPage.value > nextTotal) {
+    currentPage.value = nextTotal
+  }
 })
 
 const closePreviewModal = () => {
@@ -243,6 +362,7 @@ const closePreviewModal = () => {
   isPreviewLoading.value = false
   previewDownloadUrl.value = ''
   previewDownloadFileName.value = ''
+  previewFileUrl.value = ''
 }
 
 const openPreview = async (row, type) => {
@@ -259,9 +379,17 @@ const openPreview = async (row, type) => {
     ? `${apiBaseUrl}/api/candidate-cvs/${row.cvId}/download`
     : ''
   previewDownloadFileName.value = type === 'cv' ? String(row.cvFileName || '') : ''
+  previewFileUrl.value = type === 'cv' && row.hasDownload
+    ? `${apiBaseUrl}/api/candidate-cvs/${row.cvId}/file-preview`
+    : ''
   previewTitle.value = type === 'extracted'
     ? `AI分析檔案預覽 - ${row.extractedFileName || row.cvFileName}`
     : `CV 檔案預覽 - ${row.cvFileName}`
+
+  if (previewFileUrl.value) {
+    isPreviewLoading.value = false
+    return
+  }
 
   try {
     const response = await fetch(`${apiBaseUrl}/api/candidate-cvs/${row.cvId}/preview?type=${type}`)
@@ -539,6 +667,27 @@ const quickAddToBlacklist = async (row) => {
           :placeholder="searchPlaceholder"
         />
       </div>
+      <div v-if="showJobFilter || showStatusFilter" class="table-filters">
+        <label v-if="showJobFilter" class="filter-control job-filter-control">
+          <span>職位篩選</span>
+          <AppSelect
+            v-model="jobFilter"
+            class="filter-select"
+            :options="jobFilterOptions"
+            placeholder="全部"
+            empty-text="目前沒有職位"
+          />
+        </label>
+        <label v-if="showStatusFilter" class="filter-control status-filter-control">
+          <span>候選人狀態篩選</span>
+          <AppSelect
+            v-model="statusFilter"
+            class="filter-select"
+            :options="statusFilterOptions"
+            placeholder="全部"
+          />
+        </label>
+      </div>
       <div v-if="selectable" class="table-actions">
         <span class="selected-count-chip">已選 {{ selectedCount }}</span>
         <button
@@ -580,7 +729,12 @@ const quickAddToBlacklist = async (row) => {
     </div>
 
     <p v-if="loading" class="hint">讀取中...</p>
-    <div v-else class="table-wrap">
+    <div
+      v-else
+      class="table-wrap"
+      :class="{ 'table-wrap-paginated': paginated }"
+      :style="tableWrapStyle"
+    >
       <table class="application-table">
         <thead>
           <tr>
@@ -589,9 +743,9 @@ const quickAddToBlacklist = async (row) => {
             <th class="status-col">候選人狀態</th>
             <th class="first-interview-col">是否安排一面</th>
             <th class="remark-col">備註</th>
-            <th class="position-col">期望職位</th>
+            <th v-if="showTargetPositionColumn" class="position-col">期望職位</th>
             <th class="position-col">匹配職位</th>
-            <th class="phone-col">電話</th>
+            <th v-if="showPhoneColumn" class="phone-col">電話</th>
             <th class="file-col">CV檔案</th>
             <th class="file-col">AI分析檔案</th>
             <th class="time-col">投遞時間</th>
@@ -599,11 +753,11 @@ const quickAddToBlacklist = async (row) => {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!filteredRows.length">
+          <tr v-if="!visibleRows.length">
             <td :colspan="tableColumnCount" class="empty-cell">{{ emptyText }}</td>
           </tr>
           <tr
-            v-for="row in filteredRows"
+            v-for="row in visibleRows"
             :key="row.applicationId"
             :class="{
               'blacklist-row': row.isBlacklisted,
@@ -696,7 +850,7 @@ const quickAddToBlacklist = async (row) => {
                 {{ row.remark || '--' }}
               </div>
             </td>
-            <td class="position-col">{{ row.targetPosition || '--' }}</td>
+            <td v-if="showTargetPositionColumn" class="position-col">{{ row.targetPosition || '--' }}</td>
             <td class="position-col">
               <template v-if="row.matchedPosition">
                 <span>{{ row.matchedPosition }}</span>
@@ -706,7 +860,7 @@ const quickAddToBlacklist = async (row) => {
               </template>
               <span v-else>--</span>
             </td>
-            <td class="phone-col">{{ row.phone || '--' }}</td>
+            <td v-if="showPhoneColumn" class="phone-col">{{ row.phone || '--' }}</td>
             <td class="file-column file-col">
               <button
                 v-if="row.cvFileName"
@@ -741,6 +895,44 @@ const quickAddToBlacklist = async (row) => {
       </table>
     </div>
 
+    <div v-if="paginated" class="table-pagination" aria-label="候選人清單分頁">
+      <p class="pagination-summary">
+        <template v-if="filteredRows.length">
+          顯示 {{ paginationStart }}-{{ paginationEnd }} / 共 {{ filteredRows.length }} 筆，每頁 {{ effectivePageSize }} 筆
+        </template>
+        <template v-else>共 0 筆</template>
+      </p>
+      <div class="pagination-controls">
+        <button
+          type="button"
+          class="pagination-btn"
+          :disabled="currentPage <= 1"
+          @click="goToPage(currentPage - 1)"
+        >
+          上一頁
+        </button>
+        <button
+          v-for="page in paginationPages"
+          :key="page"
+          type="button"
+          class="pagination-page-btn"
+          :class="{ active: page === currentPage }"
+          :aria-current="page === currentPage ? 'page' : undefined"
+          @click="goToPage(page)"
+        >
+          {{ page }}
+        </button>
+        <button
+          type="button"
+          class="pagination-btn"
+          :disabled="currentPage >= totalPages"
+          @click="goToPage(currentPage + 1)"
+        >
+          下一頁
+        </button>
+      </div>
+    </div>
+
     <CandidateTextPreviewModal
       :open="isPreviewOpen"
       :title="previewTitle"
@@ -752,6 +944,7 @@ const quickAddToBlacklist = async (row) => {
       :error="previewError"
       :download-url="previewDownloadUrl"
       :download-file-name="previewDownloadFileName"
+      :file-preview-url="previewFileUrl"
       @close="closePreviewModal"
       @updated="handlePreviewUpdated"
     />
@@ -784,6 +977,76 @@ const quickAddToBlacklist = async (row) => {
   width: 100%;
 }
 
+.table-filters {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.85rem;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.filter-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  color: var(--text-base);
+  font-size: 0.84rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.filter-select {
+  width: 176px;
+}
+
+.status-filter-control .filter-select {
+  width: 196px;
+}
+
+.filter-control :deep(.app-select-trigger) {
+  min-height: 42px;
+  padding: 0.48rem 0.95rem 0.48rem 1rem;
+  border-color: rgba(151, 190, 126, 0.2);
+  border-radius: 999px;
+  background: rgba(226, 241, 216, 0.96);
+  box-shadow: none;
+}
+
+.filter-control :deep(.app-select-trigger:hover) {
+  border-color: rgba(116, 166, 86, 0.34);
+  background: rgba(218, 236, 205, 0.98);
+  box-shadow: none;
+}
+
+.filter-control :deep(.app-select-trigger:focus-visible) {
+  border-color: rgba(72, 139, 53, 0.36);
+  box-shadow: 0 0 0 4px rgba(72, 139, 53, 0.12);
+}
+
+.filter-control :deep(.app-select-value),
+.filter-control :deep(.app-select-option-label) {
+  color: var(--text-strong);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.filter-control :deep(.app-select-icon) {
+  width: 0.48rem;
+  height: 0.48rem;
+  border-color: rgba(78, 153, 55, 0.8);
+}
+
+.filter-control :deep(.app-select-menu) {
+  min-width: 100%;
+  width: max-content;
+  max-width: 320px;
+  z-index: 120;
+}
+
 .table-actions {
   display: flex;
   align-items: center;
@@ -810,8 +1073,11 @@ const quickAddToBlacklist = async (row) => {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: auto;
+}
+
+.table-wrap-paginated {
+  max-height: var(--application-table-max-height);
 }
 
 .application-table {
@@ -831,6 +1097,10 @@ const quickAddToBlacklist = async (row) => {
 .application-table th,
 .application-table td {
   min-width: 120px;
+}
+
+.application-table thead th {
+  z-index: 5;
 }
 
 .job-col,
@@ -1244,16 +1514,98 @@ const quickAddToBlacklist = async (row) => {
   color: #2f6fed;
 }
 
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-top: 0.15rem;
+}
+
+.pagination-summary {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.pagination-btn,
+.pagination-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  min-height: 36px;
+  padding: 0.45rem 0.72rem;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  color: var(--text-base);
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.pagination-btn:hover,
+.pagination-page-btn:hover {
+  border-color: rgba(47, 111, 237, 0.24);
+  color: var(--accent);
+  background: rgba(47, 111, 237, 0.08);
+  transform: translateY(-1px);
+}
+
+.pagination-page-btn.active {
+  border-color: rgba(47, 111, 237, 0.28);
+  color: #ffffff;
+  background: var(--accent);
+}
+
+.pagination-btn:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  transform: none;
+}
+
 @media (max-width: 720px) {
   .card-header,
+  .table-filters,
   .table-actions {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .table-search-wrap {
+  .table-search-wrap,
+  .filter-select,
+  .status-filter-control .filter-select {
     width: 100%;
     min-width: 0;
+  }
+
+  .filter-control {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .table-pagination {
+    align-items: stretch;
+  }
+
+  .pagination-controls {
+    justify-content: flex-start;
   }
 }
 </style>

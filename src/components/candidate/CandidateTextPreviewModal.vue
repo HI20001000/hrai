@@ -22,6 +22,7 @@ const props = defineProps({
   error: { type: String, default: '' },
   downloadUrl: { type: String, default: '' },
   downloadFileName: { type: String, default: '' },
+  filePreviewUrl: { type: String, default: '' },
 })
 
 const emit = defineEmits(['close', 'updated'])
@@ -387,6 +388,13 @@ const saveAllEdits = async () => {
               <button type="button" class="cancel-btn" :disabled="isSavingAll" @click="cancelEditAll">取消</button>
             </div>
           </div>
+          <template v-else-if="props.previewType === 'cv' && props.filePreviewUrl">
+            <iframe
+              class="cv-file-preview"
+              :src="props.filePreviewUrl"
+              title="CV 檔案預覽"
+            ></iframe>
+          </template>
           <template v-else>
             <p v-if="props.previewType === 'cv' && !props.downloadUrl" class="hint">
               原始 CV 檔案已不在儲存空間，目前只能查看已解析內容。
@@ -403,6 +411,7 @@ const saveAllEdits = async () => {
 .preview-panel {
   display: grid;
   grid-template-rows: auto 1fr;
+  width: min(1180px, calc(100vw - 2rem));
 }
 
 .header-actions {
@@ -418,6 +427,15 @@ const saveAllEdits = async () => {
   color: var(--text-strong);
   font-size: 0.92rem;
   line-height: 1.5;
+}
+
+.cv-file-preview {
+  display: block;
+  width: 100%;
+  min-height: min(78vh, 860px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  background: #ffffff;
 }
 
 .structured-preview {
