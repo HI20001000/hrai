@@ -1,6 +1,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  SCORING_DIMENSIONS,
+  normalizeScoringRubrics,
+  normalizeScoringWeights,
+} from './scoring.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -21,6 +26,7 @@ const REQUIRED_JOB_FIELDS = [
   'candidatePreference',
   'salaryRange',
   'weights',
+  'scoringRubrics',
 ]
 
 let jobDictionaryCache = null
@@ -38,7 +44,10 @@ const FIELD_LABELS = {
   'salaryRange.min': '最低薪資',
   'salaryRange.max': '最高薪資',
   weights: '權重設定',
+  scoringRubrics: '量化評分標準',
   projectExperience: '專案經驗',
+  companyExperience: '公司經歷',
+  internshipExperience: '實習經歷',
   workYears: '工作年資',
   candidatePreference: '候選人偏好',
 }
@@ -63,16 +72,6 @@ const ensureNumber = (value, fieldName, jobTitle) => {
 const normalizeStringArray = (value) =>
   Array.isArray(value) ? value.map((item) => normalizeText(item)).filter(Boolean) : value
 
-const normalizeWeights = (weights) => {
-  if (!isPlainObject(weights)) return weights
-
-  const entries = Object.entries(weights)
-  const sum = entries.reduce((acc, [, rawValue]) => acc + Number(rawValue || 0), 0)
-  const divisor = Math.abs(sum - 100) <= 0.000001 ? 100 : 1
-
-  return Object.fromEntries(entries.map(([key, value]) => [key, Number(value || 0) / divisor]))
-}
-
 const normalizeJobDefinition = (jobTitle, job = {}, fallbackJobKey = '') => {
   const workYears = Number(job.workYears ?? job.minWorkYears ?? 0)
 
@@ -94,7 +93,8 @@ const normalizeJobDefinition = (jobTitle, job = {}, fallbackJobKey = '') => {
       min: Number(job?.salaryRange?.min || 0),
       max: Number(job?.salaryRange?.max || 0),
     },
-    weights: normalizeWeights(job.weights),
+    weights: normalizeScoringWeights(job.weights),
+    scoringRubrics: normalizeScoringRubrics(job.scoringRubrics),
   }
 }
 
@@ -159,15 +159,34 @@ export const validateJobDictionary = (dictionary) => {
 
     if (!isPlainObject(job.weights)) throw new Error(`職位「${jobTitle}」的權重設定必須是物件`)
     let weightSum = 0
-    for (const [weightKey, rawValue] of Object.entries(job.weights)) {
-      const value = Number(rawValue)
+    for (const dimension of SCORING_DIMENSIONS) {
+      const value = Number(job.weights[dimension.key])
       if (!Number.isFinite(value)) {
-        throw new Error(`職位「${jobTitle}」的權重 ${getFieldLabel(weightKey)} 必須是數字`)
+        throw new Error(`職位「${jobTitle}」的權重 ${getFieldLabel(dimension.key)} 必須是數字`)
       }
       weightSum += value
     }
     if (Math.abs(weightSum - 1) > 0.000001) {
       throw new Error(`職位「${jobTitle}」的權重總和必須等於 1.0`)
+    }
+    if (!isPlainObject(job.scoringRubrics)) {
+      throw new Error(`職位「${jobTitle}」的量化評分標準必須是物件`)
+    }
+    for (const dimension of SCORING_DIMENSIONS) {
+      const rubric = job.scoringRubrics[dimension.key]
+      if (!isPlainObject(rubric)) {
+        throw new Error(`職位「${jobTitle}」缺少 ${dimension.label} 的量化評分標準`)
+      }
+      for (const level of ['high', 'medium', 'low']) {
+        const levelRubric = rubric[level]
+        if (!isPlainObject(levelRubric)) {
+          throw new Error(`職位「${jobTitle}」缺少 ${dimension.label} 的 ${level} 標準`)
+        }
+        if (!normalizeText(levelRubric.criteria)) {
+          throw new Error(`職位「${jobTitle}」的 ${dimension.label} ${level} 標準不可為空`)
+        }
+        ensureNumber(levelRubric.score, `${dimension.key}.${level}.score`, jobTitle)
+      }
     }
   }
 

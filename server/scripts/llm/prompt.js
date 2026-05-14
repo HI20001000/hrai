@@ -20,3 +20,5 @@ export const getCvLlmPrompt = () => readPromptFile('cv-feature-extraction.prompt
 export const getJobShortlistPrompt = () => readPromptFile('job-shortlist.prompt.txt', 'JOB_SHORTLIST_PROMPT')
 export const getJobRerankPrompt = () => readPromptFile('job-rerank.prompt.txt', 'JOB_RERANK_PROMPT')
 export const getJobSingleMatchPrompt = () => readPromptFile('job-single-match.prompt.txt', 'JOB_SINGLE_MATCH_PROMPT')
+export const getJobRubricSuggestionPrompt = () =>
+  readPromptFile('job-rubric-suggestions.prompt.txt', 'JOB_RUBRIC_SUGGESTION_PROMPT')

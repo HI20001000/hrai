@@ -22,6 +22,8 @@ import {
 import { extractTextFromBuffer } from './scripts/llm/text-extractors.js'
 import { getJobDictionary, loadJobDictionary, saveJobDictionary } from './scripts/jobs/dictionary.js'
 import { matchCandidateToJobPost, matchCandidateToJobs } from './scripts/llm/job-matcher.js'
+import { suggestJobScoringRubrics } from './scripts/llm/rubric-suggester.js'
+import { normalizeScoringRubrics, normalizeScoringWeights } from './scripts/jobs/scoring.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -506,6 +508,28 @@ const updateJobDictionaryHandler = async (pool, req, res) => {
   }
 }
 
+const suggestJobDictionaryRubricsHandler = async (pool, req, res) => {
+  const authedUser = await getAuthedUser(pool, req)
+  if (!authedUser) {
+    sendJson(res, 401, { message: 'Unauthorized' })
+    return
+  }
+
+  const body = await parseBody(req)
+  const job = body?.job
+  if (!job || typeof job !== 'object' || Array.isArray(job)) {
+    sendJson(res, 400, { message: '請提供職位資料' })
+    return
+  }
+
+  try {
+    const scoringRubrics = await suggestJobScoringRubrics(job)
+    sendJson(res, 200, { scoringRubrics })
+  } catch (error) {
+    sendJson(res, getErrorStatusCode(error), { message: error?.message || '生成量化標準失敗' })
+  }
+}
+
 const listJobPosts = async (pool, req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`)
   const status = normalizeJobPostStatus(url.searchParams.get('status') || '')
@@ -841,6 +865,8 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
     email: row.email,
   })
   const statusHistory = await listJobPostApplicationStatusHistory(pool, applicationId)
+  const matches = await listCandidateCvJobMatches(pool, Number(row.cvId))
+  const primaryMatch = matches[0] || null
 
   sendJson(res, 200, {
     application: {
@@ -854,6 +880,8 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
       matchedScore: Number(row.matchedScore || 0),
       matchedLevel: normalizeText(row.matchedLevel),
       matchedPosition: normalizeText(row.matchedPosition),
+      match: primaryMatch,
+      dimensionEvaluations: primaryMatch?.dimensionEvaluations || [],
       jobPostTitle: normalizeText(row.jobPostTitle),
       fullName: normalizeText(row.fullName),
       email: normalizeEmailIdentity(row.email),
@@ -1592,7 +1620,8 @@ const buildJobSnapshot = (jobKey, dictionaryJob = {}) => ({
     min: Number(dictionaryJob?.salaryRange?.min || 0),
     max: Number(dictionaryJob?.salaryRange?.max || 0),
   },
-  weights: dictionaryJob?.weights && typeof dictionaryJob.weights === 'object' ? dictionaryJob.weights : {},
+  weights: normalizeScoringWeights(dictionaryJob?.weights),
+  scoringRubrics: normalizeScoringRubrics(dictionaryJob?.scoringRubrics),
 })
 
 const getJobPostById = async (pool, jobPostId) => {
@@ -2374,6 +2403,24 @@ const replaceCandidateCvJobMatches = async (pool, candidateId, candidateCvId, ma
   }
 }
 
+const normalizeMatchDimensionEvaluations = (value) => {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item) => item && typeof item === 'object' && !Array.isArray(item))
+    .map((item) => ({
+      dimensionKey: normalizeText(item.dimensionKey),
+      dimensionLabel: normalizeText(item.dimensionLabel),
+      weight: Number(item.weight || 0),
+      level: normalizeText(item.level),
+      levelScore: Number(item.levelScore || 0),
+      weightedScore: Number(item.weightedScore || 0),
+      criteria: normalizeText(item.criteria),
+      evidence: normalizeText(item.evidence),
+      gap: normalizeText(item.gap),
+    }))
+    .filter((item) => item.dimensionKey)
+}
+
 const listCandidateCvJobMatches = async (pool, candidateCvId) => {
   const [rows] = await pool.query(
     `SELECT
@@ -2385,6 +2432,7 @@ const listCandidateCvJobMatches = async (pool, candidateCvId) => {
         reason_summary AS reasonSummary,
         strengths_json AS strengthsJson,
         gaps_json AS gapsJson,
+        raw_llm_json AS rawLlmJson,
         created_at AS createdAt
       FROM candidate_cv_job_matches
       WHERE candidate_cv_id = ?
@@ -2401,6 +2449,7 @@ const listCandidateCvJobMatches = async (pool, candidateCvId) => {
     reasonSummary: normalizeText(row.reasonSummary),
     strengths: normalizeList(parseJsonObject(row.strengthsJson), 10),
     gaps: normalizeList(parseJsonObject(row.gapsJson), 10),
+    dimensionEvaluations: normalizeMatchDimensionEvaluations(parseJsonObject(row.rawLlmJson)?.dimensionEvaluations),
     createdAt: row.createdAt,
   }))
 }
@@ -2428,6 +2477,7 @@ const buildEmbeddedMatchReport = (match = null) => {
     reasonSummary,
     strengths: normalizeList(match.strengths, 10),
     gaps: normalizeList(match.gaps, 10),
+    dimensionEvaluations: normalizeMatchDimensionEvaluations(match.dimensionEvaluations),
   }
 }
 
@@ -4095,6 +4145,9 @@ const start = async () => {
       if (url.pathname === '/api/auth/change-password' && req.method === 'POST') return changeMyPassword(pool, req, res)
       if (url.pathname === '/api/job-dictionary' && req.method === 'GET') return getJobDictionaryHandler(pool, req, res)
       if (url.pathname === '/api/job-dictionary' && req.method === 'PUT') return updateJobDictionaryHandler(pool, req, res)
+      if (url.pathname === '/api/job-dictionary/rubric-suggestions' && req.method === 'POST') {
+        return suggestJobDictionaryRubricsHandler(pool, req, res)
+      }
       if (url.pathname === '/api/job-posts' && req.method === 'GET') return listJobPosts(pool, req, res)
       if (url.pathname === '/api/job-posts' && req.method === 'POST') return createJobPost(pool, req, res)
       if (url.pathname === '/api/projects' && req.method === 'GET') return listProjects(pool, req, res, url)

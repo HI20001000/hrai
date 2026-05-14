@@ -2,6 +2,12 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
 import { resolveJobDictionary } from '../../scripts/jobDictionary.js'
+import {
+  SCORING_DIMENSIONS,
+  SCORING_LEVELS,
+  normalizeScoringRubricsForUi,
+  normalizeScoringWeightsForUi,
+} from '../../scripts/jobScoring.js'
 
 const props = defineProps({
   selectedTitle: {
@@ -20,16 +26,10 @@ const jobDictionary = ref({})
 const selectedJobTitle = ref('')
 const newJobTitle = ref('')
 const jobDraft = ref(null)
+const isSuggestingRubrics = ref(false)
 
-const WEIGHT_FIELDS = [
-  { key: 'requiredSkills', label: '必備技能' },
-  { key: 'projectExperience', label: '專案經驗' },
-  { key: 'industry', label: '行業背景' },
-  { key: 'coreResponsibilities', label: '核心職責' },
-  { key: 'certifications', label: '證照' },
-  { key: 'workYears', label: '工作年資' },
-  { key: 'candidatePreference', label: '候選人偏好' },
-]
+const WEIGHT_FIELDS = SCORING_DIMENSIONS
+const LEVEL_FIELDS = SCORING_LEVELS
 
 const parseJsonSafe = (value) => {
   try {
@@ -62,16 +62,27 @@ const createEmptyJob = (title = '') => ({
   workYears: 1,
   candidatePreference: [],
   salaryRange: { min: 0, max: 0 },
-  weights: {
-    requiredSkills: 0.25,
-    projectExperience: 0.2,
-    industry: 0.15,
-    coreResponsibilities: 0.1,
-    certifications: 0.1,
-    workYears: 0.1,
-    candidatePreference: 0.1,
-  },
+  weights: Object.fromEntries(WEIGHT_FIELDS.map((field) => [field.key, field.defaultWeight])),
+  scoringRubrics: normalizeScoringRubricsForUi({}),
 })
+
+const buildRubricDraft = (rubrics = {}) => {
+  const normalized = normalizeScoringRubricsForUi(rubrics)
+  return Object.fromEntries(
+    WEIGHT_FIELDS.map((field) => [
+      field.key,
+      Object.fromEntries(
+        LEVEL_FIELDS.map((level) => [
+          level.key,
+          {
+            criteria: normalizeText(normalized[field.key]?.[level.key]?.criteria),
+            score: String(normalized[field.key]?.[level.key]?.score ?? level.defaultScore),
+          },
+        ])
+      ),
+    ])
+  )
+}
 
 const buildJobDraft = (jobTitle, job) => {
   const source = job && typeof job === 'object' ? job : createEmptyJob(jobTitle)
@@ -91,9 +102,8 @@ const buildJobDraft = (jobTitle, job) => {
     candidatePreferenceText: (source.candidatePreference || []).join(', '),
     salaryMin: String(source?.salaryRange?.min ?? 0),
     salaryMax: String(source?.salaryRange?.max ?? 0),
-    weights: Object.fromEntries(
-      WEIGHT_FIELDS.map((field) => [field.key, String(source?.weights?.[field.key] ?? 0)])
-    ),
+    weights: normalizeScoringWeightsForUi(source?.weights),
+    scoringRubrics: buildRubricDraft(source?.scoringRubrics),
   }
 }
 
@@ -119,7 +129,21 @@ const draftToJob = (draft) => {
       max: Number(draft?.salaryMax || 0),
     },
     weights: Object.fromEntries(
-      WEIGHT_FIELDS.map((field) => [field.key, Number(draft?.weights?.[field.key] || 0)])
+      WEIGHT_FIELDS.map((field) => [field.key, Number(draft?.weights?.[field.key] || 0) / 100])
+    ),
+    scoringRubrics: Object.fromEntries(
+      WEIGHT_FIELDS.map((field) => [
+        field.key,
+        Object.fromEntries(
+          LEVEL_FIELDS.map((level) => [
+            level.key,
+            {
+              criteria: normalizeText(draft?.scoringRubrics?.[field.key]?.[level.key]?.criteria),
+              score: Number(draft?.scoringRubrics?.[field.key]?.[level.key]?.score || level.defaultScore),
+            },
+          ])
+        ),
+      ])
     ),
   }
 }
@@ -175,7 +199,7 @@ const syncExternalSelection = (title) => {
   jobDraft.value = null
 }
 
-const validateJobDraft = (jobTitle, nextJob) => {
+const validateJobDraft = (jobTitle, nextJob, { validateRubrics = true } = {}) => {
   if (!normalizeText(jobTitle)) throw new Error('職位名稱不可為空')
   if (!normalizeText(nextJob.jobKey)) throw new Error('職位編號不可為空')
   if (!normalizeText(nextJob.description)) throw new Error('職位描述不可為空')
@@ -192,7 +216,16 @@ const validateJobDraft = (jobTitle, nextJob) => {
   }
 
   const sum = Object.values(nextJob.weights).reduce((acc, value) => acc + Number(value || 0), 0)
-  if (Math.abs(sum - 1) > 0.000001) throw new Error('權重總和必須等於 1.0')
+  if (Math.abs(sum - 1) > 0.0001) throw new Error('權重百分比總和必須等於 100%')
+  if (validateRubrics) {
+    for (const field of WEIGHT_FIELDS) {
+      for (const level of LEVEL_FIELDS) {
+        const rubric = nextJob.scoringRubrics[field.key]?.[level.key]
+        if (!normalizeText(rubric?.criteria)) throw new Error(`${field.label} 的${level.label}標準不可為空`)
+        if (!Number.isFinite(Number(rubric?.score))) throw new Error(`${field.label} 的${level.label}分值必須是數字`)
+      }
+    }
+  }
 }
 
 const commitSelectedJobDraft = () => {
@@ -362,6 +395,47 @@ const saveJobDictionaryConfig = async () => {
   }
 }
 
+const applyRubricSuggestions = async () => {
+  if (!jobDraft.value || isSuggestingRubrics.value) return
+  const auth = getAuthContext()
+  if (!auth.ok) {
+    jobDictionaryError.value = auth.message
+    return
+  }
+
+  let nextJob = null
+  try {
+    nextJob = draftToJob(jobDraft.value)
+    validateJobDraft(normalizeText(jobDraft.value.title), nextJob, { validateRubrics: false })
+  } catch (error) {
+    jobDictionaryError.value = error?.message || '請先補齊職位資料'
+    jobDictionaryMessage.value = ''
+    return
+  }
+
+  isSuggestingRubrics.value = true
+  jobDictionaryError.value = ''
+  jobDictionaryMessage.value = ''
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/job-dictionary/rubric-suggestions`, {
+      method: 'POST',
+      headers: auth.headers,
+      body: JSON.stringify({ job: nextJob }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      jobDictionaryError.value = data.message || '生成量化標準失敗'
+      return
+    }
+    jobDraft.value.scoringRubrics = buildRubricDraft(data.scoringRubrics)
+    jobDictionaryMessage.value = '已生成量化標準，請檢查後套用或儲存'
+  } catch {
+    jobDictionaryError.value = '生成量化標準失敗'
+  } finally {
+    isSuggestingRubrics.value = false
+  }
+}
+
 watch(
   () => props.selectedTitle,
   (value) => {
@@ -521,12 +595,59 @@ onMounted(() => {
           </div>
 
           <section class="weight-section">
-            <p class="weight-title">權重</p>
-            <div class="weight-grid">
-              <label v-for="field in WEIGHT_FIELDS" :key="field.key" class="field">
-                <span>{{ field.label }}</span>
-                <input v-model="jobDraft.weights[field.key]" type="number" min="0" max="1" step="0.01" />
-              </label>
+            <div class="rubric-header">
+              <div>
+                <p class="weight-title">權重與評分標準</p>
+                <p class="rubric-hint">權重以百分比填寫，總和需為 100%。高/中/低分值會用於後端計算匹配總分。</p>
+              </div>
+              <button
+                type="button"
+                class="secondary-btn"
+                :disabled="jobDictionaryLoading || jobDictionarySaving || isSuggestingRubrics"
+                @click="applyRubricSuggestions"
+              >
+                {{ isSuggestingRubrics ? '生成中...' : 'AI 生成量化標準' }}
+              </button>
+            </div>
+            <div class="rubric-table-wrap">
+              <table class="rubric-table">
+                <thead>
+                  <tr>
+                    <th>維度</th>
+                    <th>權重 %</th>
+                    <th v-for="level in LEVEL_FIELDS" :key="level.key">{{ level.label }}標準 / 分值</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="field in WEIGHT_FIELDS" :key="field.key">
+                    <th>{{ field.label }}</th>
+                    <td>
+                      <input
+                        v-model="jobDraft.weights[field.key]"
+                        class="weight-input"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                      />
+                    </td>
+                    <td v-for="level in LEVEL_FIELDS" :key="`${field.key}-${level.key}`">
+                      <textarea
+                        v-model="jobDraft.scoringRubrics[field.key][level.key].criteria"
+                        rows="3"
+                      />
+                      <input
+                        v-model="jobDraft.scoringRubrics[field.key][level.key].score"
+                        class="score-input"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                      />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </section>
 
@@ -569,6 +690,12 @@ onMounted(() => {
 .sidebar-title,
 .weight-title {
   margin: 0;
+}
+
+.rubric-hint {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
 }
 
 .job-list-item strong,
@@ -657,8 +784,7 @@ onMounted(() => {
   gap: 1rem;
 }
 
-.editor-grid,
-.weight-grid {
+.editor-grid {
   display: grid;
   gap: 0.85rem;
 }
@@ -667,12 +793,57 @@ onMounted(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.weight-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
 .full-width {
   grid-column: 1 / -1;
+}
+
+.rubric-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.rubric-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+}
+
+.rubric-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.rubric-table th,
+.rubric-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+  text-align: left;
+}
+
+.rubric-table thead th {
+  background: rgba(241, 245, 249, 0.82);
+  color: var(--text-strong);
+}
+
+.rubric-table tbody th {
+  width: 110px;
+  color: var(--text-strong);
+}
+
+.rubric-table textarea,
+.rubric-table input {
+  width: 100%;
+}
+
+.score-input,
+.weight-input {
+  margin-top: 0.5rem;
 }
 
 .raw-preview {
@@ -689,14 +860,14 @@ onMounted(() => {
 
 @media (max-width: 960px) {
   .dictionary-layout,
-  .editor-grid,
-  .weight-grid {
+  .editor-grid {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 720px) {
-  .editor-header {
+  .editor-header,
+  .rubric-header {
     flex-direction: column;
     align-items: stretch;
   }

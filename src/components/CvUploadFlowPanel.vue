@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import CvExtractedFilePreview from './CvExtractedFilePreview.vue'
+import MatchDimensionBreakdown from './MatchDimensionBreakdown.vue'
 import ProjectExperiencesField from './ProjectExperiencesField.vue'
 import {
   EDITABLE_EXTRACTED_FIELDS,
@@ -1324,6 +1325,7 @@ const clearBatchQueueLegacy = () => {
         <p><strong>匹配分數：</strong>{{ singleMatchResult?.application?.matchedScore ?? singleMatchResult?.match?.matchScore ?? '--' }}</p>
         <p><strong>匹配等級：</strong>{{ singleMatchResult?.application?.matchedLevel || singleMatchResult?.match?.matchLevel || '--' }}</p>
         <p><strong>投遞編號：</strong>{{ singleMatchResult?.application?.id || '--' }}</p>
+        <MatchDimensionBreakdown :evaluations="singleMatchResult?.match?.dimensionEvaluations || []" />
       </div>
 
       <div class="confirm-actions">

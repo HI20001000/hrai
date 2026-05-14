@@ -8,6 +8,12 @@ import {
   buildProjectExperiencesSummary,
   normalizeProjectExperiences,
 } from './project-experiences.js'
+import {
+  SCORING_DIMENSIONS,
+  calculateWeightedMatch,
+  normalizeScoringRubrics,
+  normalizeScoringWeights,
+} from '../jobs/scoring.js'
 import { LlmOutputFormatError } from '../errors.js'
 
 const normalizeText = (value) => String(value ?? '').trim()
@@ -93,6 +99,31 @@ const assertScore = (value, fieldName) => {
   }
 }
 
+const assertDimensionEvaluations = (value, fieldName) => {
+  if (!Array.isArray(value)) {
+    throw new LlmOutputFormatError(`Field ${fieldName} must be an array`)
+  }
+  const allowedKeys = new Set(SCORING_DIMENSIONS.map((dimension) => dimension.key))
+  const seen = new Set()
+  for (const [index, item] of value.entries()) {
+    if (!isPlainObject(item)) {
+      throw new LlmOutputFormatError(`${fieldName}[${index}] must be an object`)
+    }
+    assertString(item.dimensionKey, `${fieldName}[${index}].dimensionKey`, { allowEmpty: false })
+    const dimensionKey = normalizeText(item.dimensionKey)
+    if (!allowedKeys.has(dimensionKey)) {
+      throw new LlmOutputFormatError(`${fieldName}[${index}].dimensionKey is not supported`)
+    }
+    if (seen.has(dimensionKey)) {
+      throw new LlmOutputFormatError(`${fieldName}[${index}].dimensionKey is duplicated`)
+    }
+    seen.add(dimensionKey)
+    assertMatchLevel(item.level, `${fieldName}[${index}].level`)
+    assertString(item.evidence, `${fieldName}[${index}].evidence`)
+    assertString(item.gap, `${fieldName}[${index}].gap`)
+  }
+}
+
 const parseRequiredJsonObject = (content, label) => {
   const payload = parseLlmContentToJson(content)
   if (!isPlainObject(payload)) {
@@ -146,11 +177,10 @@ const validateRankedPayload = (payload, dictionary) => {
       throw new LlmOutputFormatError(`rankedJobs[${index}] must be an object`)
     }
     assertString(item.jobKey, `rankedJobs[${index}].jobKey`, { allowEmpty: false })
-    assertScore(item.matchScore, `rankedJobs[${index}].matchScore`)
-    assertMatchLevel(item.matchLevel, `rankedJobs[${index}].matchLevel`)
     assertStringArray(item.strengths, `rankedJobs[${index}].strengths`, { min: 1, max: 3 })
     assertStringArray(item.gaps, `rankedJobs[${index}].gaps`, { min: 1, max: 3 })
     assertString(item.reasonSummary, `rankedJobs[${index}].reasonSummary`)
+    assertDimensionEvaluations(item.dimensionEvaluations, `rankedJobs[${index}].dimensionEvaluations`)
     if (!findDictionaryJobKey(dictionary, item.jobKey)) {
       throw new LlmOutputFormatError(`rankedJobs[${index}].jobKey is not in job dictionary`)
     }
@@ -163,10 +193,9 @@ const validateSingleMatchPayload = (payload, job) => {
     assertString(payload[key], key)
   }
   assertString(payload.reasonSummary, 'reasonSummary')
-  assertScore(payload.matchScore, 'matchScore')
-  assertMatchLevel(payload.matchLevel, 'matchLevel')
   assertStringArray(payload.strengths, 'strengths', { min: 1, max: 3 })
   assertStringArray(payload.gaps, 'gaps', { min: 1, max: 3 })
+  assertDimensionEvaluations(payload.dimensionEvaluations, 'dimensionEvaluations')
 }
 
 export const buildCandidateProfile = (extracted = {}) => {
@@ -232,7 +261,9 @@ export const buildFullJobCards = (dictionary = {}, jobKeys = []) =>
           min: Number(job?.salaryRange?.min || 0),
           max: Number(job?.salaryRange?.max || 0),
         },
-        weights: job?.weights && typeof job.weights === 'object' ? job.weights : {},
+        weights: normalizeScoringWeights(job?.weights),
+        scoringRubrics: normalizeScoringRubrics(job?.scoringRubrics),
+        scoringDimensions: SCORING_DIMENSIONS.map(({ key, label }) => ({ key, label })),
       }
     })
     .filter(Boolean)
@@ -257,7 +288,9 @@ export const buildSingleJobCard = (jobSnapshot = {}) => {
       min: Number(snapshot?.salaryRange?.min || 0),
       max: Number(snapshot?.salaryRange?.max || 0),
     },
-    weights: snapshot?.weights && typeof snapshot.weights === 'object' ? snapshot.weights : {},
+    weights: normalizeScoringWeights(snapshot?.weights),
+    scoringRubrics: normalizeScoringRubrics(snapshot?.scoringRubrics),
+    scoringDimensions: SCORING_DIMENSIONS.map(({ key, label }) => ({ key, label })),
   }
 }
 
@@ -290,19 +323,24 @@ const normalizeRankedJobs = (payload, dictionary) => {
     if (!dictionaryKey || seen.has(dictionaryKey)) continue
     seen.add(dictionaryKey)
     const job = dictionary[dictionaryKey]
-    const score = normalizeScore(item?.matchScore)
+    const scoring = calculateWeightedMatch({
+      weights: job?.weights,
+      scoringRubrics: job?.scoringRubrics,
+      dimensionEvaluations: item?.dimensionEvaluations,
+    })
     deduped.push({
       jobKey: getJobOutputKey(dictionaryKey, job),
       jobTitle: getJobTitle(dictionaryKey, job),
-      matchScore: score,
-      matchLevel: normalizeMatchLevel(item?.matchLevel),
+      matchScore: scoring.matchScore,
+      matchLevel: scoring.matchLevel,
       strengths: normalizeList(item?.strengths, 3),
       gaps: normalizeList(item?.gaps, 3),
       reasonSummary: normalizeText(item?.reasonSummary),
+      dimensionEvaluations: scoring.dimensionEvaluations,
     })
     if (deduped.length >= 3) break
   }
-  return deduped
+  return deduped.sort((a, b) => b.matchScore - a.matchScore)
 }
 
 export const matchCandidateToJobs = async (extracted, dictionary) => {
@@ -355,15 +393,21 @@ export const matchCandidateToJobPost = async (extracted, jobSnapshot) => {
   )
   const payload = parseRequiredJsonObject(content, 'Single-job match')
   validateSingleMatchPayload(payload, job)
+  const scoring = calculateWeightedMatch({
+    weights: job.weights,
+    scoringRubrics: job.scoringRubrics,
+    dimensionEvaluations: payload.dimensionEvaluations,
+  })
 
   return {
     jobKey: job.jobKey,
     jobTitle: job.title,
     matchedPosition: job.title,
-    matchScore: normalizeScore(payload.matchScore),
-    matchLevel: normalizeMatchLevel(payload.matchLevel),
+    matchScore: scoring.matchScore,
+    matchLevel: scoring.matchLevel,
     strengths: normalizeList(payload.strengths, 3),
     gaps: normalizeList(payload.gaps, 3),
     reasonSummary: normalizeText(payload.reasonSummary),
+    dimensionEvaluations: scoring.dimensionEvaluations,
   }
 }

@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import AppSelect from '../components/AppSelect.vue'
+import MatchDimensionBreakdown from '../components/MatchDimensionBreakdown.vue'
 import CandidateApplicationsTable from '../components/candidate/CandidateApplicationsTable.vue'
 import CandidateCvUploadModal from '../components/candidate/CandidateCvUploadModal.vue'
 import {
@@ -678,6 +679,16 @@ onUnmounted(() => {
               </tbody>
             </table>
           </div>
+
+          <section
+            v-if="activeApplication.dimensionEvaluations?.length || activeApplication.match?.dimensionEvaluations?.length"
+            class="match-breakdown-section"
+          >
+            <h3>匹配維度評分</h3>
+            <MatchDimensionBreakdown
+              :evaluations="activeApplication.dimensionEvaluations?.length ? activeApplication.dimensionEvaluations : activeApplication.match?.dimensionEvaluations || []"
+            />
+          </section>
         </section>
 
         <section class="card status-card">
@@ -876,6 +887,15 @@ onUnmounted(() => {
 .detail-table th,
 .detail-table td {
   white-space: nowrap;
+}
+
+.match-breakdown-section {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.match-breakdown-section h3 {
+  margin: 0;
 }
 
 .detail-remark-cell {

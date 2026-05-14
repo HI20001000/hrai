@@ -20,6 +20,7 @@ const looksLikeJobEntry = (value) => {
     'candidatePreference',
     'salaryRange',
     'weights',
+    'scoringRubrics',
   ].some((key) => key in value)
 }
 
