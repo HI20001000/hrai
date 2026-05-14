@@ -3332,16 +3332,21 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
       LEFT JOIN candidate_cv_extractions extracts ON extracts.candidate_cv_id = cv.id
       ORDER BY app.created_at DESC, app.id DESC`
   )
+  const statusHistories = await listJobPostApplicationStatusHistories(
+    pool,
+    rows.map((row) => row.applicationId)
+  )
 
   sendJson(res, 200, {
     applications: rows.map((row) => {
+      const applicationId = Number(row.applicationId)
       const match = findCandidateBlacklistMatch(blacklistEntries, {
         phone: row.phone,
         email: row.email,
       })
 
       return {
-        applicationId: Number(row.applicationId),
+        applicationId,
         applicationStatus: normalizeApplicationStatus(row.applicationStatus),
         firstInterviewArrangement: normalizeFirstInterviewArrangement(row.firstInterviewArrangement),
         remark: normalizeText(row.remark),
@@ -3362,6 +3367,7 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
         hasDownload: hasCandidateCvStoredFile(row.storageKey),
         hasCvPreview: Number(row.hasCvPreview || 0) === 1,
         hasExtractedPreview: Number(row.hasExtractedPreview || 0) === 1,
+        statusHistory: statusHistories.get(applicationId) || [],
         ...buildCandidateBlacklistFlags(match, {
           phone: row.phone,
           email: row.email,

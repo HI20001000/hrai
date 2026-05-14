@@ -34,7 +34,6 @@ const activeApplicationId = ref(null)
 const activeApplication = ref(null)
 const isDetailLoading = ref(false)
 const detailError = ref('')
-const isStatusEditorOpen = ref(false)
 const isRemarkEditorOpen = ref(false)
 const isBlacklistEditorOpen = ref(false)
 const statusDraft = ref('')
@@ -124,6 +123,12 @@ const statusModalEditorTitle = computed(() =>
   isEditingStatusHistory.value ? '編輯狀態記錄' : '新增狀態記錄'
 )
 
+const isStatusDraftChanged = computed(
+  () =>
+    normalizeCandidateApplicationStatus(statusDraft.value, '') !==
+    normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus, '')
+)
+
 const activeDownloadUrl = computed(() =>
   activeApplication.value?.hasDownload && activeApplication.value?.cvId
     ? `${apiBaseUrl}/api/candidate-cvs/${activeApplication.value.cvId}/download`
@@ -147,7 +152,6 @@ const resetDetailDrafts = (application = activeApplication.value) => {
   firstInterviewDraft.value = normalizeFirstInterviewArrangement(application?.firstInterviewArrangement)
   remarkDraft.value = String(application?.remark || '')
   blacklistReasonDraft.value = String(application?.blacklistEntry?.reason || application?.blacklistReason || '')
-  isStatusEditorOpen.value = false
   isRemarkEditorOpen.value = false
   isBlacklistEditorOpen.value = false
 }
@@ -277,7 +281,7 @@ const saveStatusModalChanges = async () => {
     message.value = historyId ? '已更新狀態記錄' : '已新增狀態記錄'
     await loadApplicationTable()
     await loadApplicationDetail(applicationId, 'list')
-    if (savedHistoryId) {
+    if (historyId && savedHistoryId) {
       const savedHistory = activeStatusHistory.value.find((history) => Number(history.id) === savedHistoryId)
       if (savedHistory) {
         editStatusHistoryDraft(savedHistory)
@@ -444,16 +448,6 @@ const submitProjectTransfer = async () => {
   }
 }
 
-const startStatusEditor = () => {
-  statusDraft.value = normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus)
-  isStatusEditorOpen.value = true
-}
-
-const cancelStatusEditor = () => {
-  statusDraft.value = normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus)
-  isStatusEditorOpen.value = false
-}
-
 const saveNewStatus = async () => {
   const applicationId = Number(activeApplication.value?.applicationId || 0)
   const nextStatus = normalizeCandidateApplicationStatus(statusDraft.value, '')
@@ -463,7 +457,6 @@ const saveNewStatus = async () => {
     return
   }
   if (nextStatus === currentStatus) {
-    isStatusEditorOpen.value = false
     return
   }
 
@@ -474,7 +467,6 @@ const saveNewStatus = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ applicationStatus: nextStatus }),
     })
-    isStatusEditorOpen.value = false
     message.value = `已更新狀態為「${getCandidateApplicationStatusLabel(nextStatus)}」`
     await refreshActiveApplication()
   } catch (error) {
@@ -807,16 +799,7 @@ onUnmounted(() => {
             <h3>候選人狀態</h3>
 
             <div v-if="pageMode === 'edit'" class="status-controls">
-              <button
-                v-if="!isStatusEditorOpen"
-                type="button"
-                class="create-status-btn"
-                :disabled="isSavingStatus"
-                @click="startStatusEditor"
-              >
-                點擊創建新狀態
-              </button>
-              <div v-else class="inline-editor status-inline-editor">
+              <div class="inline-editor status-inline-editor">
                 <AppSelect
                   class="compact-select"
                   :model-value="statusDraft"
@@ -825,11 +808,13 @@ onUnmounted(() => {
                   :disabled="isSavingStatus"
                   @update:model-value="statusDraft = $event"
                 />
-                <button type="button" class="secondary-btn compact-btn" :disabled="isSavingStatus" @click="cancelStatusEditor">
-                  取消
-                </button>
-                <button type="button" class="confirm-btn compact-btn" :disabled="isSavingStatus" @click="saveNewStatus">
-                  {{ isSavingStatus ? '保存中...' : '確認' }}
+                <button
+                  type="button"
+                  class="confirm-btn compact-btn"
+                  :disabled="isSavingStatus || !isStatusDraftChanged"
+                  @click="saveNewStatus"
+                >
+                  {{ isSavingStatus ? '保存中...' : '保存狀態' }}
                 </button>
               </div>
 
@@ -922,15 +907,10 @@ onUnmounted(() => {
 
         <template v-else-if="activeApplication">
           <div class="status-editor-header">
-            <h4>{{ statusModalEditorTitle }}</h4>
-            <button
-              type="button"
-              class="secondary-btn compact-btn"
-              :disabled="isStatusModalBusy"
-              @click="startNewStatusHistoryDraft"
-            >
-              新增狀態記錄
-            </button>
+            <div>
+              <h4>{{ statusModalEditorTitle }}</h4>
+              <p class="subtle">點選下方記錄可修改；未選記錄時會新增一筆狀態記錄。</p>
+            </div>
           </div>
 
           <div class="status-modal-editor">
@@ -1002,14 +982,22 @@ onUnmounted(() => {
         </template>
 
         <div class="modal-actions">
-          <button type="button" class="secondary-btn" :disabled="isStatusModalBusy" @click="closeApplicationStatusModal">取消</button>
+          <button
+            v-if="isEditingStatusHistory"
+            type="button"
+            class="secondary-btn"
+            :disabled="isStatusModalBusy"
+            @click="startNewStatusHistoryDraft"
+          >
+            改為新增
+          </button>
           <button
             type="button"
             class="primary-btn"
             :disabled="isStatusModalBusy || !activeApplication"
             @click="saveStatusModalChanges"
           >
-            {{ isSavingStatusModal ? '保存中...' : '保存' }}
+            {{ isSavingStatusModal ? '保存中...' : (isEditingStatusHistory ? '更新狀態記錄' : '新增狀態記錄') }}
           </button>
         </div>
       </div>
@@ -1192,20 +1180,6 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-.create-status-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 38px;
-  padding: 0.48rem 1.05rem;
-  border: 1px solid rgba(31, 143, 99, 0.2);
-  border-radius: var(--radius-pill);
-  color: #176b4c;
-  background: rgba(31, 143, 99, 0.18);
-  font-weight: 700;
-  cursor: pointer;
-}
-
 .inline-editor,
 .first-interview-editor {
   display: flex;
@@ -1267,6 +1241,10 @@ onUnmounted(() => {
   font-size: 1rem;
 }
 
+.status-editor-header .subtle {
+  margin-top: 0.28rem;
+}
+
 .status-modal-editor {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1276,6 +1254,10 @@ onUnmounted(() => {
 .status-modal-editor textarea {
   min-height: 98px;
   resize: vertical;
+}
+
+.status-modal .modal-actions {
+  justify-content: flex-end;
 }
 
 .status-history-section {

@@ -201,8 +201,24 @@ const getStatusToneClass = (status) => {
   return `status-tone-${normalized}`
 }
 
-const isCurrentStatus = (row, status) =>
-  normalizeCandidateApplicationStatus(row?.applicationStatus, '') === status
+const getRowStatusHistory = (row) => {
+  const history = Array.isArray(row?.statusHistory) ? row.statusHistory : []
+  if (history.length) return history
+
+  return [
+    {
+      id: 0,
+      applicationStatus: row?.applicationStatus,
+      firstInterviewArrangement: row?.firstInterviewArrangement,
+      remark: row?.remark,
+      createdAt: row?.createdAt,
+      updatedAt: row?.createdAt,
+    },
+  ]
+}
+
+const getStatusHistoryKey = (history, index) =>
+  history?.id || `${history?.applicationStatus || 'status'}-${history?.createdAt || index}`
 
 const getBlacklistMatchedByLabel = (value) => {
   const normalized = String(value || '').trim().toLowerCase()
@@ -833,16 +849,26 @@ const quickAddToBlacklist = async (row) => {
                   {{ getCandidateApplicationStatusLabel(row.applicationStatus) }}
                 </span>
 
-                <div v-if="statusActionable" class="status-flow-popover" role="tooltip">
-                  <p class="status-flow-title">狀態流程</p>
-                  <ol class="status-flow-list">
+                <div v-if="statusActionable" class="status-history-popover" role="tooltip">
+                  <p class="status-history-title">狀態記錄</p>
+                  <ol class="status-history-list">
                     <li
-                      v-for="option in CANDIDATE_APPLICATION_STATUS_OPTIONS"
-                      :key="option.value"
-                      :class="{ current: isCurrentStatus(row, option.value) }"
+                      v-for="(history, index) in getRowStatusHistory(row)"
+                      :key="getStatusHistoryKey(history, index)"
+                      :class="{ current: index === getRowStatusHistory(row).length - 1 }"
                     >
-                      <span class="flow-dot" aria-hidden="true"></span>
-                      <span>{{ option.label }}</span>
+                      <span class="history-dot" aria-hidden="true"></span>
+                      <span class="history-main">
+                        <strong>{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</strong>
+                        <small>
+                          {{ formatDateTime(history.createdAt) }}
+                          <template v-if="history.updatedAt"> / {{ formatDateTime(history.updatedAt) }}</template>
+                        </small>
+                        <em v-if="history.firstInterviewArrangement">
+                          {{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
+                        </em>
+                        <span v-if="history.remark" class="history-remark">{{ history.remark }}</span>
+                      </span>
                     </li>
                   </ol>
                 </div>
@@ -1550,48 +1576,55 @@ const quickAddToBlacklist = async (row) => {
   z-index: 8;
 }
 
-.status-flow-popover {
+.status-cell-wrap.actionable:hover,
+.status-cell-wrap.actionable:focus-within {
+  z-index: 170;
+}
+
+.status-history-popover {
   position: absolute;
   left: 0;
   top: calc(100% + 0.55rem);
   z-index: 160;
   display: none;
-  width: 292px;
-  max-height: 380px;
+  width: min(340px, calc(100vw - 2rem));
+  max-height: 260px;
   overflow: auto;
   padding: 0.85rem;
   border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 16px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.98);
   box-shadow:
     0 24px 54px rgba(15, 23, 42, 0.14),
     0 8px 20px rgba(47, 111, 237, 0.08);
+  pointer-events: none;
   white-space: normal;
 }
 
-.status-cell-wrap.actionable:hover .status-flow-popover,
-.status-cell-wrap.actionable:focus-within .status-flow-popover {
+.status-cell-wrap.actionable:hover .status-history-popover,
+.status-cell-wrap.actionable:focus-within .status-history-popover {
   display: block;
 }
 
-.status-flow-title {
+.status-history-title {
   margin: 0 0 0.6rem;
   color: var(--text-strong);
   font-size: 0.86rem;
   font-weight: 800;
 }
 
-.status-flow-list {
+.status-history-list {
   display: grid;
-  gap: 0.42rem;
+  gap: 0.6rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.status-flow-list li {
-  display: flex;
-  align-items: center;
+.status-history-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
   gap: 0.5rem;
   min-width: 0;
   color: var(--text-base);
@@ -1599,23 +1632,55 @@ const quickAddToBlacklist = async (row) => {
   font-weight: 650;
 }
 
-.status-flow-list li.current {
+.status-history-list li.current {
   color: var(--accent);
-  font-weight: 800;
 }
 
-.flow-dot {
+.history-dot {
   flex: none;
   width: 0.5rem;
   height: 0.5rem;
+  margin-top: 0.32rem;
   border: 2px solid currentColor;
   border-radius: 999px;
   opacity: 0.52;
 }
 
-.status-flow-list li.current .flow-dot {
+.status-history-list li.current .history-dot {
   background: currentColor;
   opacity: 1;
+}
+
+.history-main {
+  display: grid;
+  gap: 0.16rem;
+  min-width: 0;
+}
+
+.history-main strong {
+  color: var(--text-strong);
+  font-size: 0.83rem;
+  line-height: 1.35;
+}
+
+.status-history-list li.current .history-main strong {
+  color: var(--accent);
+}
+
+.history-main small,
+.history-main em,
+.history-remark {
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.history-remark {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .status-tone-screening,
