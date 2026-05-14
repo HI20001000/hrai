@@ -1676,7 +1676,6 @@ const listJobPostApplicationStatusHistory = async (pool, applicationId) => {
   return rows.map((row) => buildApplicationStatusHistoryPayload(row))
 }
 
-<<<<<<< HEAD
 const listJobPostApplicationStatusHistories = async (pool, applicationIds = []) => {
   const ids = [...new Set(applicationIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
   if (!ids.length) return new Map()
@@ -1706,8 +1705,6 @@ const listJobPostApplicationStatusHistories = async (pool, applicationIds = []) 
   return grouped
 }
 
-=======
->>>>>>> 061f2623360eadde363123cbebb57ebbcbd4db2f
 const getLatestJobPostApplicationStatusHistory = async (pool, applicationId) => {
   const [rows] = await pool.query(
     `SELECT
