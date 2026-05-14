@@ -31,6 +31,19 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
+const pickProjectResponsibilities = (...values) => {
+  const responsibilities = []
+  const seen = new Set()
+  for (const value of values) {
+    for (const item of normalizeProjectResponsibilities(value)) {
+      if (seen.has(item)) continue
+      seen.add(item)
+      responsibilities.push(item)
+    }
+  }
+  return responsibilities
+}
+
 const cloneEditableGroups = (value) => {
   if (!Array.isArray(value)) return []
   return value
@@ -53,17 +66,17 @@ const cloneEditableGroups = (value) => {
             durationMonths: Number(project?.durationMonths || 0) > 0
               ? Math.round(Number(project.durationMonths))
               : computeProjectDurationMonths(project?.durationText),
-            responsibilities: normalizeProjectResponsibilities(
-              project?.responsibilities ||
-                project?.responsibilityText ||
-                project?.responsibility ||
-                project?.projectResponsibilities ||
-                project?.roleResponsibilities ||
-                project?.details ||
-                project?.content ||
-                project?.highlights ||
-                project?.achievements ||
-                project?.tasks
+            responsibilities: pickProjectResponsibilities(
+              project?.responsibilities || [],
+              project?.responsibilityText,
+              project?.responsibility,
+              project?.projectResponsibilities,
+              project?.roleResponsibilities,
+              project?.details,
+              project?.content,
+              project?.highlights,
+              project?.achievements,
+              project?.tasks
             ),
           }))
           : [createEmptyProjectExperienceItem()],

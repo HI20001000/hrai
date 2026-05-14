@@ -56,6 +56,20 @@ const pickFirstProjectText = (...values) => {
   return ''
 }
 
+const pickProjectResponsibilityList = (...values) => {
+  const responsibilities = []
+  const seen = new Set()
+  for (const value of values) {
+    for (const item of normalizeProjectResponsibilityList(value, MAX_PROJECT_RESPONSIBILITIES)) {
+      if (seen.has(item)) continue
+      seen.add(item)
+      responsibilities.push(item)
+      if (responsibilities.length >= MAX_PROJECT_RESPONSIBILITIES) return responsibilities
+    }
+  }
+  return responsibilities
+}
+
 const PRESENT_TOKEN_PATTERN = /^(至今|現在|现今|目前|present|current|now)$/i
 
 const resolveCurrentYearMonth = () => {
@@ -190,18 +204,18 @@ export const normalizeProjectItem = (value) => {
     value.timespan,
     value.period
   )
-  const responsibilities = normalizeProjectResponsibilityList(
+  const responsibilities = pickProjectResponsibilityList(
     value.responsibilities ??
-      value.responsibilityText ??
-      value.responsibility ??
-      value.projectResponsibilities ??
-      value.roleResponsibilities ??
-      value.details ??
-      value.content ??
-      value.highlights ??
-      value.achievements ??
-      value.tasks,
-    MAX_PROJECT_RESPONSIBILITIES
+      [],
+    value.responsibilityText,
+    value.responsibility,
+    value.projectResponsibilities,
+    value.roleResponsibilities,
+    value.details,
+    value.content,
+    value.highlights,
+    value.achievements,
+    value.tasks
   )
   const durationMonths =
     typeof value.durationMonths === 'number' && Number.isFinite(value.durationMonths) && value.durationMonths > 0
