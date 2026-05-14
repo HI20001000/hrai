@@ -22,6 +22,7 @@ const isBulkDeleting = ref(false)
 const isUploadModalOpen = ref(false)
 const isStatusModalOpen = ref(false)
 const isSavingStatusModal = ref(false)
+const editingStatusHistoryId = ref(null)
 const isProjectTransferModalOpen = ref(false)
 const isProjectTransferSaving = ref(false)
 const projectRows = ref([])
@@ -117,6 +118,12 @@ const canEditFirstInterviewDraft = computed(
 
 const isStatusModalBusy = computed(() => isDetailLoading.value || isSavingStatusModal.value)
 
+const isEditingStatusHistory = computed(() => Number(editingStatusHistoryId.value || 0) > 0)
+
+const statusModalEditorTitle = computed(() =>
+  isEditingStatusHistory.value ? '編輯狀態記錄' : '新增狀態記錄'
+)
+
 const activeDownloadUrl = computed(() =>
   activeApplication.value?.hasDownload && activeApplication.value?.cvId
     ? `${apiBaseUrl}/api/candidate-cvs/${activeApplication.value.cvId}/download`
@@ -143,6 +150,22 @@ const resetDetailDrafts = (application = activeApplication.value) => {
   isStatusEditorOpen.value = false
   isRemarkEditorOpen.value = false
   isBlacklistEditorOpen.value = false
+}
+
+const startNewStatusHistoryDraft = () => {
+  editingStatusHistoryId.value = null
+  statusDraft.value = normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus)
+  firstInterviewDraft.value = normalizeFirstInterviewArrangement(activeApplication.value?.firstInterviewArrangement)
+  remarkDraft.value = ''
+}
+
+const editStatusHistoryDraft = (history) => {
+  const historyId = Number(history?.id || 0)
+  if (!historyId || isStatusModalBusy.value) return
+  editingStatusHistoryId.value = historyId
+  statusDraft.value = normalizeCandidateApplicationStatus(history?.applicationStatus)
+  firstInterviewDraft.value = normalizeFirstInterviewArrangement(history?.firstInterviewArrangement)
+  remarkDraft.value = String(history?.remark || '')
 }
 
 const loadApplicationTable = async () => {
@@ -204,8 +227,10 @@ const openApplicationStatusModal = async (row) => {
   message.value = ''
   activeApplicationId.value = applicationId
   activeApplication.value = null
+  editingStatusHistoryId.value = null
   isStatusModalOpen.value = true
   await loadApplicationDetail(applicationId, 'list')
+  startNewStatusHistoryDraft()
 }
 
 const closeApplicationStatusModal = () => {
@@ -213,6 +238,7 @@ const closeApplicationStatusModal = () => {
   isStatusModalOpen.value = false
   activeApplicationId.value = null
   activeApplication.value = null
+  editingStatusHistoryId.value = null
   detailError.value = ''
   resetDetailDrafts(null)
 }
@@ -225,42 +251,45 @@ const saveStatusModalChanges = async () => {
     return
   }
 
-  const payload = {}
-  const currentStatus = normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus)
-  if (nextStatus !== currentStatus) {
-    payload.applicationStatus = nextStatus
-  }
-
-  const nextRemark = String(remarkDraft.value || '').trim()
-  const currentRemark = String(activeApplication.value?.remark || '').trim()
-  if (nextRemark !== currentRemark) {
-    payload.remark = nextRemark
-  }
-
-  const nextFirstInterview = normalizeFirstInterviewArrangement(firstInterviewDraft.value, '')
-  const currentFirstInterview = normalizeFirstInterviewArrangement(activeApplication.value?.firstInterviewArrangement)
-  if (canEditFirstInterviewDraft.value && nextFirstInterview !== currentFirstInterview) {
-    payload.firstInterviewArrangement = nextFirstInterview
-  }
-
-  if (!Object.keys(payload).length) {
-    message.value = '沒有變更可儲存'
-    return
+  const historyId = Number(editingStatusHistoryId.value || 0)
+  const nextFirstInterview = canEditFirstInterviewDraft.value
+    ? normalizeFirstInterviewArrangement(firstInterviewDraft.value, '')
+    : ''
+  const payload = {
+    applicationStatus: nextStatus,
+    firstInterviewArrangement: nextFirstInterview,
+    remark: String(remarkDraft.value || '').trim(),
   }
 
   isSavingStatusModal.value = true
   try {
-    await fetchJson(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    message.value = '已更新候選人狀態'
+    const data = await fetchJson(
+      historyId
+        ? `${apiBaseUrl}/api/job-post-applications/${applicationId}/status-history/${historyId}`
+        : `${apiBaseUrl}/api/job-post-applications/${applicationId}/status-history`,
+      {
+        method: historyId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    )
+    const savedHistoryId = Number(data?.history?.id || historyId || 0)
+    message.value = historyId ? '已更新狀態記錄' : '已新增狀態記錄'
     await loadApplicationTable()
     await loadApplicationDetail(applicationId, 'list')
+    if (savedHistoryId) {
+      const savedHistory = activeStatusHistory.value.find((history) => Number(history.id) === savedHistoryId)
+      if (savedHistory) {
+        editStatusHistoryDraft(savedHistory)
+      } else {
+        editingStatusHistoryId.value = savedHistoryId
+      }
+    } else {
+      startNewStatusHistoryDraft()
+    }
     window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
   } catch (error) {
-    message.value = error?.message || '更新候選人狀態失敗'
+    message.value = error?.message || '保存狀態記錄失敗'
   } finally {
     isSavingStatusModal.value = false
   }
@@ -892,6 +921,18 @@ onUnmounted(() => {
         <p v-else-if="detailError" class="error">{{ detailError }}</p>
 
         <template v-else-if="activeApplication">
+          <div class="status-editor-header">
+            <h4>{{ statusModalEditorTitle }}</h4>
+            <button
+              type="button"
+              class="secondary-btn compact-btn"
+              :disabled="isStatusModalBusy"
+              @click="startNewStatusHistoryDraft"
+            >
+              新增狀態記錄
+            </button>
+          </div>
+
           <div class="status-modal-editor">
             <label class="field">
               <span>候選人狀態</span>
@@ -927,13 +968,19 @@ onUnmounted(() => {
           </div>
 
           <section class="status-history-section">
-            <h4>狀態流程</h4>
+            <h4>狀態記錄</h4>
             <div class="status-timeline">
-              <div
+              <button
                 v-for="(history, index) in activeStatusHistory"
                 :key="history.id || `${history.applicationStatus}-${index}`"
+                type="button"
                 class="timeline-row"
-                :class="{ current: index === activeStatusHistory.length - 1 }"
+                :class="{
+                  current: index === activeStatusHistory.length - 1,
+                  selected: Number(editingStatusHistoryId) === Number(history.id),
+                }"
+                :disabled="isStatusModalBusy || !history.id"
+                @click="editStatusHistoryDraft(history)"
               >
                 <div class="timeline-label">
                   <span class="timeline-dot" aria-hidden="true"></span>
@@ -949,7 +996,7 @@ onUnmounted(() => {
                     面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
                   </p>
                 </div>
-              </div>
+              </button>
             </div>
           </section>
         </template>
@@ -1207,6 +1254,19 @@ onUnmounted(() => {
   width: min(920px, calc(100vw - 2rem));
 }
 
+.status-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.status-editor-header h4 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 1rem;
+}
+
 .status-modal-editor {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1234,7 +1294,23 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: minmax(190px, 250px) minmax(0, 1fr);
   gap: 1rem;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.timeline-row:disabled {
+  cursor: default;
+}
+
+.timeline-row:not(:disabled):hover .timeline-label,
+.timeline-row.selected .timeline-label {
+  border-color: rgba(47, 111, 237, 0.24);
+  box-shadow: 0 8px 18px rgba(47, 111, 237, 0.08);
 }
 
 .timeline-label {

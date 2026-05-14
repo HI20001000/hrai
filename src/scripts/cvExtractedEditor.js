@@ -78,6 +78,20 @@ export const normalizeProjectSkills = (value) => normalizeList(value, PROJECT_SK
 export const normalizeProjectResponsibilities = (value) => normalizeList(value, PROJECT_RESPONSIBILITY_LIMIT)
 export const normalizeExperienceHighlights = (value) => normalizeList(value, EXPERIENCE_HIGHLIGHT_LIMIT)
 
+const pickProjectResponsibilities = (...values) => {
+  const responsibilities = []
+  const seen = new Set()
+  for (const value of values) {
+    for (const item of normalizeProjectResponsibilities(value)) {
+      if (seen.has(item)) continue
+      seen.add(item)
+      responsibilities.push(item)
+      if (responsibilities.length >= PROJECT_RESPONSIBILITY_LIMIT) return responsibilities
+    }
+  }
+  return responsibilities
+}
+
 export const createEmptyExperienceItem = () => ({
   companyName: '',
   roleTitle: '',
@@ -309,17 +323,17 @@ const normalizeProjectExperienceItem = (value) => {
 
   const projectName = normalizeText(value.projectName || value.name || value.title)
   const skills = normalizeProjectSkills(value.skills || value.techStack || value.technicalLanguages)
-  const responsibilities = normalizeProjectResponsibilities(
-    value.responsibilities ||
-      value.responsibilityText ||
-      value.responsibility ||
-      value.projectResponsibilities ||
-      value.roleResponsibilities ||
-      value.details ||
-      value.content ||
-      value.highlights ||
-      value.achievements ||
-      value.tasks
+  const responsibilities = pickProjectResponsibilities(
+    value.responsibilities || [],
+    value.responsibilityText,
+    value.responsibility,
+    value.projectResponsibilities,
+    value.roleResponsibilities,
+    value.details,
+    value.content,
+    value.highlights,
+    value.achievements,
+    value.tasks
   )
   const durationText = normalizeText(value.durationText || value.duration || value.projectDuration || value.timespan)
   const durationMonths =

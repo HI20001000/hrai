@@ -1002,6 +1002,133 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
   })
 }
 
+const createJobPostApplicationStatusHistory = async (pool, req, res, applicationId) => {
+  const [applicationRows] = await pool.query('SELECT id FROM job_post_applications WHERE id = ? LIMIT 1', [applicationId])
+  if (!applicationRows.length) {
+    sendJson(res, 404, { message: 'Application not found' })
+    return
+  }
+
+  const body = await parseBody(req)
+  const nextStatus = normalizeApplicationStatus(body?.applicationStatus, '')
+  if (!nextStatus) {
+    sendJson(res, 400, { message: 'Invalid applicationStatus' })
+    return
+  }
+
+  const arrangementResult = resolveFirstInterviewArrangementInput(body?.firstInterviewArrangement, '')
+  if (!arrangementResult.valid) {
+    sendJson(res, 400, { message: 'Invalid firstInterviewArrangement' })
+    return
+  }
+  if (nextStatus !== 'screening_hr_approved' && arrangementResult.value) {
+    sendJson(res, 400, {
+      message: 'firstInterviewArrangement can only be set when HR screening is approved',
+    })
+    return
+  }
+
+  const nextRemark = normalizeApplicationRemark(body?.remark)
+  const [result] = await pool.query(
+    `INSERT INTO job_post_application_status_history
+      (application_id, application_status, first_interview_arrangement, remark)
+     VALUES (?, ?, ?, ?)`,
+    [
+      applicationId,
+      nextStatus,
+      nextStatus === 'screening_hr_approved' ? arrangementResult.value || null : null,
+      nextRemark,
+    ]
+  )
+  await syncApplicationFromLatestStatusHistory(pool, applicationId)
+  const statusHistory = await listJobPostApplicationStatusHistory(pool, applicationId)
+  const history = statusHistory.find((item) => Number(item.id) === Number(result.insertId)) || statusHistory.at(-1) || null
+
+  sendJson(res, 201, {
+    message: 'Candidate application status history created',
+    history,
+    statusHistory,
+  })
+}
+
+const updateJobPostApplicationStatusHistory = async (pool, req, res, applicationId, historyId) => {
+  const [rows] = await pool.query(
+    `SELECT
+        id,
+        application_id AS applicationId,
+        application_status AS applicationStatus,
+        first_interview_arrangement AS firstInterviewArrangement,
+        remark
+      FROM job_post_application_status_history
+      WHERE id = ? AND application_id = ?
+      LIMIT 1`,
+    [historyId, applicationId]
+  )
+  const existing = rows[0]
+  if (!existing) {
+    sendJson(res, 404, { message: 'Status history not found' })
+    return
+  }
+
+  const body = await parseBody(req)
+  const hasStatus = body && Object.prototype.hasOwnProperty.call(body, 'applicationStatus')
+  const hasFirstInterviewArrangement =
+    body && Object.prototype.hasOwnProperty.call(body, 'firstInterviewArrangement')
+  const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
+  if (!hasStatus && !hasFirstInterviewArrangement && !hasRemark) {
+    sendJson(res, 400, { message: 'applicationStatus, firstInterviewArrangement or remark is required' })
+    return
+  }
+
+  const nextStatus = hasStatus
+    ? normalizeApplicationStatus(body?.applicationStatus, '')
+    : normalizeApplicationStatus(existing.applicationStatus)
+  if (!nextStatus) {
+    sendJson(res, 400, { message: 'Invalid applicationStatus' })
+    return
+  }
+
+  const arrangementResult = hasFirstInterviewArrangement
+    ? resolveFirstInterviewArrangementInput(body?.firstInterviewArrangement, '')
+    : {
+        valid: true,
+        value: normalizeFirstInterviewArrangement(existing.firstInterviewArrangement),
+      }
+  if (!arrangementResult.valid) {
+    sendJson(res, 400, { message: 'Invalid firstInterviewArrangement' })
+    return
+  }
+  if (nextStatus !== 'screening_hr_approved' && arrangementResult.value) {
+    sendJson(res, 400, {
+      message: 'firstInterviewArrangement can only be set when HR screening is approved',
+    })
+    return
+  }
+
+  const nextRemark = hasRemark ? normalizeApplicationRemark(body?.remark) : normalizeApplicationRemark(existing.remark)
+  await pool.query(
+    `UPDATE job_post_application_status_history
+      SET application_status = ?, first_interview_arrangement = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND application_id = ?`,
+    [
+      nextStatus,
+      nextStatus === 'screening_hr_approved' ? arrangementResult.value || null : null,
+      nextRemark,
+      historyId,
+      applicationId,
+    ]
+  )
+  await syncApplicationFromLatestStatusHistory(pool, applicationId)
+  const statusHistory = await listJobPostApplicationStatusHistory(pool, applicationId)
+  const history = statusHistory.find((item) => Number(item.id) === Number(historyId)) || null
+
+  sendJson(res, 200, {
+    message: 'Candidate application status history updated',
+    history,
+    statusHistory,
+  })
+}
+
 const getJobPostApplicationMatch = async (pool, _req, res, applicationId) => {
   const [rows] = await pool.query(
     `SELECT candidate_cv_id AS candidateCvId
@@ -1547,6 +1674,72 @@ const listJobPostApplicationStatusHistory = async (pool, applicationId) => {
     [applicationId]
   )
   return rows.map((row) => buildApplicationStatusHistoryPayload(row))
+}
+
+const listJobPostApplicationStatusHistories = async (pool, applicationIds = []) => {
+  const ids = [...new Set(applicationIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
+  if (!ids.length) return new Map()
+
+  const placeholders = ids.map(() => '?').join(', ')
+  const [rows] = await pool.query(
+    `SELECT
+        id,
+        application_id AS applicationId,
+        application_status AS applicationStatus,
+        first_interview_arrangement AS firstInterviewArrangement,
+        remark,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM job_post_application_status_history
+      WHERE application_id IN (${placeholders})
+      ORDER BY application_id ASC, created_at ASC, id ASC`,
+    ids
+  )
+
+  const grouped = new Map(ids.map((id) => [id, []]))
+  for (const row of rows) {
+    const applicationId = Number(row.applicationId)
+    const history = buildApplicationStatusHistoryPayload(row)
+    grouped.set(applicationId, [...(grouped.get(applicationId) || []), history])
+  }
+  return grouped
+}
+
+const getLatestJobPostApplicationStatusHistory = async (pool, applicationId) => {
+  const [rows] = await pool.query(
+    `SELECT
+        id,
+        application_id AS applicationId,
+        application_status AS applicationStatus,
+        first_interview_arrangement AS firstInterviewArrangement,
+        remark,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+      FROM job_post_application_status_history
+      WHERE application_id = ?
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+    [applicationId]
+  )
+  return rows[0] ? buildApplicationStatusHistoryPayload(rows[0]) : null
+}
+
+const syncApplicationFromLatestStatusHistory = async (pool, applicationId) => {
+  const latest = await getLatestJobPostApplicationStatusHistory(pool, applicationId)
+  if (!latest) return null
+
+  await pool.query(
+    `UPDATE job_post_applications
+      SET application_status = ?, first_interview_arrangement = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [
+      latest.applicationStatus,
+      latest.firstInterviewArrangement || null,
+      normalizeApplicationRemark(latest.remark),
+      applicationId,
+    ]
+  )
+  return latest
 }
 
 const syncJobPostApplicationStatusHistory = async (
@@ -4309,6 +4502,24 @@ const start = async () => {
       const applicationStatusMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)\/status$/)
       if (applicationStatusMatch && req.method === 'PATCH') {
         return updateJobPostApplicationStatus(pool, req, res, Number(applicationStatusMatch[1]))
+      }
+
+      const applicationStatusHistoryMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)\/status-history$/)
+      if (applicationStatusHistoryMatch && req.method === 'POST') {
+        return createJobPostApplicationStatusHistory(pool, req, res, Number(applicationStatusHistoryMatch[1]))
+      }
+
+      const applicationStatusHistoryItemMatch = url.pathname.match(
+        /^\/api\/job-post-applications\/(\d+)\/status-history\/(\d+)$/
+      )
+      if (applicationStatusHistoryItemMatch && req.method === 'PATCH') {
+        return updateJobPostApplicationStatusHistory(
+          pool,
+          req,
+          res,
+          Number(applicationStatusHistoryItemMatch[1]),
+          Number(applicationStatusHistoryItemMatch[2])
+        )
       }
 
       const applicationResultMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)\/match$/)
