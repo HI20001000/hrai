@@ -673,12 +673,17 @@ onMounted(() => {
                   <tr>
                     <th>維度</th>
                     <th>權重 %</th>
-                    <th v-for="level in LEVEL_FIELDS" :key="level.key">{{ level.label }}標準 / 分值</th>
+                    <th v-for="level in LEVEL_FIELDS" :key="level.key">
+                      <span class="rubric-level-heading">{{ level.label }}標準</span>
+                      <small>分值</small>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="field in WEIGHT_FIELDS" :key="field.key">
-                    <th>{{ field.label }}</th>
+                    <th>
+                      <span class="rubric-dimension">{{ field.label }}</span>
+                    </th>
                     <td>
                       <input
                         v-model="jobDraft.weights[field.key]"
@@ -689,19 +694,27 @@ onMounted(() => {
                         step="0.1"
                       />
                     </td>
-                    <td v-for="level in LEVEL_FIELDS" :key="`${field.key}-${level.key}`">
+                    <td
+                      v-for="level in LEVEL_FIELDS"
+                      :key="`${field.key}-${level.key}`"
+                      class="rubric-level-cell"
+                    >
                       <textarea
                         v-model="jobDraft.scoringRubrics[field.key][level.key].criteria"
+                        class="rubric-criteria-input"
                         rows="3"
                       />
-                      <input
-                        v-model="jobDraft.scoringRubrics[field.key][level.key].score"
-                        class="score-input"
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="1"
-                      />
+                      <div class="rubric-score-row">
+                        <span>分值</span>
+                        <input
+                          v-model="jobDraft.scoringRubrics[field.key][level.key].score"
+                          class="score-input"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                        />
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -874,42 +887,153 @@ onMounted(() => {
 .rubric-table-wrap {
   overflow: auto;
   border: 1px solid var(--border-subtle);
-  border-radius: 18px;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
 }
 
 .rubric-table {
   width: 100%;
-  min-width: 980px;
-  border-collapse: collapse;
-  background: rgba(255, 255, 255, 0.72);
+  min-width: 1120px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: #ffffff;
 }
 
 .rubric-table th,
 .rubric-table td {
-  padding: 0.75rem;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.85rem;
+  border-right: 1px solid rgba(148, 163, 184, 0.16);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   vertical-align: top;
   text-align: left;
 }
 
+.rubric-table th:last-child,
+.rubric-table td:last-child {
+  border-right: 0;
+}
+
 .rubric-table thead th {
-  background: rgba(241, 245, 249, 0.82);
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #f8fafc;
   color: var(--text-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.rubric-table thead th:first-child,
+.rubric-table tbody th {
+  position: sticky;
+  left: 0;
+}
+
+.rubric-table thead th:first-child {
+  z-index: 4;
 }
 
 .rubric-table tbody th {
-  width: 110px;
+  z-index: 2;
+  background: #ffffff;
+}
+
+.rubric-table tbody th {
+  width: 132px;
   color: var(--text-strong);
+}
+
+.rubric-table tbody tr:hover th,
+.rubric-table tbody tr:hover td {
+  background: #f9fbff;
+}
+
+.rubric-table tbody tr:last-child th,
+.rubric-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.rubric-table td:nth-child(2),
+.rubric-table th:nth-child(2) {
+  width: 112px;
+  text-align: center;
+}
+
+.rubric-level-heading,
+.rubric-dimension {
+  display: block;
+  line-height: 1.35;
+}
+
+.rubric-table thead small {
+  display: block;
+  margin-top: 0.18rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .rubric-table textarea,
 .rubric-table input {
   width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text-strong);
+  font: inherit;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
 }
 
-.score-input,
+.rubric-table textarea:focus,
+.rubric-table input:focus {
+  outline: none;
+  border-color: rgba(47, 111, 237, 0.62);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.12);
+}
+
 .weight-input {
-  margin-top: 0.5rem;
+  height: 38px;
+  padding: 0 0.45rem;
+  text-align: center;
+  font-weight: 800;
+}
+
+.rubric-level-cell {
+  min-width: 250px;
+  background: rgba(248, 250, 252, 0.42);
+}
+
+.rubric-criteria-input {
+  display: block;
+  min-height: 92px;
+  padding: 0.68rem 0.72rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.rubric-score-row {
+  display: grid;
+  grid-template-columns: auto 76px;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.55rem;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.score-input {
+  height: 34px;
+  padding: 0 0.42rem;
+  text-align: center;
+  font-size: 0.84rem;
+  font-weight: 850;
 }
 
 .raw-preview {
