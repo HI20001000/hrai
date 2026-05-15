@@ -22,3 +22,5 @@ export const getJobRerankPrompt = () => readPromptFile('job-rerank.prompt.txt', 
 export const getJobSingleMatchPrompt = () => readPromptFile('job-single-match.prompt.txt', 'JOB_SINGLE_MATCH_PROMPT')
 export const getJobRubricSuggestionPrompt = () =>
   readPromptFile('job-rubric-suggestions.prompt.txt', 'JOB_RUBRIC_SUGGESTION_PROMPT')
+export const getJobDictionarySuggestionPrompt = () =>
+  readPromptFile('job-dictionary-suggestions.prompt.txt', 'JOB_DICTIONARY_SUGGESTION_PROMPT')

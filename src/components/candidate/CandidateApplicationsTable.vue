@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
 import AppSelect from '../AppSelect.vue'
 import {
@@ -164,6 +164,8 @@ const savingFirstInterviewIds = ref([])
 const remarkDrafts = ref({})
 const savingRemarkIds = ref([])
 const addingBlacklistIds = ref([])
+const activeStatusPopoverKey = ref('')
+let statusPopoverCloseTimer = null
 
 const isPreviewOpen = ref(false)
 const previewTitle = ref('')
@@ -219,6 +221,31 @@ const getRowStatusHistory = (row) => {
 
 const getStatusHistoryKey = (history, index) =>
   history?.id || `${history?.applicationStatus || 'status'}-${history?.createdAt || index}`
+
+const getStatusPopoverKey = (row) => `status-${Number(row?.applicationId || 0)}`
+
+const clearStatusPopoverTimer = () => {
+  if (statusPopoverCloseTimer) {
+    window.clearTimeout(statusPopoverCloseTimer)
+    statusPopoverCloseTimer = null
+  }
+}
+
+const openStatusPopover = (row) => {
+  if (!props.statusActionable) return
+  clearStatusPopoverTimer()
+  activeStatusPopoverKey.value = getStatusPopoverKey(row)
+}
+
+const scheduleStatusPopoverClose = () => {
+  clearStatusPopoverTimer()
+  statusPopoverCloseTimer = window.setTimeout(() => {
+    activeStatusPopoverKey.value = ''
+    statusPopoverCloseTimer = null
+  }, 420)
+}
+
+const isStatusPopoverActive = (row) => activeStatusPopoverKey.value === getStatusPopoverKey(row)
 
 const getBlacklistMatchedByLabel = (value) => {
   const normalized = String(value || '').trim().toLowerCase()
@@ -674,6 +701,10 @@ const quickAddToBlacklist = async (row) => {
     addingBlacklistIds.value = addingBlacklistIds.value.filter((id) => id !== applicationId)
   }
 }
+
+onBeforeUnmount(() => {
+  clearStatusPopoverTimer()
+})
 </script>
 
 <template>
@@ -721,7 +752,7 @@ const quickAddToBlacklist = async (row) => {
           :disabled="!selectedCount || bulkBlacklistDisabled || bulkBlacklisting"
           @click="emit('bulk-blacklist-selected')"
         >
-          {{ bulkBlacklisting ? '加入中...' : '加入 Blacklist' }}
+          {{ bulkBlacklisting ? '加入中...' : '加入黑名單' }}
         </button>
         <button
           v-if="showBulkBlacklistActions"
@@ -730,7 +761,7 @@ const quickAddToBlacklist = async (row) => {
           :disabled="!selectedCount || bulkUnblacklistDisabled || bulkUnblacklisting"
           @click="emit('bulk-unblacklist-selected')"
         >
-          {{ bulkUnblacklisting ? '取消中...' : '取消 Blacklist' }}
+          {{ bulkUnblacklisting ? '取消中...' : '取消黑名單' }}
         </button>
         <button
           v-if="showBulkUploadAction"
@@ -827,7 +858,14 @@ const quickAddToBlacklist = async (row) => {
               </div>
             </td>
             <td class="status-col">
-              <div class="status-cell-wrap" :class="{ actionable: statusActionable }">
+              <div
+                class="status-cell-wrap"
+                :class="{ actionable: statusActionable, 'popover-active': isStatusPopoverActive(row) }"
+                @mouseenter="openStatusPopover(row)"
+                @mouseleave="scheduleStatusPopoverClose"
+                @focusin="openStatusPopover(row)"
+                @focusout="scheduleStatusPopoverClose"
+              >
                 <div
                   v-if="editableStatus"
                   class="status-select-wrap"
@@ -862,7 +900,7 @@ const quickAddToBlacklist = async (row) => {
                     <li
                       v-for="(history, index) in getRowStatusHistory(row)"
                       :key="getStatusHistoryKey(history, index)"
-                      :class="{ current: index === getRowStatusHistory(row).length - 1 }"
+                      :class="{ current: index === 0 }"
                     >
                       <span class="history-dot" aria-hidden="true"></span>
                       <span class="history-main">
@@ -1034,9 +1072,9 @@ const quickAddToBlacklist = async (row) => {
 }
 
 .table-search-wrap {
-  flex: 1 1 320px;
-  width: min(420px, 100%);
-  min-width: min(320px, 100%);
+  flex: 0 1 340px;
+  width: min(340px, 100%);
+  min-width: min(260px, 100%);
 }
 
 .table-search-wrap .search-input {
@@ -1624,8 +1662,7 @@ const quickAddToBlacklist = async (row) => {
   z-index: 2;
 }
 
-.status-cell-wrap.actionable:hover,
-.status-cell-wrap.actionable:focus-within {
+.status-cell-wrap.actionable.popover-active {
   z-index: 20;
 }
 
@@ -1639,8 +1676,7 @@ const quickAddToBlacklist = async (row) => {
   height: 0.65rem;
 }
 
-.status-cell-wrap.actionable:hover::after,
-.status-cell-wrap.actionable:focus-within::after {
+.status-cell-wrap.actionable.popover-active::after {
   display: block;
 }
 
@@ -1664,8 +1700,7 @@ const quickAddToBlacklist = async (row) => {
   white-space: normal;
 }
 
-.status-cell-wrap.actionable:hover .status-history-popover,
-.status-cell-wrap.actionable:focus-within .status-history-popover {
+.status-cell-wrap.actionable.popover-active .status-history-popover {
   display: block;
 }
 

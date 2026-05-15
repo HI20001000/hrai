@@ -21,7 +21,8 @@ const pageItems = [
   { key: 'reports', label: '職缺管理', description: '管理職缺與投遞', icon: 'briefcase' },
   { key: 'cv', label: '候選人管理', description: '查看候選人資料', icon: 'document' },
   { key: 'files', label: '上傳候選人 CV', description: '上傳履歷與應徵', icon: 'tray' },
-  { key: 'directory', label: '名單管理', description: '內部人員與 Blacklist', icon: 'users' },
+  { key: 'personnel', label: '已入職名單', description: '人員與項目安排', icon: 'users' },
+  { key: 'blacklist', label: '黑名單', description: '候選人風險名單', icon: 'document' },
   { key: 'projects', label: '項目管理', description: '項目組與調動', icon: 'project' },
 ]
 

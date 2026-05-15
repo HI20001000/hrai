@@ -22,6 +22,7 @@ import {
 import { extractTextFromBuffer } from './scripts/llm/text-extractors.js'
 import { getJobDictionary, loadJobDictionary, saveJobDictionary } from './scripts/jobs/dictionary.js'
 import { matchCandidateToJobPost, matchCandidateToJobs } from './scripts/llm/job-matcher.js'
+import { suggestJobDictionaryDefinition } from './scripts/llm/job-dictionary-suggester.js'
 import { suggestJobScoringRubrics } from './scripts/llm/rubric-suggester.js'
 import { normalizeScoringRubrics, normalizeScoringWeights } from './scripts/jobs/scoring.js'
 
@@ -527,6 +528,26 @@ const suggestJobDictionaryRubricsHandler = async (pool, req, res) => {
     sendJson(res, 200, { scoringRubrics })
   } catch (error) {
     sendJson(res, getErrorStatusCode(error), { message: error?.message || '生成量化標準失敗' })
+  }
+}
+
+const suggestJobDictionaryDefinitionHandler = async (pool, req, res) => {
+  const authedUser = await getAuthedUser(pool, req)
+  if (!authedUser) {
+    sendJson(res, 401, { message: 'Unauthorized' })
+    return
+  }
+
+  const body = await parseBody(req)
+  try {
+    const job = await suggestJobDictionaryDefinition({
+      jobTitle: body?.jobTitle,
+      jobKey: body?.jobKey,
+      draft: body?.draft,
+    })
+    sendJson(res, 200, { job })
+  } catch (error) {
+    sendJson(res, getErrorStatusCode(error), { message: error?.message || '生成職位資料失敗' })
   }
 }
 
@@ -1042,7 +1063,7 @@ const createJobPostApplicationStatusHistory = async (pool, req, res, application
   )
   await syncApplicationFromLatestStatusHistory(pool, applicationId)
   const statusHistory = await listJobPostApplicationStatusHistory(pool, applicationId)
-  const history = statusHistory.find((item) => Number(item.id) === Number(result.insertId)) || statusHistory.at(-1) || null
+  const history = statusHistory.find((item) => Number(item.id) === Number(result.insertId)) || statusHistory[0] || null
 
   sendJson(res, 201, {
     message: 'Candidate application status history created',
@@ -1670,7 +1691,7 @@ const listJobPostApplicationStatusHistory = async (pool, applicationId) => {
         updated_at AS updatedAt
       FROM job_post_application_status_history
       WHERE application_id = ?
-      ORDER BY created_at ASC, id ASC`,
+      ORDER BY created_at DESC, id DESC`,
     [applicationId]
   )
   return rows.map((row) => buildApplicationStatusHistoryPayload(row))
@@ -1692,7 +1713,7 @@ const listJobPostApplicationStatusHistories = async (pool, applicationIds = []) 
         updated_at AS updatedAt
       FROM job_post_application_status_history
       WHERE application_id IN (${placeholders})
-      ORDER BY application_id ASC, created_at ASC, id ASC`,
+      ORDER BY application_id ASC, created_at DESC, id DESC`,
     ids
   )
 
@@ -4413,6 +4434,9 @@ const start = async () => {
       if (url.pathname === '/api/job-dictionary' && req.method === 'PUT') return updateJobDictionaryHandler(pool, req, res)
       if (url.pathname === '/api/job-dictionary/rubric-suggestions' && req.method === 'POST') {
         return suggestJobDictionaryRubricsHandler(pool, req, res)
+      }
+      if (url.pathname === '/api/job-dictionary/job-suggestions' && req.method === 'POST') {
+        return suggestJobDictionaryDefinitionHandler(pool, req, res)
       }
       if (url.pathname === '/api/job-posts' && req.method === 'GET') return listJobPosts(pool, req, res)
       if (url.pathname === '/api/job-posts' && req.method === 'POST') return createJobPost(pool, req, res)

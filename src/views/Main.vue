@@ -4,7 +4,8 @@ import MainToolbar from '../components/MainToolbar.vue'
 import JobPostsView from './JobPosts.vue'
 import CvManagement from './CvManagement.vue'
 import JobApplyView from './JobApply.vue'
-import DirectoryManagement from './DirectoryManagement.vue'
+import OnboardedPersonnelManagement from './OnboardedPersonnelManagement.vue'
+import BlacklistManagement from './BlacklistManagement.vue'
 import ProjectManagement from './ProjectManagement.vue'
 import SettingsView from './Settings.vue'
 
@@ -77,7 +78,8 @@ onUnmounted(() => {
           <JobPostsView v-if="activePage === 'reports'" />
           <CvManagement v-else-if="activePage === 'cv'" />
           <JobApplyView v-else-if="activePage === 'files'" />
-          <DirectoryManagement v-else-if="activePage === 'directory'" />
+          <OnboardedPersonnelManagement v-else-if="activePage === 'personnel'" />
+          <BlacklistManagement v-else-if="activePage === 'blacklist'" />
           <ProjectManagement v-else-if="activePage === 'projects'" />
           <SettingsView
             v-else-if="activePage === 'settings'"

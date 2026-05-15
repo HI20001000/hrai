@@ -234,8 +234,31 @@ export const extractTextFromDocxBuffer = async (buffer) => {
   return normalizeOfficeExtractedText(unzipText)
 }
 
+const shouldCompactPdfGlyphLine = (line = '') => {
+  const glyphs = line.match(/[\p{L}\p{N}]/gu) || []
+  if (glyphs.length < 8) return false
+  const spacedGlyphPairs = line.match(/[\p{L}\p{N}] [\p{L}\p{N}]/gu) || []
+  return spacedGlyphPairs.length / glyphs.length > 0.28
+}
+
+const compactPdfGlyphSpacing = (value = '') =>
+  String(value || '')
+    .split('\n')
+    .map((line) => {
+      if (!shouldCompactPdfGlyphLine(line)) return line
+
+      let compacted = line
+      let previous = ''
+      while (compacted !== previous) {
+        previous = compacted
+        compacted = compacted.replace(/([\p{L}\p{N}]) ([\p{L}\p{N}])/gu, '$1$2')
+      }
+      return compacted
+    })
+    .join('\n')
+
 const normalizePdfExtractedText = (value = '') =>
-  sanitizeExtractedText(String(value || ''))
+  sanitizeExtractedText(compactPdfGlyphSpacing(stripInvalidUnicode(String(value || '')).replace(/\u0000/g, '')))
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
@@ -254,12 +277,12 @@ const extractTextFromPdfBufferWithPython = async (buffer) => {
     'data = sys.stdin.buffer.read()',
     'text = ""',
     'try:',
-    '    from pypdf import PdfReader',
-    '    reader = PdfReader(io.BytesIO(data))',
+    '    import fitz',
+    '    doc = fitz.open(stream=data, filetype="pdf")',
     '    parts = []',
-    '    for page in reader.pages:',
+    '    for page in doc:',
     '        try:',
-    '            page_text = page.extract_text() or ""',
+    '            page_text = page.get_text("text") or ""',
     '        except Exception:',
     '            page_text = ""',
     '        if page_text:',
@@ -267,6 +290,36 @@ const extractTextFromPdfBufferWithPython = async (buffer) => {
     '    text = "\\n".join(parts)',
     'except Exception:',
     '    text = ""',
+    'if not text.strip():',
+    '    try:',
+    '        import pymupdf',
+    '        doc = pymupdf.open(stream=data, filetype="pdf")',
+    '        parts = []',
+    '        for page in doc:',
+    '            try:',
+    '                page_text = page.get_text("text") or ""',
+    '            except Exception:',
+    '                page_text = ""',
+    '            if page_text:',
+    '                parts.append(page_text)',
+    '        text = "\\n".join(parts)',
+    '    except Exception:',
+    '        text = ""',
+    'if not text.strip():',
+    '    try:',
+    '        from pypdf import PdfReader',
+    '        reader = PdfReader(io.BytesIO(data))',
+    '        parts = []',
+    '        for page in reader.pages:',
+    '            try:',
+    '                page_text = page.extract_text() or ""',
+    '            except Exception:',
+    '                page_text = ""',
+    '            if page_text:',
+    '                parts.append(page_text)',
+    '        text = "\\n".join(parts)',
+    '    except Exception:',
+    '        text = ""',
     'if text:',
     "    text = re.sub(r'\\n{3,}', '\\n\\n', text)",
     'sys.stdout.write(text)',
@@ -552,17 +605,28 @@ const isLikelyReadablePdfPiece = (text) => {
 }
 
 const isLikelyReadablePdfText = (text = '') => {
-  const normalized = sanitizeExtractedText(String(text || '').replace(/\n+/g, ' '))
+  const rawLines = sanitizeExtractedText(String(text || ''))
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const normalized = sanitizeExtractedText(rawLines.join(' '))
   if (normalized.length < 20) return false
 
   const lettersOrDigits = (normalized.match(/[\p{L}\p{N}]/gu) || []).length
+  const hanChars = (normalized.match(/\p{Script=Han}/gu) || []).length
   const scriptFamilies = countPdfScriptFamilies(normalized)
   const wordRunChars = countWordRunChars(normalized)
+  const singleGlyphLines = rawLines.filter((line) => (line.match(/[\p{L}\p{N}]/gu) || []).length <= 1).length
+  const extendedLatin = (normalized.match(/[\u00c0-\u024f]/g) || []).length
+  const noisySymbols = (normalized.match(/[^\p{L}\p{N}\p{P}\p{Z}\t]/gu) || []).length
 
   if (lettersOrDigits < 12) return false
+  if (rawLines.length >= 20 && singleGlyphLines / rawLines.length > 0.4) return false
+  if (noisySymbols / normalized.length > 0.08) return false
+  if (hanChars < 8 && extendedLatin / Math.max(lettersOrDigits, 1) > 0.32) return false
   if (scriptFamilies > 4) return false
   if (wordRunChars < 12) return false
-  if (wordRunChars / Math.max(lettersOrDigits, 1) < 0.35) return false
+  if (hanChars < 20 && wordRunChars / Math.max(lettersOrDigits, 1) < 0.35) return false
   return true
 }
 

@@ -21,6 +21,8 @@ const isLoading = ref(false)
 const isBulkDeleting = ref(false)
 const isBulkBlacklisting = ref(false)
 const isBulkUnblacklisting = ref(false)
+const isBulkBlacklistModalOpen = ref(false)
+const bulkBlacklistReasonDraft = ref('')
 const isUploadModalOpen = ref(false)
 const isStatusModalOpen = ref(false)
 const isSavingStatusModal = ref(false)
@@ -94,6 +96,18 @@ const selectedRows = computed(() => {
 
 const selectedBlacklistAddRows = computed(() => selectedRows.value.filter(canBulkAddBlacklist))
 
+const selectedBlacklistAddUniqueRows = computed(() => {
+  const seenIdentities = new Set()
+  const rows = []
+  for (const row of selectedBlacklistAddRows.value) {
+    const identityKey = getBlacklistIdentityKey(row)
+    if (seenIdentities.has(identityKey)) continue
+    seenIdentities.add(identityKey)
+    rows.push(row)
+  }
+  return rows
+})
+
 const selectedBlacklistRemoveRows = computed(() => selectedRows.value.filter(canBulkRemoveBlacklist))
 
 const bulkUploadDisabled = computed(() => false)
@@ -101,6 +115,10 @@ const bulkUploadDisabled = computed(() => false)
 const bulkBlacklistDisabled = computed(() => !selectedBlacklistAddRows.value.length)
 
 const bulkUnblacklistDisabled = computed(() => !selectedBlacklistRemoveRows.value.length)
+
+const bulkBlacklistSkippedCount = computed(() =>
+  Math.max(0, selectedRows.value.length - selectedBlacklistAddUniqueRows.value.length)
+)
 
 const projectOptions = computed(() =>
   projectRows.value.map((project) => ({
@@ -408,33 +426,39 @@ const summarizeBulkBlacklistResult = ({ action, successCount, failedCount, skipp
   return parts.join('，') || '沒有可處理的候選人'
 }
 
-const bulkAddSelectedToBlacklist = async () => {
+const openBulkBlacklistModal = () => {
   if (!selectedApplicationIds.value.length || isBulkBlacklisting.value) return
-
-  const seenIdentities = new Set()
-  const rowsToAdd = []
-  for (const row of selectedBlacklistAddRows.value) {
-    const identityKey = getBlacklistIdentityKey(row)
-    if (seenIdentities.has(identityKey)) continue
-    seenIdentities.add(identityKey)
-    rowsToAdd.push(row)
-  }
-
-  if (!rowsToAdd.length) {
+  if (!selectedBlacklistAddUniqueRows.value.length) {
     message.value = '已選候選人沒有可加入 Blacklist 的資料'
     return
   }
+  bulkBlacklistReasonDraft.value = ''
+  isBulkBlacklistModalOpen.value = true
+}
 
-  const reason = window.prompt('請輸入加入 Blacklist 的原因', '由候選人管理頁批量加入')
-  if (reason === null) return
+const closeBulkBlacklistModal = () => {
+  if (isBulkBlacklisting.value) return
+  isBulkBlacklistModalOpen.value = false
+  bulkBlacklistReasonDraft.value = ''
+}
 
-  const normalizedReason = String(reason || '').trim()
+const bulkAddSelectedToBlacklist = async () => {
+  if (!selectedApplicationIds.value.length || isBulkBlacklisting.value) return
+
+  const rowsToAdd = selectedBlacklistAddUniqueRows.value
+  if (!rowsToAdd.length) {
+    message.value = '已選候選人沒有可加入 Blacklist 的資料'
+    closeBulkBlacklistModal()
+    return
+  }
+
+  const normalizedReason = String(bulkBlacklistReasonDraft.value || '').trim()
   if (!normalizedReason) {
     message.value = '請先輸入 Blacklist 原因'
     return
   }
 
-  const skippedCount = Math.max(0, selectedRows.value.length - rowsToAdd.length)
+  const skippedCount = bulkBlacklistSkippedCount.value
   isBulkBlacklisting.value = true
   try {
     const results = await Promise.allSettled(
@@ -450,6 +474,8 @@ const bulkAddSelectedToBlacklist = async () => {
     const failedCount = results.length - successCount
 
     selectedApplicationIds.value = []
+    isBulkBlacklistModalOpen.value = false
+    bulkBlacklistReasonDraft.value = ''
     await loadApplicationTable()
     window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
     message.value = summarizeBulkBlacklistResult({
@@ -825,7 +851,7 @@ onUnmounted(() => {
       search-placeholder="搜尋職位 / 候選人 / 狀態 / 面試安排 / 匹配職位 / 備註 / 檔案"
       @selection-change="selectedApplicationIds = $event"
       @delete-selected="deleteSelectedApplications"
-      @bulk-blacklist-selected="bulkAddSelectedToBlacklist"
+      @bulk-blacklist-selected="openBulkBlacklistModal"
       @bulk-unblacklist-selected="bulkRemoveSelectedFromBlacklist"
       @upload-selected-cv="openUploadModal"
       @add-to-project="openProjectTransferModal"
@@ -1018,7 +1044,7 @@ onUnmounted(() => {
               v-for="(history, index) in activeStatusHistory"
               :key="history.id || `${history.applicationStatus}-${index}`"
               class="timeline-row"
-              :class="{ current: index === activeStatusHistory.length - 1 }"
+              :class="{ current: index === 0 }"
             >
               <div class="timeline-label">
                 <span class="timeline-dot" aria-hidden="true"></span>
@@ -1045,6 +1071,54 @@ onUnmounted(() => {
       @close="closeUploadModal"
       @uploaded="handleUploadCompleted"
     />
+
+    <div v-if="isBulkBlacklistModalOpen" class="modal-backdrop" @click.self="closeBulkBlacklistModal">
+      <div class="modal-panel bulk-blacklist-modal">
+        <header class="modal-header">
+          <div>
+            <h3>加入黑名單</h3>
+            <p class="subtle">將已勾選且有電話或 Email 的候選人加入黑名單。</p>
+          </div>
+          <button type="button" class="ghost-btn" :disabled="isBulkBlacklisting" @click="closeBulkBlacklistModal">關閉</button>
+        </header>
+
+        <div class="selected-preview-box">
+          <p class="subtle">
+            可加入 {{ selectedBlacklistAddUniqueRows.length }} 位
+            <template v-if="bulkBlacklistSkippedCount">｜略過 {{ bulkBlacklistSkippedCount }} 位已在黑名單、缺少聯絡方式或重複資料的候選人</template>
+          </p>
+          <ul>
+            <li v-for="row in selectedBlacklistAddUniqueRows.slice(0, 8)" :key="row.applicationId">
+              {{ row.fullName || '候選人' }}
+              <span>{{ row.phone || row.email || '--' }}</span>
+            </li>
+          </ul>
+          <p v-if="selectedBlacklistAddUniqueRows.length > 8" class="subtle">另 {{ selectedBlacklistAddUniqueRows.length - 8 }} 位</p>
+        </div>
+
+        <label class="field">
+          <span>原因</span>
+          <textarea
+            v-model.trim="bulkBlacklistReasonDraft"
+            rows="4"
+            :disabled="isBulkBlacklisting"
+            placeholder="請輸入加入黑名單的原因"
+          ></textarea>
+        </label>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" :disabled="isBulkBlacklisting" @click="closeBulkBlacklistModal">取消</button>
+          <button
+            type="button"
+            class="danger-btn"
+            :disabled="isBulkBlacklisting || !bulkBlacklistReasonDraft.trim() || !selectedBlacklistAddUniqueRows.length"
+            @click="bulkAddSelectedToBlacklist"
+          >
+            {{ isBulkBlacklisting ? '加入中...' : '確認加入' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div v-if="isStatusModalOpen" class="modal-backdrop" @click.self="closeApplicationStatusModal">
       <div class="modal-panel status-modal">
@@ -1113,7 +1187,7 @@ onUnmounted(() => {
                 type="button"
                 class="timeline-row"
                 :class="{
-                  current: index === activeStatusHistory.length - 1,
+                  current: index === 0,
                   selected: Number(editingStatusHistoryId) === Number(history.id),
                 }"
                 :disabled="isStatusModalBusy || !history.id"
@@ -1235,6 +1309,7 @@ onUnmounted(() => {
 .detail-card,
 .status-card,
 .status-modal,
+.bulk-blacklist-modal,
 .project-transfer-modal {
   display: grid;
   gap: 1rem;
@@ -1383,6 +1458,44 @@ onUnmounted(() => {
 
 .status-modal {
   width: min(920px, calc(100vw - 2rem));
+}
+
+.bulk-blacklist-modal,
+.project-transfer-modal {
+  width: min(620px, calc(100vw - 2rem));
+}
+
+.selected-preview-box {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: rgba(245, 248, 252, 0.68);
+}
+
+.selected-preview-box ul {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.selected-preview-box li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--text-strong);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.selected-preview-box li span {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 .status-editor-header {

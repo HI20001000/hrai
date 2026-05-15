@@ -26,6 +26,7 @@ const jobDictionary = ref({})
 const selectedJobTitle = ref('')
 const newJobTitle = ref('')
 const jobDraft = ref(null)
+const isSuggestingJobDefinition = ref(false)
 const isSuggestingRubrics = ref(false)
 
 const WEIGHT_FIELDS = SCORING_DIMENSIONS
@@ -436,6 +437,53 @@ const applyRubricSuggestions = async () => {
   }
 }
 
+const applyJobDefinitionSuggestion = async () => {
+  if (!jobDraft.value || isSuggestingJobDefinition.value) return
+  const auth = getAuthContext()
+  if (!auth.ok) {
+    jobDictionaryError.value = auth.message
+    return
+  }
+
+  const jobTitle = normalizeText(jobDraft.value.title || selectedJobTitle.value || newJobTitle.value)
+  const jobKey = normalizeText(jobDraft.value.jobKey || jobTitle)
+  if (!jobTitle && !jobKey) {
+    jobDictionaryError.value = '請先選擇或輸入職位名稱'
+    jobDictionaryMessage.value = ''
+    return
+  }
+
+  isSuggestingJobDefinition.value = true
+  jobDictionaryError.value = ''
+  jobDictionaryMessage.value = ''
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/job-dictionary/job-suggestions`, {
+      method: 'POST',
+      headers: auth.headers,
+      body: JSON.stringify({
+        jobTitle,
+        jobKey,
+        draft: draftToJob(jobDraft.value),
+      }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      jobDictionaryError.value = data.message || '生成職位資料失敗'
+      return
+    }
+    if (!data?.job || typeof data.job !== 'object') {
+      jobDictionaryError.value = '生成結果格式錯誤'
+      return
+    }
+    jobDraft.value = buildJobDraft(data.job.title || jobTitle, data.job)
+    jobDictionaryMessage.value = '已生成職位資料草稿，請檢查後套用或儲存'
+  } catch {
+    jobDictionaryError.value = '生成職位資料失敗'
+  } finally {
+    isSuggestingJobDefinition.value = false
+  }
+}
+
 watch(
   () => props.selectedTitle,
   (value) => {
@@ -512,14 +560,24 @@ onMounted(() => {
             <div>
               <h4>{{ activeJobTitle }}</h4>
             </div>
-            <button
-              type="button"
-              class="danger-btn"
-              :disabled="jobDictionaryLoading || jobDictionarySaving"
-              @click="deleteSelectedJob"
-            >
-              刪除當前職位
-            </button>
+            <div class="editor-actions">
+              <button
+                type="button"
+                class="secondary-btn"
+                :disabled="jobDictionaryLoading || jobDictionarySaving || isSuggestingJobDefinition"
+                @click="applyJobDefinitionSuggestion"
+              >
+                {{ isSuggestingJobDefinition ? '生成中...' : 'AI 一鍵生成職位資料' }}
+              </button>
+              <button
+                type="button"
+                class="danger-btn"
+                :disabled="jobDictionaryLoading || jobDictionarySaving"
+                @click="deleteSelectedJob"
+              >
+                刪除當前職位
+              </button>
+            </div>
           </div>
 
           <div class="editor-grid">
@@ -782,6 +840,14 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
+}
+
+.editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .editor-grid {
