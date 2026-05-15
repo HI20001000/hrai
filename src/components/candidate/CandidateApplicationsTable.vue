@@ -1204,6 +1204,8 @@ onBeforeUnmount(() => {
 }
 
 .application-table thead th {
+  position: sticky;
+  top: 0;
   z-index: 60;
 }
 
@@ -1349,7 +1351,16 @@ onBeforeUnmount(() => {
 
 .status-col {
   min-width: 220px;
+}
+
+td.status-col {
   position: relative;
+}
+
+th.status-col {
+  position: sticky;
+  top: 0;
+  z-index: 70;
 }
 
 .first-interview-col {
