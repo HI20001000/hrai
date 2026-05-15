@@ -1089,23 +1089,23 @@ onUnmounted(() => {
                 <span class="timeline-status">{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</span>
               </div>
               <div class="timeline-content">
-                <p class="timeline-meta">
-                  狀態創建時間 {{ formatDateTime(history.createdAt) }}
-                  <template v-if="history.updatedAt">｜狀態修改時間 {{ formatDateTime(history.updatedAt) }}</template>
-                </p>
-                <p class="timeline-operator">
-                  <span
-                    class="timeline-operator-avatar"
-                    :style="getStatusHistoryOperatorAvatarStyle(history)"
-                  >
-                    {{ getStatusHistoryOperatorAvatarText(history) }}
-                  </span>
-                  <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
-                </p>
-                <p>{{ history.remark || '未填寫備註' }}</p>
+                <p class="timeline-remark">{{ history.remark || '未填寫備註' }}</p>
                 <p v-if="history.firstInterviewArrangement" class="timeline-extra">
                   面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
                 </p>
+                <div class="timeline-meta-row">
+                  <span class="timeline-meta">狀態時間 {{ formatDateTime(history.createdAt) }}</span>
+                  <span v-if="history.updatedAt" class="timeline-meta">修改時間 {{ formatDateTime(history.updatedAt) }}</span>
+                  <span class="timeline-operator">
+                    <span
+                      class="timeline-operator-avatar"
+                      :style="getStatusHistoryOperatorAvatarStyle(history)"
+                    >
+                      {{ getStatusHistoryOperatorAvatarText(history) }}
+                    </span>
+                    <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -1245,23 +1245,23 @@ onUnmounted(() => {
                   <span class="timeline-status">{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</span>
                 </div>
                 <div class="timeline-content">
-                  <p class="timeline-meta">
-                    狀態創建時間 {{ formatDateTime(history.createdAt) }}
-                    <template v-if="history.updatedAt">｜狀態修改時間 {{ formatDateTime(history.updatedAt) }}</template>
-                  </p>
-                  <p class="timeline-operator">
-                    <span
-                      class="timeline-operator-avatar"
-                      :style="getStatusHistoryOperatorAvatarStyle(history)"
-                    >
-                      {{ getStatusHistoryOperatorAvatarText(history) }}
-                    </span>
-                    <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
-                  </p>
-                  <p>{{ history.remark || '未填寫備註' }}</p>
+                  <p class="timeline-remark">{{ history.remark || '未填寫備註' }}</p>
                   <p v-if="history.firstInterviewArrangement" class="timeline-extra">
                     面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
                   </p>
+                  <div class="timeline-meta-row">
+                    <span class="timeline-meta">狀態時間 {{ formatDateTime(history.createdAt) }}</span>
+                    <span v-if="history.updatedAt" class="timeline-meta">修改時間 {{ formatDateTime(history.updatedAt) }}</span>
+                    <span class="timeline-operator">
+                      <span
+                        class="timeline-operator-avatar"
+                        :style="getStatusHistoryOperatorAvatarStyle(history)"
+                      >
+                        {{ getStatusHistoryOperatorAvatarText(history) }}
+                      </span>
+                      <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
+                    </span>
+                  </div>
                 </div>
               </button>
             </div>
@@ -1650,15 +1650,35 @@ onUnmounted(() => {
 
 .timeline-content {
   display: grid;
-  gap: 0.2rem;
+  gap: 0.38rem;
   min-width: 0;
 }
 
 .timeline-meta,
 .timeline-extra,
 .timeline-operator {
+  margin: 0;
   color: var(--text-soft);
   font-size: 0.82rem;
+}
+
+.timeline-remark {
+  margin: 0;
+  color: var(--text-base);
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.timeline-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.38rem 0.72rem;
+  min-width: 0;
+  padding-top: 0.24rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .timeline-operator {

@@ -958,23 +958,23 @@ onBeforeUnmount(() => {
                       <span class="history-dot" aria-hidden="true"></span>
                       <span class="history-main">
                         <strong>{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</strong>
-                        <small>
-                          {{ formatDateTime(history.createdAt) }}
-                          <template v-if="history.updatedAt"> / {{ formatDateTime(history.updatedAt) }}</template>
-                        </small>
-                        <span class="history-operator">
-                          <span
-                            class="history-operator-avatar"
-                            :style="getStatusHistoryOperatorAvatarStyle(history)"
-                          >
-                            {{ getStatusHistoryOperatorAvatarText(history) }}
-                          </span>
-                          <span>{{ getStatusHistoryOperatorName(history) }}</span>
-                        </span>
                         <em v-if="history.firstInterviewArrangement">
-                          {{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
+                          面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
                         </em>
-                        <span v-if="history.remark" class="history-remark">{{ history.remark }}</span>
+                        <span class="history-remark">{{ history.remark || '未填寫備註' }}</span>
+                        <span class="history-meta-row">
+                          <small>狀態時間 {{ formatDateTime(history.createdAt) }}</small>
+                          <small v-if="history.updatedAt">修改時間 {{ formatDateTime(history.updatedAt) }}</small>
+                          <span class="history-operator">
+                            <span
+                              class="history-operator-avatar"
+                              :style="getStatusHistoryOperatorAvatarStyle(history)"
+                            >
+                              {{ getStatusHistoryOperatorAvatarText(history) }}
+                            </span>
+                            <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
+                          </span>
+                        </span>
                       </span>
                     </li>
                   </ol>
@@ -1745,7 +1745,7 @@ th.status-col {
   left: 0;
   top: 100%;
   display: none;
-  width: min(340px, calc(100vw - 2rem));
+  width: min(520px, calc(100vw - 2rem));
   height: 0.65rem;
 }
 
@@ -1759,7 +1759,7 @@ th.status-col {
   top: calc(100% + 0.55rem);
   z-index: 25;
   display: none;
-  width: min(340px, calc(100vw - 2rem));
+  width: min(520px, calc(100vw - 2rem));
   max-height: 260px;
   overflow: auto;
   padding: 0.85rem;
@@ -1824,7 +1824,7 @@ th.status-col {
 
 .history-main {
   display: grid;
-  gap: 0.16rem;
+  gap: 0.28rem;
   min-width: 0;
 }
 
@@ -1846,6 +1846,16 @@ th.status-col {
   font-size: 0.76rem;
   font-style: normal;
   line-height: 1.35;
+}
+
+.history-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.32rem 0.55rem;
+  min-width: 0;
+  padding-top: 0.18rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
 }
 
 .history-operator {
@@ -1873,6 +1883,9 @@ th.status-col {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  color: var(--text-base);
+  font-size: 0.8rem;
+  font-weight: 650;
 }
 
 .status-tone-screening,
