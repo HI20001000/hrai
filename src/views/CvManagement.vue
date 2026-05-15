@@ -66,6 +66,44 @@ const formatDateTime = (value) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+const parseJsonSafe = (value) => {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+const withAuthHeaders = (headers = {}) => {
+  const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
+  const token = String(auth?.token || '').trim()
+  return token ? { ...headers, Authorization: `Bearer ${token}` } : { ...headers }
+}
+
+const withAuthOptions = (options = {}) => ({
+  ...options,
+  headers: withAuthHeaders(options.headers || {}),
+})
+
+const getStatusHistoryOperator = (history) => history?.operatorUser || history?.operator || null
+
+const getStatusHistoryOperatorName = (history) => {
+  const operator = getStatusHistoryOperator(history)
+  return String(operator?.username || operator?.mail || '').trim() || '系統'
+}
+
+const getStatusHistoryOperatorAvatarText = (history) => {
+  const operator = getStatusHistoryOperator(history)
+  const fallback = getStatusHistoryOperatorName(history).slice(0, 1).toUpperCase() || 'U'
+  return String(operator?.avatarText || '').trim() || fallback
+}
+
+const getStatusHistoryOperatorAvatarStyle = (history) => {
+  const operator = getStatusHistoryOperator(history)
+  const color = String(operator?.avatarBgColor || '').trim()
+  return { background: /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#64748b' }
+}
+
 const hasBlacklistIdentity = (row) =>
   Boolean(String(row?.phone || '').trim() || String(row?.email || '').trim())
 
@@ -192,7 +230,7 @@ const isBlacklistReasonChanged = computed(() => {
 })
 
 const fetchJson = async (endpoint, options = {}) => {
-  const response = await fetch(endpoint, options)
+  const response = await fetch(endpoint, withAuthOptions(options))
   const data = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(data.message || 'Request failed')
   return data
@@ -1055,6 +1093,15 @@ onUnmounted(() => {
                   狀態創建時間 {{ formatDateTime(history.createdAt) }}
                   <template v-if="history.updatedAt">｜狀態修改時間 {{ formatDateTime(history.updatedAt) }}</template>
                 </p>
+                <p class="timeline-operator">
+                  <span
+                    class="timeline-operator-avatar"
+                    :style="getStatusHistoryOperatorAvatarStyle(history)"
+                  >
+                    {{ getStatusHistoryOperatorAvatarText(history) }}
+                  </span>
+                  <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
+                </p>
                 <p>{{ history.remark || '未填寫備註' }}</p>
                 <p v-if="history.firstInterviewArrangement" class="timeline-extra">
                   面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
@@ -1201,6 +1248,15 @@ onUnmounted(() => {
                   <p class="timeline-meta">
                     狀態創建時間 {{ formatDateTime(history.createdAt) }}
                     <template v-if="history.updatedAt">｜狀態修改時間 {{ formatDateTime(history.updatedAt) }}</template>
+                  </p>
+                  <p class="timeline-operator">
+                    <span
+                      class="timeline-operator-avatar"
+                      :style="getStatusHistoryOperatorAvatarStyle(history)"
+                    >
+                      {{ getStatusHistoryOperatorAvatarText(history) }}
+                    </span>
+                    <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
                   </p>
                   <p>{{ history.remark || '未填寫備註' }}</p>
                   <p v-if="history.firstInterviewArrangement" class="timeline-extra">
@@ -1599,9 +1655,30 @@ onUnmounted(() => {
 }
 
 .timeline-meta,
-.timeline-extra {
+.timeline-extra,
+.timeline-operator {
   color: var(--text-soft);
   font-size: 0.82rem;
+}
+
+.timeline-operator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  font-weight: 700;
+}
+
+.timeline-operator-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.46rem;
+  height: 1.46rem;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .transfer-form-grid {

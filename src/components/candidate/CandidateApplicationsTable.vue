@@ -254,6 +254,39 @@ const getBlacklistMatchedByLabel = (value) => {
   return '--'
 }
 
+const parseJsonSafe = (value) => {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+const withAuthHeaders = (headers = {}) => {
+  const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
+  const token = String(auth?.token || '').trim()
+  return token ? { ...headers, Authorization: `Bearer ${token}` } : { ...headers }
+}
+
+const getStatusHistoryOperator = (history) => history?.operatorUser || history?.operator || null
+
+const getStatusHistoryOperatorName = (history) => {
+  const operator = getStatusHistoryOperator(history)
+  return String(operator?.username || operator?.mail || '').trim() || '系統'
+}
+
+const getStatusHistoryOperatorAvatarText = (history) => {
+  const operator = getStatusHistoryOperator(history)
+  const fallback = getStatusHistoryOperatorName(history).slice(0, 1).toUpperCase() || 'U'
+  return String(operator?.avatarText || '').trim() || fallback
+}
+
+const getStatusHistoryOperatorAvatarStyle = (history) => {
+  const operator = getStatusHistoryOperator(history)
+  const color = String(operator?.avatarBgColor || '').trim()
+  return { background: /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#64748b' }
+}
+
 const isRemarkSaving = (applicationId) => savingRemarkIds.value.includes(Number(applicationId))
 
 const getRemarkDraft = (row) => {
@@ -378,6 +411,35 @@ const tableWrapStyle = computed(() =>
 )
 
 const selectedCount = computed(() => props.selectedIds.length)
+
+const selectedRowsForBulkActions = computed(() => {
+  const selectedSet = new Set(props.selectedIds.map((id) => Number(id)))
+  return displayRows.value.filter((row) => selectedSet.has(Number(row.applicationId)))
+})
+
+const bulkBlacklistActionMode = computed(() => {
+  if (!selectedRowsForBulkActions.value.length) return 'add'
+  return selectedRowsForBulkActions.value.some((row) => !row?.isBlacklisted) ? 'add' : 'remove'
+})
+
+const bulkBlacklistActionEvent = computed(() =>
+  bulkBlacklistActionMode.value === 'remove' ? 'bulk-unblacklist-selected' : 'bulk-blacklist-selected'
+)
+
+const bulkBlacklistActionDisabled = computed(() => {
+  if (!selectedCount.value) return true
+  if (bulkBlacklistActionMode.value === 'remove') {
+    return props.bulkUnblacklistDisabled || props.bulkUnblacklisting
+  }
+  return props.bulkBlacklistDisabled || props.bulkBlacklisting
+})
+
+const bulkBlacklistActionLabel = computed(() => {
+  if (bulkBlacklistActionMode.value === 'remove') {
+    return props.bulkUnblacklisting ? '取消中...' : '取消黑名單'
+  }
+  return props.bulkBlacklisting ? '加入中...' : '加入黑名單'
+})
 
 const tableColumnCount = computed(() => {
   let count = 8
@@ -508,7 +570,7 @@ const saveApplicationRemark = async (row) => {
   try {
     const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ remark: nextRemark }),
     })
     const data = await response.json()
@@ -557,7 +619,7 @@ const updateApplicationStatus = async (row, nextStatus) => {
   try {
     const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ applicationStatus: normalizedStatus }),
     })
     const data = await response.json()
@@ -610,7 +672,7 @@ const updateFirstInterviewArrangement = async (row, nextValue) => {
   try {
     const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ firstInterviewArrangement: normalizedValue }),
     })
     const data = await response.json()
@@ -672,7 +734,7 @@ const quickAddToBlacklist = async (row) => {
   try {
     const response = await fetch(`${apiBaseUrl}/api/candidate-blacklist`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         displayName: String(row?.fullName || '').trim(),
         phone,
@@ -748,20 +810,11 @@ onBeforeUnmount(() => {
         <button
           v-if="showBulkBlacklistActions"
           type="button"
-          class="danger-btn"
-          :disabled="!selectedCount || bulkBlacklistDisabled || bulkBlacklisting"
-          @click="emit('bulk-blacklist-selected')"
+          :class="bulkBlacklistActionMode === 'remove' ? 'secondary-btn' : 'danger-btn'"
+          :disabled="bulkBlacklistActionDisabled"
+          @click="emit(bulkBlacklistActionEvent)"
         >
-          {{ bulkBlacklisting ? '加入中...' : '加入黑名單' }}
-        </button>
-        <button
-          v-if="showBulkBlacklistActions"
-          type="button"
-          class="secondary-btn"
-          :disabled="!selectedCount || bulkUnblacklistDisabled || bulkUnblacklisting"
-          @click="emit('bulk-unblacklist-selected')"
-        >
-          {{ bulkUnblacklisting ? '取消中...' : '取消黑名單' }}
+          {{ bulkBlacklistActionLabel }}
         </button>
         <button
           v-if="showBulkUploadAction"
@@ -909,6 +962,15 @@ onBeforeUnmount(() => {
                           {{ formatDateTime(history.createdAt) }}
                           <template v-if="history.updatedAt"> / {{ formatDateTime(history.updatedAt) }}</template>
                         </small>
+                        <span class="history-operator">
+                          <span
+                            class="history-operator-avatar"
+                            :style="getStatusHistoryOperatorAvatarStyle(history)"
+                          >
+                            {{ getStatusHistoryOperatorAvatarText(history) }}
+                          </span>
+                          <span>{{ getStatusHistoryOperatorName(history) }}</span>
+                        </span>
                         <em v-if="history.firstInterviewArrangement">
                           {{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
                         </em>
@@ -1778,11 +1840,32 @@ th.status-col {
 
 .history-main small,
 .history-main em,
+.history-operator,
 .history-remark {
   color: var(--text-soft);
   font-size: 0.76rem;
   font-style: normal;
   line-height: 1.35;
+}
+
+.history-operator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  font-weight: 700;
+}
+
+.history-operator-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.28rem;
+  height: 1.28rem;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .history-remark {

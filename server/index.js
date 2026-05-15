@@ -165,6 +165,11 @@ const getAuthedUser = async (pool, req) => {
   return rows[0] || null
 }
 
+const getRequestOperatorUserId = async (pool, req) => {
+  const user = await getAuthedUser(pool, req)
+  return Number(user?.id || 0) || null
+}
+
 const sanitizeFileName = (name) =>
   String(name || 'cv-upload')
     .replace(/[\\/:*?"<>|]/g, '_')
@@ -994,6 +999,7 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
   }
 
   const nextRemark = hasRemark ? normalizeApplicationRemark(body?.remark) : normalizeApplicationRemark(existing.remark)
+  const operatorUserId = await getRequestOperatorUserId(pool, req)
 
   await pool.query(
     `UPDATE job_post_applications
@@ -1009,7 +1015,7 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
       firstInterviewArrangement: arrangementResult.value,
       remark: nextRemark,
     },
-    { append: hasStatus && nextStatus !== currentStatus }
+    { append: hasStatus && nextStatus !== currentStatus, operatorUserId }
   )
 
   sendJson(res, 200, {
@@ -1050,15 +1056,17 @@ const createJobPostApplicationStatusHistory = async (pool, req, res, application
   }
 
   const nextRemark = normalizeApplicationRemark(body?.remark)
+  const operatorUserId = await getRequestOperatorUserId(pool, req)
   const [result] = await pool.query(
     `INSERT INTO job_post_application_status_history
-      (application_id, application_status, first_interview_arrangement, remark)
-     VALUES (?, ?, ?, ?)`,
+      (application_id, application_status, first_interview_arrangement, remark, operator_user_id)
+     VALUES (?, ?, ?, ?, ?)`,
     [
       applicationId,
       nextStatus,
       nextStatus === 'screening_hr_approved' ? arrangementResult.value || null : null,
       nextRemark,
+      operatorUserId,
     ]
   )
   await syncApplicationFromLatestStatusHistory(pool, applicationId)
@@ -1127,14 +1135,18 @@ const updateJobPostApplicationStatusHistory = async (pool, req, res, application
   }
 
   const nextRemark = hasRemark ? normalizeApplicationRemark(body?.remark) : normalizeApplicationRemark(existing.remark)
+  const operatorUserId = await getRequestOperatorUserId(pool, req)
   await pool.query(
     `UPDATE job_post_application_status_history
-      SET application_status = ?, first_interview_arrangement = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+      SET application_status = ?, first_interview_arrangement = ?, remark = ?,
+          operator_user_id = COALESCE(?, operator_user_id),
+          updated_at = CURRENT_TIMESTAMP
      WHERE id = ? AND application_id = ?`,
     [
       nextStatus,
       nextStatus === 'screening_hr_approved' ? arrangementResult.value || null : null,
       nextRemark,
+      operatorUserId,
       historyId,
       applicationId,
     ]
@@ -1675,6 +1687,15 @@ const buildApplicationStatusHistoryPayload = (row = {}) => ({
   applicationStatus: normalizeApplicationStatus(row.applicationStatus),
   firstInterviewArrangement: normalizeFirstInterviewArrangement(row.firstInterviewArrangement),
   remark: normalizeText(row.remark),
+  operatorUser: row.operatorUserId
+    ? buildUserPayload({
+        id: row.operatorUserId,
+        email: row.operatorEmail,
+        username: row.operatorUsername,
+        avatarText: row.operatorAvatarText,
+        avatarBgColor: row.operatorAvatarBgColor,
+      })
+    : null,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 })
@@ -1682,16 +1703,22 @@ const buildApplicationStatusHistoryPayload = (row = {}) => ({
 const listJobPostApplicationStatusHistory = async (pool, applicationId) => {
   const [rows] = await pool.query(
     `SELECT
-        id,
-        application_id AS applicationId,
-        application_status AS applicationStatus,
-        first_interview_arrangement AS firstInterviewArrangement,
-        remark,
-        created_at AS createdAt,
-        updated_at AS updatedAt
-      FROM job_post_application_status_history
-      WHERE application_id = ?
-      ORDER BY created_at DESC, id DESC`,
+        history.id,
+        history.application_id AS applicationId,
+        history.application_status AS applicationStatus,
+        history.first_interview_arrangement AS firstInterviewArrangement,
+        history.remark,
+        history.operator_user_id AS operatorUserId,
+        operator_user.email AS operatorEmail,
+        operator_user.username AS operatorUsername,
+        operator_user.avatar_text AS operatorAvatarText,
+        operator_user.avatar_bg_color AS operatorAvatarBgColor,
+        history.created_at AS createdAt,
+        history.updated_at AS updatedAt
+      FROM job_post_application_status_history history
+      LEFT JOIN users operator_user ON operator_user.id = history.operator_user_id
+      WHERE history.application_id = ?
+      ORDER BY history.created_at DESC, history.id DESC`,
     [applicationId]
   )
   return rows.map((row) => buildApplicationStatusHistoryPayload(row))
@@ -1704,16 +1731,22 @@ const listJobPostApplicationStatusHistories = async (pool, applicationIds = []) 
   const placeholders = ids.map(() => '?').join(', ')
   const [rows] = await pool.query(
     `SELECT
-        id,
-        application_id AS applicationId,
-        application_status AS applicationStatus,
-        first_interview_arrangement AS firstInterviewArrangement,
-        remark,
-        created_at AS createdAt,
-        updated_at AS updatedAt
-      FROM job_post_application_status_history
-      WHERE application_id IN (${placeholders})
-      ORDER BY application_id ASC, created_at DESC, id DESC`,
+        history.id,
+        history.application_id AS applicationId,
+        history.application_status AS applicationStatus,
+        history.first_interview_arrangement AS firstInterviewArrangement,
+        history.remark,
+        history.operator_user_id AS operatorUserId,
+        operator_user.email AS operatorEmail,
+        operator_user.username AS operatorUsername,
+        operator_user.avatar_text AS operatorAvatarText,
+        operator_user.avatar_bg_color AS operatorAvatarBgColor,
+        history.created_at AS createdAt,
+        history.updated_at AS updatedAt
+      FROM job_post_application_status_history history
+      LEFT JOIN users operator_user ON operator_user.id = history.operator_user_id
+      WHERE history.application_id IN (${placeholders})
+      ORDER BY history.application_id ASC, history.created_at DESC, history.id DESC`,
     ids
   )
 
@@ -1729,16 +1762,22 @@ const listJobPostApplicationStatusHistories = async (pool, applicationIds = []) 
 const getLatestJobPostApplicationStatusHistory = async (pool, applicationId) => {
   const [rows] = await pool.query(
     `SELECT
-        id,
-        application_id AS applicationId,
-        application_status AS applicationStatus,
-        first_interview_arrangement AS firstInterviewArrangement,
-        remark,
-        created_at AS createdAt,
-        updated_at AS updatedAt
-      FROM job_post_application_status_history
-      WHERE application_id = ?
-      ORDER BY created_at DESC, id DESC
+        history.id,
+        history.application_id AS applicationId,
+        history.application_status AS applicationStatus,
+        history.first_interview_arrangement AS firstInterviewArrangement,
+        history.remark,
+        history.operator_user_id AS operatorUserId,
+        operator_user.email AS operatorEmail,
+        operator_user.username AS operatorUsername,
+        operator_user.avatar_text AS operatorAvatarText,
+        operator_user.avatar_bg_color AS operatorAvatarBgColor,
+        history.created_at AS createdAt,
+        history.updated_at AS updatedAt
+      FROM job_post_application_status_history history
+      LEFT JOIN users operator_user ON operator_user.id = history.operator_user_id
+      WHERE history.application_id = ?
+      ORDER BY history.created_at DESC, history.id DESC
       LIMIT 1`,
     [applicationId]
   )
@@ -1767,18 +1806,19 @@ const syncJobPostApplicationStatusHistory = async (
   pool,
   applicationId,
   { applicationStatus, firstInterviewArrangement = '', remark = '' } = {},
-  { append = false } = {}
+  { append = false, operatorUserId = null } = {}
 ) => {
   const nextStatus = normalizeApplicationStatus(applicationStatus)
   const nextFirstInterviewArrangement = normalizeFirstInterviewArrangement(firstInterviewArrangement)
   const nextRemark = normalizeApplicationRemark(remark)
+  const normalizedOperatorUserId = Number(operatorUserId || 0) || null
 
   if (append) {
     await pool.query(
       `INSERT INTO job_post_application_status_history
-        (application_id, application_status, first_interview_arrangement, remark)
-       VALUES (?, ?, ?, ?)`,
-      [applicationId, nextStatus, nextFirstInterviewArrangement || null, nextRemark]
+        (application_id, application_status, first_interview_arrangement, remark, operator_user_id)
+       VALUES (?, ?, ?, ?, ?)`,
+      [applicationId, nextStatus, nextFirstInterviewArrangement || null, nextRemark, normalizedOperatorUserId]
     )
     return
   }
@@ -1795,18 +1835,20 @@ const syncJobPostApplicationStatusHistory = async (
   if (!rows[0]) {
     await pool.query(
       `INSERT INTO job_post_application_status_history
-        (application_id, application_status, first_interview_arrangement, remark)
-       VALUES (?, ?, ?, ?)`,
-      [applicationId, nextStatus, nextFirstInterviewArrangement || null, nextRemark]
+        (application_id, application_status, first_interview_arrangement, remark, operator_user_id)
+       VALUES (?, ?, ?, ?, ?)`,
+      [applicationId, nextStatus, nextFirstInterviewArrangement || null, nextRemark, normalizedOperatorUserId]
     )
     return
   }
 
   await pool.query(
     `UPDATE job_post_application_status_history
-      SET application_status = ?, first_interview_arrangement = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+      SET application_status = ?, first_interview_arrangement = ?, remark = ?,
+          operator_user_id = COALESCE(?, operator_user_id),
+          updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [nextStatus, nextFirstInterviewArrangement || null, nextRemark, Number(rows[0].id)]
+    [nextStatus, nextFirstInterviewArrangement || null, nextRemark, normalizedOperatorUserId, Number(rows[0].id)]
   )
 }
 

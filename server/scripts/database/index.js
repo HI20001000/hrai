@@ -70,6 +70,22 @@ export const ensureAuthTables = async (pool) => {
 }
 
 export const ensureCvTables = async (pool) => {
+  const ensureColumn = async (sql) => {
+    try {
+      await pool.query(sql)
+    } catch (error) {
+      if (!/duplicate column name/i.test(String(error?.message || ''))) throw error
+    }
+  }
+
+  const ensureIndex = async (sql) => {
+    try {
+      await pool.query(sql)
+    } catch (error) {
+      if (!/duplicate key name/i.test(String(error?.message || ''))) throw error
+    }
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS candidates (
       id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -209,13 +225,22 @@ export const ensureCvTables = async (pool) => {
       application_status VARCHAR(40) NOT NULL DEFAULT 'screening',
       first_interview_arrangement VARCHAR(40) NULL,
       remark TEXT NULL,
+      operator_user_id BIGINT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       INDEX idx_application_status_history_application (application_id),
       INDEX idx_application_status_history_created (created_at),
+      INDEX idx_application_status_history_operator (operator_user_id),
       CONSTRAINT fk_application_status_history_application FOREIGN KEY (application_id) REFERENCES job_post_applications(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `)
+
+  await ensureColumn(
+    'ALTER TABLE job_post_application_status_history ADD COLUMN operator_user_id BIGINT NULL AFTER remark'
+  )
+  await ensureIndex(
+    'ALTER TABLE job_post_application_status_history ADD INDEX idx_application_status_history_operator (operator_user_id)'
+  )
 
   await pool.query(`
     INSERT INTO job_post_application_status_history
