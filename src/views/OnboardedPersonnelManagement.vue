@@ -364,8 +364,8 @@ onMounted(async () => {
             <p class="subtle">狀態使用在職 / 已離職；已離職對應原 inactive。</p>
           </div>
           <div class="directory-actions">
-            <button type="button" class="secondary-btn" @click="loadPersonnel">重新整理</button>
-            <button type="button" class="primary-btn" @click="resetPersonnelForm">新增人員</button>
+            <button type="button" class="secondary-btn" @click="loadPersonnel">刷新</button>
+            <button type="button" class="primary-btn" @click="resetPersonnelForm">新增</button>
           </div>
         </div>
 
@@ -443,7 +443,7 @@ onMounted(async () => {
               {{ personnelDeleting ? '刪除中...' : '刪除' }}
             </button>
             <button type="button" class="primary-btn" :disabled="personnelSaving" @click="savePersonnel">
-              {{ personnelSaving ? '儲存中...' : isCreatingPersonnel ? '建立人員' : '更新人員' }}
+              {{ personnelSaving ? '儲存中...' : isCreatingPersonnel ? '新增' : '保存' }}
             </button>
           </div>
         </div>
@@ -596,7 +596,7 @@ onMounted(async () => {
 
 .directory-filters {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(168px, 200px) minmax(92px, auto);
+  grid-template-columns: minmax(220px, 0.78fr) minmax(168px, 180px) 72px;
   align-items: stretch;
   gap: 0.75rem;
   padding: 0.85rem;
@@ -614,7 +614,14 @@ onMounted(async () => {
 .directory-filters .search-input,
 .directory-filters :deep(.app-select-trigger),
 .directory-filters .secondary-btn {
-  min-height: 48px;
+  min-height: 50px;
+  height: 50px;
+}
+
+.directory-filters .secondary-btn {
+  width: 72px;
+  justify-content: center;
+  padding-inline: 0.7rem;
 }
 
 .directory-row {
