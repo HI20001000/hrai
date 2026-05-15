@@ -19,6 +19,8 @@ const applicationRows = ref([])
 const selectedApplicationIds = ref([])
 const isLoading = ref(false)
 const isBulkDeleting = ref(false)
+const isBulkBlacklisting = ref(false)
+const isBulkUnblacklisting = ref(false)
 const isUploadModalOpen = ref(false)
 const isStatusModalOpen = ref(false)
 const isSavingStatusModal = ref(false)
@@ -62,12 +64,43 @@ const formatDateTime = (value) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+const hasBlacklistIdentity = (row) =>
+  Boolean(String(row?.phone || '').trim() || String(row?.email || '').trim())
+
+const canBulkAddBlacklist = (row) => !row?.isBlacklisted && hasBlacklistIdentity(row)
+
+const canBulkRemoveBlacklist = (row) =>
+  Boolean(row?.isBlacklisted && Number(row?.blacklistEntryId || 0) > 0)
+
+const getBlacklistIdentityKey = (row) => {
+  const phone = String(row?.phone || '').trim()
+  const email = String(row?.email || '').trim().toLowerCase()
+  return `${phone || 'no-phone'}::${email || 'no-email'}`
+}
+
+const buildBlacklistPayloadFromRow = (row, reason) => ({
+  displayName: String(row?.fullName || '').trim(),
+  phone: String(row?.phone || '').trim(),
+  email: String(row?.email || '').trim(),
+  reason: String(reason || '').trim(),
+  status: 'active',
+  remark: '',
+})
+
 const selectedRows = computed(() => {
   const selectedSet = new Set(selectedApplicationIds.value.map((id) => Number(id)))
   return applicationRows.value.filter((row) => selectedSet.has(Number(row.applicationId)))
 })
 
+const selectedBlacklistAddRows = computed(() => selectedRows.value.filter(canBulkAddBlacklist))
+
+const selectedBlacklistRemoveRows = computed(() => selectedRows.value.filter(canBulkRemoveBlacklist))
+
 const bulkUploadDisabled = computed(() => false)
+
+const bulkBlacklistDisabled = computed(() => !selectedBlacklistAddRows.value.length)
+
+const bulkUnblacklistDisabled = computed(() => !selectedBlacklistRemoveRows.value.length)
 
 const projectOptions = computed(() =>
   projectRows.value.map((project) => ({
@@ -367,6 +400,123 @@ const deleteSelectedApplications = async () => {
   }
 }
 
+const summarizeBulkBlacklistResult = ({ action, successCount, failedCount, skippedCount }) => {
+  const parts = []
+  if (successCount) parts.push(`${action} ${successCount} 筆 Blacklist`)
+  if (skippedCount) parts.push(`略過 ${skippedCount} 位`)
+  if (failedCount) parts.push(`失敗 ${failedCount} 筆`)
+  return parts.join('，') || '沒有可處理的候選人'
+}
+
+const bulkAddSelectedToBlacklist = async () => {
+  if (!selectedApplicationIds.value.length || isBulkBlacklisting.value) return
+
+  const seenIdentities = new Set()
+  const rowsToAdd = []
+  for (const row of selectedBlacklistAddRows.value) {
+    const identityKey = getBlacklistIdentityKey(row)
+    if (seenIdentities.has(identityKey)) continue
+    seenIdentities.add(identityKey)
+    rowsToAdd.push(row)
+  }
+
+  if (!rowsToAdd.length) {
+    message.value = '已選候選人沒有可加入 Blacklist 的資料'
+    return
+  }
+
+  const reason = window.prompt('請輸入加入 Blacklist 的原因', '由候選人管理頁批量加入')
+  if (reason === null) return
+
+  const normalizedReason = String(reason || '').trim()
+  if (!normalizedReason) {
+    message.value = '請先輸入 Blacklist 原因'
+    return
+  }
+
+  const skippedCount = Math.max(0, selectedRows.value.length - rowsToAdd.length)
+  isBulkBlacklisting.value = true
+  try {
+    const results = await Promise.allSettled(
+      rowsToAdd.map((row) =>
+        fetchJson(`${apiBaseUrl}/api/candidate-blacklist`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildBlacklistPayloadFromRow(row, normalizedReason)),
+        })
+      )
+    )
+    const successCount = results.filter((result) => result.status === 'fulfilled').length
+    const failedCount = results.length - successCount
+
+    selectedApplicationIds.value = []
+    await loadApplicationTable()
+    window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
+    message.value = summarizeBulkBlacklistResult({
+      action: '已加入',
+      successCount,
+      failedCount,
+      skippedCount,
+    })
+  } catch (error) {
+    message.value = error?.message || '批量加入 Blacklist 失敗'
+  } finally {
+    isBulkBlacklisting.value = false
+  }
+}
+
+const bulkRemoveSelectedFromBlacklist = async () => {
+  if (!selectedApplicationIds.value.length || isBulkUnblacklisting.value) return
+
+  const rowsByEntryId = new Map()
+  for (const row of selectedBlacklistRemoveRows.value) {
+    const blacklistEntryId = Number(row?.blacklistEntryId || 0)
+    if (blacklistEntryId && !rowsByEntryId.has(blacklistEntryId)) {
+      rowsByEntryId.set(blacklistEntryId, row)
+    }
+  }
+  const rowsToRemove = Array.from(rowsByEntryId.values())
+
+  if (!rowsToRemove.length) {
+    message.value = '已選候選人沒有可取消的 Blacklist'
+    return
+  }
+
+  const confirmed = window.confirm(
+    `確定取消已選候選人的 Blacklist？\n\n` +
+      `將處理名單：\n${buildSelectedRowsPreview(rowsToRemove)}`
+  )
+  if (!confirmed) return
+
+  const skippedCount = Math.max(0, selectedRows.value.length - selectedBlacklistRemoveRows.value.length)
+  isBulkUnblacklisting.value = true
+  try {
+    const results = await Promise.allSettled(
+      rowsToRemove.map((row) =>
+        fetchJson(`${apiBaseUrl}/api/candidate-blacklist/${Number(row.blacklistEntryId)}`, {
+          method: 'DELETE',
+        })
+      )
+    )
+    const successCount = results.filter((result) => result.status === 'fulfilled').length
+    const failedCount = results.length - successCount
+
+    selectedApplicationIds.value = []
+    await loadApplicationTable()
+    window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
+    message.value = summarizeBulkBlacklistResult({
+      action: '已取消',
+      successCount,
+      failedCount,
+      skippedCount,
+    })
+  } catch (error) {
+    message.value = error?.message || '批量取消 Blacklist 失敗'
+  } finally {
+    isBulkUnblacklisting.value = false
+  }
+}
+
 const openUploadModal = () => {
   message.value = ''
   isUploadModalOpen.value = true
@@ -655,12 +805,17 @@ onUnmounted(() => {
       :show-target-position-column="false"
       :show-phone-column="false"
       :show-project-transfer-action="true"
+      :show-bulk-blacklist-actions="true"
       :show-bulk-upload-action="true"
       :show-job-filter="true"
       :show-status-filter="true"
       :paginated="true"
       :page-size="30"
       :status-actionable="true"
+      :bulk-blacklisting="isBulkBlacklisting"
+      :bulk-unblacklisting="isBulkUnblacklisting"
+      :bulk-blacklist-disabled="bulkBlacklistDisabled"
+      :bulk-unblacklist-disabled="bulkUnblacklistDisabled"
       :bulk-upload-disabled="bulkUploadDisabled"
       :selectable="true"
       :selected-ids="selectedApplicationIds"
@@ -670,6 +825,8 @@ onUnmounted(() => {
       search-placeholder="搜尋職位 / 候選人 / 狀態 / 面試安排 / 匹配職位 / 備註 / 檔案"
       @selection-change="selectedApplicationIds = $event"
       @delete-selected="deleteSelectedApplications"
+      @bulk-blacklist-selected="bulkAddSelectedToBlacklist"
+      @bulk-unblacklist-selected="bulkRemoveSelectedFromBlacklist"
       @upload-selected-cv="openUploadModal"
       @add-to-project="openProjectTransferModal"
       @edit-status="openApplicationStatusModal"

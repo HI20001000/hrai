@@ -458,7 +458,7 @@ const handleRowClick = (row, event) => {
   const target = event?.target
   if (
     target?.closest?.(
-      'button, input, textarea, label, a, .app-select, .app-select-trigger, .app-select-menu'
+      'button, input, textarea, label, a, .app-select, .app-select-trigger, .app-select-menu, .blacklist-badge, .blacklist-tooltip, .status-history-popover'
     )
   ) {
     return
@@ -794,7 +794,19 @@ const quickAddToBlacklist = async (row) => {
             <td class="name-col">
               <div class="candidate-name-cell">
                 <span>{{ row.fullName || '--' }}</span>
-                <span v-if="row.isBlacklisted" class="blacklist-badge">Blacklist</span>
+                <span
+                  v-if="row.isBlacklisted"
+                  class="blacklist-badge"
+                  tabindex="0"
+                  :aria-label="`Blacklist，原因：${row.blacklistReason || '--'}，命中：${getBlacklistMatchedByLabel(row.blacklistMatchedBy)}`"
+                  @click.stop
+                >
+                  Blacklist
+                  <span class="blacklist-tooltip" role="tooltip">
+                    <span><strong>原因：</strong>{{ row.blacklistReason || '--' }}</span>
+                    <span><strong>命中：</strong>{{ getBlacklistMatchedByLabel(row.blacklistMatchedBy) }}</span>
+                  </span>
+                </span>
                 <button
                   v-else-if="showBlacklistAction"
                   type="button"
@@ -812,11 +824,6 @@ const quickAddToBlacklist = async (row) => {
                 >
                   加入項目
                 </button>
-              </div>
-              <div v-if="row.isBlacklisted" class="blacklist-note">
-                <strong>原因：</strong>{{ row.blacklistReason || '--' }}
-                <span class="blacklist-divider">｜</span>
-                <strong>命中：</strong>{{ getBlacklistMatchedByLabel(row.blacklistMatchedBy) }}
               </div>
             </td>
             <td class="status-col">
@@ -1159,7 +1166,7 @@ const quickAddToBlacklist = async (row) => {
 }
 
 .application-table thead th {
-  z-index: 5;
+  z-index: 60;
 }
 
 .job-col,
@@ -1175,6 +1182,7 @@ const quickAddToBlacklist = async (row) => {
 }
 
 .blacklist-badge {
+  position: relative;
   display: inline-flex;
   align-items: center;
   min-height: 24px;
@@ -1185,6 +1193,55 @@ const quickAddToBlacklist = async (row) => {
   font-size: 0.74rem;
   font-weight: 800;
   letter-spacing: 0.01em;
+  cursor: help;
+  outline: none;
+}
+
+.blacklist-badge:focus-visible {
+  box-shadow: 0 0 0 3px rgba(217, 45, 32, 0.16);
+}
+
+.blacklist-tooltip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 0.45rem);
+  z-index: 35;
+  display: grid;
+  gap: 0.28rem;
+  width: max-content;
+  min-width: 180px;
+  max-width: 280px;
+  padding: 0.62rem 0.72rem;
+  border: 1px solid rgba(217, 45, 32, 0.16);
+  border-radius: 10px;
+  color: var(--text-base);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 18px 38px rgba(15, 23, 42, 0.12),
+    0 6px 16px rgba(217, 45, 32, 0.08);
+  font-size: 0.76rem;
+  font-weight: 650;
+  line-height: 1.45;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    visibility 160ms ease;
+}
+
+.blacklist-tooltip strong {
+  color: #b42318;
+}
+
+.blacklist-badge:hover .blacklist-tooltip,
+.blacklist-badge:focus-visible .blacklist-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 
 .blacklist-action-btn,
@@ -1226,19 +1283,6 @@ const quickAddToBlacklist = async (row) => {
 .project-action-btn:disabled {
   opacity: 0.56;
   cursor: not-allowed;
-}
-
-.blacklist-note {
-  margin-top: 0.42rem;
-  color: #b42318;
-  font-size: 0.78rem;
-  line-height: 1.4;
-  white-space: normal;
-}
-
-.blacklist-divider {
-  margin: 0 0.25rem;
-  color: rgba(180, 35, 24, 0.55);
 }
 
 .blacklist-row td {
@@ -1334,8 +1378,12 @@ const quickAddToBlacklist = async (row) => {
 }
 
 .remark-text {
+  display: block;
+  min-width: 220px;
   max-width: 280px;
-  white-space: pre-wrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   line-height: 1.45;
   color: var(--text-base);
 }
@@ -1573,19 +1621,34 @@ const quickAddToBlacklist = async (row) => {
 }
 
 .status-cell-wrap.actionable {
-  z-index: 8;
+  z-index: 2;
 }
 
 .status-cell-wrap.actionable:hover,
 .status-cell-wrap.actionable:focus-within {
-  z-index: 170;
+  z-index: 20;
+}
+
+.status-cell-wrap.actionable::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 100%;
+  display: none;
+  width: min(340px, calc(100vw - 2rem));
+  height: 0.65rem;
+}
+
+.status-cell-wrap.actionable:hover::after,
+.status-cell-wrap.actionable:focus-within::after {
+  display: block;
 }
 
 .status-history-popover {
   position: absolute;
   left: 0;
   top: calc(100% + 0.55rem);
-  z-index: 160;
+  z-index: 25;
   display: none;
   width: min(340px, calc(100vw - 2rem));
   max-height: 260px;
@@ -1597,7 +1660,7 @@ const quickAddToBlacklist = async (row) => {
   box-shadow:
     0 24px 54px rgba(15, 23, 42, 0.14),
     0 8px 20px rgba(47, 111, 237, 0.08);
-  pointer-events: none;
+  pointer-events: auto;
   white-space: normal;
 }
 
