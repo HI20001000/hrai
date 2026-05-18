@@ -29,6 +29,14 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  loadStatus: {
+    type: String,
+    default: '',
+  },
+  loadMessage: {
+    type: String,
+    default: '',
+  },
   showJobColumn: {
     type: Boolean,
     default: false,
@@ -410,6 +418,28 @@ const tableWrapStyle = computed(() =>
     : undefined
 )
 
+const effectiveLoadStatus = computed(() => {
+  if (props.loading) return 'loading'
+  const status = String(props.loadStatus || '').trim().toLowerCase()
+  return ['loading', 'success', 'error'].includes(status) ? status : ''
+})
+
+const showLoadStatus = computed(() => Boolean(effectiveLoadStatus.value))
+
+const loadStatusMessage = computed(() => {
+  if (props.loadMessage) return props.loadMessage
+  if (effectiveLoadStatus.value === 'loading') return '資料載入中'
+  if (effectiveLoadStatus.value === 'success') return '資料載入成功'
+  if (effectiveLoadStatus.value === 'error') return '資料載入失敗'
+  return ''
+})
+
+const loadStatusIcon = computed(() => {
+  if (effectiveLoadStatus.value === 'success') return '✓'
+  if (effectiveLoadStatus.value === 'error') return '!'
+  return ''
+})
+
 const selectedCount = computed(() => props.selectedIds.length)
 
 const selectedRowsForBulkActions = computed(() => {
@@ -478,24 +508,40 @@ const closePreviewModal = () => {
   previewFileUrl.value = ''
 }
 
+const canPreviewCv = (row) => Boolean(row?.cvId && row?.cvFileName && row?.hasDownload)
+
+const canPreviewExtracted = (row) =>
+  Boolean(row?.cvId && row?.extractedFileName && row?.hasExtractedPreview)
+
 const openPreview = async (row, type) => {
   if (!row?.cvId) return
+  const normalizedType = type === 'extracted' ? 'extracted' : 'cv'
+
+  if (normalizedType === 'cv' && !canPreviewCv(row)) {
+    emit('notify', { type: 'error', message: '原始 CV 檔案不存在，無法預覽' })
+    return
+  }
+
+  if (normalizedType === 'extracted' && !canPreviewExtracted(row)) {
+    emit('notify', { type: 'error', message: 'AI分析檔案不存在，無法預覽' })
+    return
+  }
 
   isPreviewOpen.value = true
   isPreviewLoading.value = true
   previewError.value = ''
   previewContent.value = ''
-  previewType.value = type === 'extracted' ? 'extracted' : 'cv'
+  previewType.value = normalizedType
   previewCvId.value = Number(row.cvId)
   previewApplicationId.value = Number(row.applicationId || 0) || null
-  previewDownloadUrl.value = type === 'cv' && row.hasDownload
+  previewDownloadUrl.value = normalizedType === 'cv'
     ? `${apiBaseUrl}/api/candidate-cvs/${row.cvId}/download`
     : ''
-  previewDownloadFileName.value = type === 'cv' ? String(row.cvFileName || '') : ''
-  previewFileUrl.value = type === 'cv' && row.hasDownload
+  previewDownloadFileName.value = normalizedType === 'cv' ? String(row.cvFileName || '') : ''
+  previewFileUrl.value = normalizedType === 'cv'
     ? `${apiBaseUrl}/api/candidate-cvs/${row.cvId}/file-preview`
     : ''
-  previewTitle.value = type === 'extracted'
+  previewTitle.value = normalizedType === 'extracted'
     ? `AI分析檔案預覽 - ${row.extractedFileName || row.cvFileName}`
     : `CV 檔案預覽 - ${row.cvFileName}`
 
@@ -505,7 +551,7 @@ const openPreview = async (row, type) => {
   }
 
   try {
-    const response = await fetch(`${apiBaseUrl}/api/candidate-cvs/${row.cvId}/preview?type=${type}`)
+    const response = await fetch(`${apiBaseUrl}/api/candidate-cvs/${row.cvId}/preview?type=${normalizedType}`)
     const data = await response.json()
     if (!response.ok) {
       previewError.value = data.message || '讀取預覽失敗'
@@ -836,9 +882,21 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <p v-if="loading" class="hint">讀取中...</p>
+    <Transition name="load-status-fade">
+      <div
+        v-if="showLoadStatus"
+        class="load-status-card"
+        :class="`load-status-${effectiveLoadStatus}`"
+        :aria-busy="effectiveLoadStatus === 'loading'"
+        aria-live="polite"
+      >
+        <span v-if="effectiveLoadStatus === 'loading'" class="load-spinner" aria-hidden="true"></span>
+        <span v-else class="load-status-icon" aria-hidden="true">{{ loadStatusIcon }}</span>
+        <span>{{ loadStatusMessage }}</span>
+      </div>
+    </Transition>
     <div
-      v-else
+      v-if="!loading"
       class="table-wrap"
       :class="{ 'table-wrap-paginated': paginated }"
       :style="tableWrapStyle"
@@ -1029,7 +1087,7 @@ onBeforeUnmount(() => {
             <td v-if="showPhoneColumn" class="phone-col">{{ row.phone || '--' }}</td>
             <td class="file-column file-col">
               <button
-                v-if="row.cvFileName"
+                v-if="canPreviewCv(row)"
                 type="button"
                 class="link-btn file-link"
                 @click="openPreview(row, 'cv')"
@@ -1040,7 +1098,7 @@ onBeforeUnmount(() => {
             </td>
             <td class="file-column file-col">
               <button
-                v-if="row.extractedFileName"
+                v-if="canPreviewExtracted(row)"
                 type="button"
                 class="link-btn file-link"
                 @click="openPreview(row, 'extracted')"
@@ -1233,6 +1291,96 @@ onBeforeUnmount(() => {
   font-size: 0.82rem;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.load-status-card {
+  --load-status-color: var(--accent-hover);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: fit-content;
+  min-height: 42px;
+  margin: 0.15rem 0;
+  padding: 0.62rem 0.9rem;
+  border: 1px solid rgba(47, 111, 237, 0.14);
+  border-radius: 999px;
+  color: var(--accent-hover);
+  background: rgba(47, 111, 237, 0.08);
+  font-size: 0.88rem;
+  font-weight: 800;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.load-status-success {
+  --load-status-color: var(--success);
+  color: var(--success);
+  border-color: rgba(31, 143, 99, 0.18);
+  background: var(--success-soft);
+}
+
+.load-status-error {
+  --load-status-color: var(--danger);
+  color: var(--danger);
+  border-color: rgba(197, 82, 82, 0.18);
+  background: var(--danger-soft);
+}
+
+.load-spinner,
+.load-status-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.load-spinner {
+  border: 2px solid rgba(47, 111, 237, 0.2);
+  border-top-color: currentColor;
+  border-radius: 999px;
+  animation: load-spin 760ms linear infinite;
+}
+
+.load-status-icon {
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--load-status-color);
+  font-size: 0.78rem;
+  line-height: 1;
+  animation: load-pop 280ms ease both;
+}
+
+.load-status-error .load-status-icon {
+  font-weight: 900;
+}
+
+.load-status-fade-enter-active,
+.load-status-fade-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.load-status-fade-enter-from,
+.load-status-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@keyframes load-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes load-pop {
+  0% {
+    transform: scale(0.72);
+  }
+  70% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .table-wrap {

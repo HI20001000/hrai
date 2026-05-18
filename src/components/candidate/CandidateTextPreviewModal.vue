@@ -1,5 +1,5 @@
 ﻿<script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
 import ProjectExperiencesField from '../ProjectExperiencesField.vue'
 import MatchDimensionBreakdown from '../MatchDimensionBreakdown.vue'
@@ -37,6 +37,34 @@ const updateError = ref('')
 const matchLoading = ref(false)
 const matchError = ref('')
 const jobMatches = ref([])
+const fileFrameStatus = ref('')
+const transientLoadStatus = ref('')
+let loadStatusTimer = null
+
+const clearLoadStatusTimer = () => {
+  if (loadStatusTimer) {
+    window.clearTimeout(loadStatusTimer)
+    loadStatusTimer = null
+  }
+}
+
+const showTransientSuccess = () => {
+  clearLoadStatusTimer()
+  transientLoadStatus.value = 'success'
+  loadStatusTimer = window.setTimeout(() => {
+    transientLoadStatus.value = ''
+    loadStatusTimer = null
+  }, 1200)
+}
+
+const showFilePreviewSuccess = () => {
+  clearLoadStatusTimer()
+  fileFrameStatus.value = 'success'
+  loadStatusTimer = window.setTimeout(() => {
+    if (fileFrameStatus.value === 'success') fileFrameStatus.value = ''
+    loadStatusTimer = null
+  }, 1200)
+}
 
 const resetEditState = () => {
   isEditingAll.value = false
@@ -89,8 +117,44 @@ watch(
     if (!open) {
       updateError.value = ''
       updateMessage.value = ''
+      fileFrameStatus.value = ''
+      transientLoadStatus.value = ''
+      clearLoadStatusTimer()
       resetEditState()
       resetMatchState()
+    }
+  }
+)
+
+watch(
+  () => [props.open, props.previewType, props.filePreviewUrl],
+  () => {
+    if (props.open && props.previewType === 'cv' && props.filePreviewUrl) {
+      clearLoadStatusTimer()
+      transientLoadStatus.value = ''
+      fileFrameStatus.value = 'loading'
+      return
+    }
+    fileFrameStatus.value = ''
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.loading,
+  (loading, wasLoading) => {
+    if (!loading && wasLoading && props.open && !props.error && !props.filePreviewUrl) {
+      showTransientSuccess()
+    }
+  }
+)
+
+watch(
+  () => props.error,
+  (error) => {
+    if (error) {
+      transientLoadStatus.value = ''
+      clearLoadStatusTimer()
     }
   }
 )
@@ -107,6 +171,32 @@ const editableRows = computed(() => {
 const projectExperienceField = computed(() => extractedPreviewData.value?.projectExperienceField || null)
 
 const shouldRenderExtractedTable = computed(() => !!extractedPreviewData.value)
+
+const previewLoadStatus = computed(() => {
+  if (props.loading) return 'loading'
+  if (props.error) return 'error'
+  if (fileFrameStatus.value) return fileFrameStatus.value
+  return transientLoadStatus.value
+})
+
+const previewLoadMessage = computed(() => {
+  if (previewLoadStatus.value === 'loading') return '檔案載入中'
+  if (previewLoadStatus.value === 'success') return '檔案載入成功'
+  if (previewLoadStatus.value === 'error') return props.error || '檔案載入失敗'
+  return ''
+})
+
+const previewLoadIcon = computed(() => (previewLoadStatus.value === 'error' ? '!' : '✓'))
+
+const handleFilePreviewLoaded = () => {
+  if (!props.open || props.previewType !== 'cv' || !props.filePreviewUrl) return
+  showFilePreviewSuccess()
+}
+
+const handleFilePreviewFailed = () => {
+  clearLoadStatusTimer()
+  fileFrameStatus.value = 'error'
+}
 
 const loadJobMatches = async () => {
   if (!props.open || props.previewType !== 'extracted') return
@@ -241,6 +331,10 @@ const saveAllEdits = async () => {
     isSavingAll.value = false
   }
 }
+
+onBeforeUnmount(() => {
+  clearLoadStatusTimer()
+})
 </script>
 
 <template>
@@ -265,9 +359,21 @@ const saveAllEdits = async () => {
         </header>
 
         <div class="preview-body">
-          <p v-if="props.loading" class="hint">讀取中...</p>
-          <p v-else-if="props.error" class="error">{{ props.error }}</p>
-          <div v-else-if="shouldRenderExtractedTable" class="structured-preview">
+          <Transition name="preview-load-fade">
+            <div
+              v-if="previewLoadStatus"
+              class="preview-load-status"
+              :class="`preview-load-${previewLoadStatus}`"
+              :aria-busy="previewLoadStatus === 'loading'"
+              aria-live="polite"
+            >
+              <span v-if="previewLoadStatus === 'loading'" class="preview-spinner" aria-hidden="true"></span>
+              <span v-else class="preview-status-icon" aria-hidden="true">{{ previewLoadIcon }}</span>
+              <span>{{ previewLoadMessage }}</span>
+            </div>
+          </Transition>
+
+          <div v-if="!props.loading && !props.error && shouldRenderExtractedTable" class="structured-preview">
             <p v-if="updateMessage" class="success">{{ updateMessage }}</p>
             <p v-if="updateError" class="error">{{ updateError }}</p>
             <p v-if="matchError" class="error">{{ matchError }}</p>
@@ -388,18 +494,19 @@ const saveAllEdits = async () => {
               <button type="button" class="cancel-btn" :disabled="isSavingAll" @click="cancelEditAll">取消</button>
             </div>
           </div>
-          <template v-else-if="props.previewType === 'cv' && props.filePreviewUrl">
+          <template v-else-if="!props.error && props.previewType === 'cv' && props.filePreviewUrl">
             <iframe
+              v-show="fileFrameStatus !== 'loading' && fileFrameStatus !== 'error'"
               class="cv-file-preview"
               :src="props.filePreviewUrl"
               title="CV 檔案預覽"
+              @load="handleFilePreviewLoaded"
+              @error="handleFilePreviewFailed"
             ></iframe>
           </template>
-          <template v-else>
-            <p v-if="props.previewType === 'cv' && !props.downloadUrl" class="hint">
-              原始 CV 檔案已不在儲存空間，目前只能查看已解析內容。
-            </p>
-            <pre class="content">{{ localContent || '（無內容）' }}</pre>
+          <template v-else-if="!props.loading && !props.error">
+            <pre v-if="props.previewType !== 'cv' && localContent" class="content">{{ localContent }}</pre>
+            <p v-else class="hint">沒有可預覽的檔案資料</p>
           </template>
         </div>
       </section>
@@ -427,6 +534,92 @@ const saveAllEdits = async () => {
   color: var(--text-strong);
   font-size: 0.92rem;
   line-height: 1.5;
+}
+
+.preview-load-status {
+  --preview-load-color: var(--accent-hover);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: fit-content;
+  min-height: 42px;
+  margin: 0 0 0.9rem;
+  padding: 0.62rem 0.9rem;
+  border: 1px solid rgba(47, 111, 237, 0.14);
+  border-radius: 999px;
+  color: var(--accent-hover);
+  background: rgba(47, 111, 237, 0.08);
+  font-size: 0.88rem;
+  font-weight: 800;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.preview-load-success {
+  --preview-load-color: var(--success);
+  color: var(--success);
+  border-color: rgba(31, 143, 99, 0.18);
+  background: var(--success-soft);
+}
+
+.preview-load-error {
+  --preview-load-color: var(--danger);
+  color: var(--danger);
+  border-color: rgba(197, 82, 82, 0.18);
+  background: var(--danger-soft);
+}
+
+.preview-spinner,
+.preview-status-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.preview-spinner {
+  border: 2px solid rgba(47, 111, 237, 0.2);
+  border-top-color: currentColor;
+  border-radius: 999px;
+  animation: preview-spin 760ms linear infinite;
+}
+
+.preview-status-icon {
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--preview-load-color);
+  font-size: 0.78rem;
+  line-height: 1;
+  animation: preview-pop 280ms ease both;
+}
+
+.preview-load-fade-enter-active,
+.preview-load-fade-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.preview-load-fade-enter-from,
+.preview-load-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@keyframes preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes preview-pop {
+  0% {
+    transform: scale(0.72);
+  }
+  70% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .cv-file-preview {

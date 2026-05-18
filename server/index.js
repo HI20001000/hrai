@@ -795,7 +795,9 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
         cv.id AS cvId,
         cv.original_filename AS cvFileName,
         cv.storage_key AS storageKey,
-        extracts.target_position AS targetPosition
+        extracts.target_position AS targetPosition,
+        CASE WHEN extracts.cv_text IS NOT NULL AND extracts.cv_text <> '' THEN 1 ELSE 0 END AS hasCvPreview,
+        CASE WHEN extracts.extracted_text IS NOT NULL AND extracts.extracted_text <> '' THEN 1 ELSE 0 END AS hasExtractedPreview
       FROM job_post_applications app
       INNER JOIN candidates c ON c.id = app.candidate_id
       INNER JOIN candidate_cvs cv ON cv.id = app.candidate_cv_id
@@ -833,8 +835,13 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
         phone: normalizeText(row.phone),
         cvId: Number(row.cvId),
         cvFileName: normalizeText(row.cvFileName),
-        extractedFileName: row.cvFileName ? `${row.cvFileName}.extracted.txt` : '',
+        extractedFileName:
+          Number(row.hasExtractedPreview || 0) === 1 && row.cvFileName
+            ? `${row.cvFileName}.extracted.txt`
+            : '',
         hasDownload: hasCandidateCvStoredFile(row.storageKey),
+        hasCvPreview: Number(row.hasCvPreview || 0) === 1,
+        hasExtractedPreview: Number(row.hasExtractedPreview || 0) === 1,
         createdAt: row.createdAt,
         ...buildCandidateBlacklistFlags(match, {
           phone: row.phone,
@@ -914,7 +921,10 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
       phone: normalizeText(row.phone),
       cvId: Number(row.cvId),
       cvFileName: normalizeText(row.cvFileName),
-      extractedFileName: row.cvFileName ? `${row.cvFileName}.extracted.txt` : '',
+      extractedFileName:
+        Number(row.hasExtractedPreview || 0) === 1 && row.cvFileName
+          ? `${row.cvFileName}.extracted.txt`
+          : '',
       targetPosition: normalizeText(row.targetPosition),
       hasDownload: hasCandidateCvStoredFile(row.storageKey),
       hasCvPreview: Number(row.hasCvPreview || 0) === 1,
@@ -3354,7 +3364,10 @@ const listCandidateCvTable = async (pool, _req, res) => {
     phone: row.phone || '',
     cvId: row.cvId ? Number(row.cvId) : null,
     cvFileName: row.cvFileName || '',
-    extractedFileName: row.cvFileName ? `${row.cvFileName}.extracted.txt` : '',
+    extractedFileName:
+      Number(row.hasExtractedPreview || 0) === 1 && row.cvFileName
+        ? `${row.cvFileName}.extracted.txt`
+        : '',
     hasDownload: hasCandidateCvStoredFile(row.storageKey),
     hasCvPreview: Number(row.hasCvPreview || 0) === 1,
     hasExtractedPreview: Number(row.hasExtractedPreview || 0) === 1,
@@ -3425,7 +3438,10 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
         phone: normalizeText(row.phone),
         cvId: Number(row.cvId),
         cvFileName: normalizeText(row.cvFileName),
-        extractedFileName: row.cvFileName ? `${row.cvFileName}.extracted.txt` : '',
+        extractedFileName:
+          Number(row.hasExtractedPreview || 0) === 1 && row.cvFileName
+            ? `${row.cvFileName}.extracted.txt`
+            : '',
         targetPosition: normalizeText(row.targetPosition),
         hasDownload: hasCandidateCvStoredFile(row.storageKey),
         hasCvPreview: Number(row.hasCvPreview || 0) === 1,
@@ -3442,6 +3458,11 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
 
 const getCandidateCvPreview = async (pool, _req, res, candidateCvId, previewType) => {
   const type = previewType === 'extracted' ? 'extracted' : 'cv'
+  if (type === 'cv') {
+    sendJson(res, 404, { message: 'CV text preview is no longer available; use the stored CV file preview instead' })
+    return
+  }
+
   const [rows] = await pool.query(
     `SELECT
         cv.id AS cvId,

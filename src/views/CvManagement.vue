@@ -18,6 +18,8 @@ const message = ref('')
 const applicationRows = ref([])
 const selectedApplicationIds = ref([])
 const isLoading = ref(false)
+const tableLoadStatus = ref('')
+const tableLoadMessage = ref('')
 const isBulkDeleting = ref(false)
 const isBulkBlacklisting = ref(false)
 const isBulkUnblacklisting = ref(false)
@@ -32,6 +34,7 @@ const isProjectTransferSaving = ref(false)
 const projectRows = ref([])
 const projectTransferCandidate = ref(null)
 const projectTransferForm = ref(createEmptyProjectTransferForm())
+let tableLoadStatusTimer = null
 
 const pageMode = ref('list')
 const activeApplicationId = ref(null)
@@ -236,6 +239,26 @@ const fetchJson = async (endpoint, options = {}) => {
   return data
 }
 
+const clearTableLoadStatusTimer = () => {
+  if (tableLoadStatusTimer) {
+    window.clearTimeout(tableLoadStatusTimer)
+    tableLoadStatusTimer = null
+  }
+}
+
+const setTableLoadStatus = (status, nextMessage = '') => {
+  clearTableLoadStatusTimer()
+  tableLoadStatus.value = status
+  tableLoadMessage.value = nextMessage
+  if (status === 'success') {
+    tableLoadStatusTimer = window.setTimeout(() => {
+      tableLoadStatus.value = ''
+      tableLoadMessage.value = ''
+      tableLoadStatusTimer = null
+    }, 1400)
+  }
+}
+
 const resetDetailDrafts = (application = activeApplication.value) => {
   statusDraft.value = normalizeCandidateApplicationStatus(application?.applicationStatus)
   firstInterviewDraft.value = normalizeFirstInterviewArrangement(application?.firstInterviewArrangement)
@@ -263,6 +286,7 @@ const editStatusHistoryDraft = (history) => {
 
 const loadApplicationTable = async () => {
   isLoading.value = true
+  setTableLoadStatus('loading', '候選人資料載入中')
   try {
     const response = await fetch(`${apiBaseUrl}/api/job-post-applications/table`)
     const data = await response.json()
@@ -271,8 +295,11 @@ const loadApplicationTable = async () => {
 
     const allowedIds = new Set(applicationRows.value.map((row) => Number(row.applicationId)))
     selectedApplicationIds.value = selectedApplicationIds.value.filter((id) => allowedIds.has(Number(id)))
-  } catch {
-    message.value = '初始化資料失敗'
+    setTableLoadStatus('success', '候選人資料載入成功')
+  } catch (error) {
+    const nextMessage = error?.message || '初始化資料失敗'
+    message.value = nextMessage
+    setTableLoadStatus('error', nextMessage)
   } finally {
     isLoading.value = false
   }
@@ -841,6 +868,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  clearTableLoadStatusTimer()
   window.removeEventListener('hrai-applications-updated', handleApplicationsUpdated)
   window.removeEventListener('focus', handleApplicationsUpdated)
 })
@@ -865,6 +893,8 @@ onUnmounted(() => {
       v-if="pageMode === 'list'"
       :rows="applicationRows"
       :loading="isLoading"
+      :load-status="tableLoadStatus"
+      :load-message="tableLoadMessage"
       :show-job-column="true"
       :show-target-position-column="false"
       :show-phone-column="false"
@@ -990,9 +1020,9 @@ onUnmounted(() => {
                     <a v-if="activeDownloadUrl" class="link-btn file-link" :href="activeDownloadUrl">
                       {{ activeApplication.cvFileName }}
                     </a>
-                    <span v-else>{{ activeApplication.cvFileName || '--' }}</span>
+                    <span v-else>--</span>
                   </td>
-                  <td>{{ activeApplication.extractedFileName || '--' }}</td>
+                  <td>{{ activeApplication.hasExtractedPreview ? activeApplication.extractedFileName : '--' }}</td>
                   <td>{{ formatDateTime(activeApplication.createdAt) }}</td>
                   <td>
                     <span v-if="activeApplication.isBlacklisted" class="blacklist-badge">已拉黑</span>
