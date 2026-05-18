@@ -421,21 +421,19 @@ const tableWrapStyle = computed(() =>
 const effectiveLoadStatus = computed(() => {
   if (props.loading) return 'loading'
   const status = String(props.loadStatus || '').trim().toLowerCase()
-  return ['loading', 'success', 'error'].includes(status) ? status : ''
+  return ['loading', 'error'].includes(status) ? status : ''
 })
 
 const showLoadStatus = computed(() => Boolean(effectiveLoadStatus.value))
 
 const loadStatusMessage = computed(() => {
   if (props.loadMessage) return props.loadMessage
-  if (effectiveLoadStatus.value === 'loading') return '資料載入中'
-  if (effectiveLoadStatus.value === 'success') return '資料載入成功'
-  if (effectiveLoadStatus.value === 'error') return '資料載入失敗'
+  if (effectiveLoadStatus.value === 'loading') return '資料加載中'
+  if (effectiveLoadStatus.value === 'error') return '資料加載失敗'
   return ''
 })
 
 const loadStatusIcon = computed(() => {
-  if (effectiveLoadStatus.value === 'success') return '✓'
   if (effectiveLoadStatus.value === 'error') return '!'
   return ''
 })
@@ -885,16 +883,14 @@ onBeforeUnmount(() => {
     <Transition name="load-status-fade">
       <div
         v-if="showLoadStatus"
-        class="load-status-backdrop"
+        class="load-status-strip"
         :class="`load-status-${effectiveLoadStatus}`"
         :aria-busy="effectiveLoadStatus === 'loading'"
         aria-live="polite"
       >
-        <div class="load-status-modal" role="status">
-          <span v-if="effectiveLoadStatus === 'loading'" class="load-spinner" aria-hidden="true"></span>
-          <span v-else class="load-status-icon" aria-hidden="true">{{ loadStatusIcon }}</span>
-          <span>{{ loadStatusMessage }}</span>
-        </div>
+        <span v-if="effectiveLoadStatus === 'loading'" class="load-spinner" aria-hidden="true"></span>
+        <span v-else class="load-status-icon" aria-hidden="true">{{ loadStatusIcon }}</span>
+        <span>{{ loadStatusMessage }}</span>
       </div>
     </Transition>
     <div
@@ -1295,53 +1291,29 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.load-status-backdrop {
+.load-status-strip {
   --load-status-color: var(--accent-hover);
-  position: fixed;
-  inset: 0;
-  z-index: 980;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: rgba(15, 23, 42, 0.18);
-  backdrop-filter: blur(10px);
-}
-
-.load-status-modal {
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
-  width: min(320px, calc(100vw - 2rem));
-  min-height: 72px;
-  padding: 1rem 1.1rem;
-  border: 1px solid rgba(255, 255, 255, 0.62);
-  border-radius: 18px;
+  width: 100%;
+  min-height: 46px;
+  margin: 0.1rem 0 0.75rem;
+  padding: 0.72rem 0.9rem;
+  border: 1px solid rgba(47, 111, 237, 0.14);
+  border-radius: 12px;
   color: var(--accent-hover);
-  background: rgba(255, 255, 255, 0.9);
-  font-size: 0.95rem;
+  background: rgba(47, 111, 237, 0.08);
+  font-size: 0.9rem;
   font-weight: 800;
-  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18);
-  backdrop-filter: blur(18px);
-}
-
-.load-status-success {
-  --load-status-color: var(--success);
-}
-
-.load-status-success .load-status-modal {
-  color: var(--success);
-  border-color: rgba(31, 143, 99, 0.18);
-  background: rgba(245, 253, 249, 0.94);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
 }
 
 .load-status-error {
   --load-status-color: var(--danger);
-}
-
-.load-status-error .load-status-modal {
   color: var(--danger);
   border-color: rgba(197, 82, 82, 0.18);
-  background: rgba(255, 247, 247, 0.94);
+  background: var(--danger-soft);
 }
 
 .load-spinner,

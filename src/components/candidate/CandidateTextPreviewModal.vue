@@ -1,5 +1,5 @@
 ﻿<script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
 import ProjectExperiencesField from '../ProjectExperiencesField.vue'
 import MatchDimensionBreakdown from '../MatchDimensionBreakdown.vue'
@@ -38,33 +38,6 @@ const matchLoading = ref(false)
 const matchError = ref('')
 const jobMatches = ref([])
 const fileFrameStatus = ref('')
-const transientLoadStatus = ref('')
-let loadStatusTimer = null
-
-const clearLoadStatusTimer = () => {
-  if (loadStatusTimer) {
-    window.clearTimeout(loadStatusTimer)
-    loadStatusTimer = null
-  }
-}
-
-const showTransientSuccess = () => {
-  clearLoadStatusTimer()
-  transientLoadStatus.value = 'success'
-  loadStatusTimer = window.setTimeout(() => {
-    transientLoadStatus.value = ''
-    loadStatusTimer = null
-  }, 1200)
-}
-
-const showFilePreviewSuccess = () => {
-  clearLoadStatusTimer()
-  fileFrameStatus.value = 'success'
-  loadStatusTimer = window.setTimeout(() => {
-    if (fileFrameStatus.value === 'success') fileFrameStatus.value = ''
-    loadStatusTimer = null
-  }, 1200)
-}
 
 const resetEditState = () => {
   isEditingAll.value = false
@@ -118,8 +91,6 @@ watch(
       updateError.value = ''
       updateMessage.value = ''
       fileFrameStatus.value = ''
-      transientLoadStatus.value = ''
-      clearLoadStatusTimer()
       resetEditState()
       resetMatchState()
     }
@@ -130,33 +101,12 @@ watch(
   () => [props.open, props.previewType, props.filePreviewUrl],
   () => {
     if (props.open && props.previewType === 'cv' && props.filePreviewUrl) {
-      clearLoadStatusTimer()
-      transientLoadStatus.value = ''
       fileFrameStatus.value = 'loading'
       return
     }
     fileFrameStatus.value = ''
   },
   { immediate: true }
-)
-
-watch(
-  () => props.loading,
-  (loading, wasLoading) => {
-    if (!loading && wasLoading && props.open && !props.error && !props.filePreviewUrl) {
-      showTransientSuccess()
-    }
-  }
-)
-
-watch(
-  () => props.error,
-  (error) => {
-    if (error) {
-      transientLoadStatus.value = ''
-      clearLoadStatusTimer()
-    }
-  }
 )
 
 const extractedPreviewData = computed(() => {
@@ -176,25 +126,23 @@ const previewLoadStatus = computed(() => {
   if (props.loading) return 'loading'
   if (props.error) return 'error'
   if (fileFrameStatus.value) return fileFrameStatus.value
-  return transientLoadStatus.value
-})
-
-const previewLoadMessage = computed(() => {
-  if (previewLoadStatus.value === 'loading') return '檔案載入中'
-  if (previewLoadStatus.value === 'success') return '檔案載入成功'
-  if (previewLoadStatus.value === 'error') return props.error || '檔案載入失敗'
   return ''
 })
 
-const previewLoadIcon = computed(() => (previewLoadStatus.value === 'error' ? '!' : '✓'))
+const previewLoadMessage = computed(() => {
+  if (previewLoadStatus.value === 'loading') return '檔案加載中'
+  if (previewLoadStatus.value === 'error') return props.error || '檔案加載失敗'
+  return ''
+})
+
+const previewLoadIcon = computed(() => (previewLoadStatus.value === 'error' ? '!' : ''))
 
 const handleFilePreviewLoaded = () => {
   if (!props.open || props.previewType !== 'cv' || !props.filePreviewUrl) return
-  showFilePreviewSuccess()
+  fileFrameStatus.value = ''
 }
 
 const handleFilePreviewFailed = () => {
-  clearLoadStatusTimer()
   fileFrameStatus.value = 'error'
 }
 
@@ -332,9 +280,6 @@ const saveAllEdits = async () => {
   }
 }
 
-onBeforeUnmount(() => {
-  clearLoadStatusTimer()
-})
 </script>
 
 <template>
@@ -362,16 +307,14 @@ onBeforeUnmount(() => {
           <Transition name="preview-load-fade">
             <div
               v-if="previewLoadStatus"
-              class="preview-load-backdrop"
+              class="preview-load-strip"
               :class="`preview-load-${previewLoadStatus}`"
               :aria-busy="previewLoadStatus === 'loading'"
               aria-live="polite"
             >
-              <div class="preview-load-status" role="status">
-                <span v-if="previewLoadStatus === 'loading'" class="preview-spinner" aria-hidden="true"></span>
-                <span v-else class="preview-status-icon" aria-hidden="true">{{ previewLoadIcon }}</span>
-                <span>{{ previewLoadMessage }}</span>
-              </div>
+              <span v-if="previewLoadStatus === 'loading'" class="preview-spinner" aria-hidden="true"></span>
+              <span v-else class="preview-status-icon" aria-hidden="true">{{ previewLoadIcon }}</span>
+              <span>{{ previewLoadMessage }}</span>
             </div>
           </Transition>
 
@@ -518,7 +461,6 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .preview-panel {
-  position: relative;
   display: grid;
   grid-template-rows: auto 1fr;
   width: min(1360px, calc(100vw - 2rem));
@@ -539,53 +481,29 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 
-.preview-load-backdrop {
+.preview-load-strip {
   --preview-load-color: var(--accent-hover);
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: rgba(15, 23, 42, 0.16);
-  backdrop-filter: blur(10px);
-}
-
-.preview-load-status {
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
-  width: min(320px, calc(100vw - 2rem));
-  min-height: 72px;
-  padding: 1rem 1.1rem;
-  border: 1px solid rgba(255, 255, 255, 0.62);
-  border-radius: 18px;
+  width: 100%;
+  min-height: 46px;
+  margin: 0 0 0.9rem;
+  padding: 0.72rem 0.9rem;
+  border: 1px solid rgba(47, 111, 237, 0.14);
+  border-radius: 12px;
   color: var(--accent-hover);
-  background: rgba(255, 255, 255, 0.9);
-  font-size: 0.95rem;
+  background: rgba(47, 111, 237, 0.08);
+  font-size: 0.9rem;
   font-weight: 800;
-  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18);
-  backdrop-filter: blur(18px);
-}
-
-.preview-load-success {
-  --preview-load-color: var(--success);
-}
-
-.preview-load-success .preview-load-status {
-  color: var(--success);
-  border-color: rgba(31, 143, 99, 0.18);
-  background: rgba(245, 253, 249, 0.94);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
 }
 
 .preview-load-error {
   --preview-load-color: var(--danger);
-}
-
-.preview-load-error .preview-load-status {
   color: var(--danger);
   border-color: rgba(197, 82, 82, 0.18);
-  background: rgba(255, 247, 247, 0.94);
+  background: var(--danger-soft);
 }
 
 .preview-spinner,

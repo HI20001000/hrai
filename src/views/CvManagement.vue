@@ -248,15 +248,14 @@ const clearTableLoadStatusTimer = () => {
 
 const setTableLoadStatus = (status, nextMessage = '') => {
   clearTableLoadStatusTimer()
+  if (status === 'success') {
+    tableLoadStatus.value = ''
+    tableLoadMessage.value = ''
+    return
+  }
+
   tableLoadStatus.value = status
   tableLoadMessage.value = nextMessage
-  if (status === 'success') {
-    tableLoadStatusTimer = window.setTimeout(() => {
-      tableLoadStatus.value = ''
-      tableLoadMessage.value = ''
-      tableLoadStatusTimer = null
-    }, 1400)
-  }
 }
 
 const resetDetailDrafts = (application = activeApplication.value) => {
@@ -286,7 +285,7 @@ const editStatusHistoryDraft = (history) => {
 
 const loadApplicationTable = async () => {
   isLoading.value = true
-  setTableLoadStatus('loading', '候選人資料載入中')
+  setTableLoadStatus('loading', '候選人資料加載中')
   try {
     const response = await fetch(`${apiBaseUrl}/api/job-post-applications/table`)
     const data = await response.json()
@@ -295,7 +294,7 @@ const loadApplicationTable = async () => {
 
     const allowedIds = new Set(applicationRows.value.map((row) => Number(row.applicationId)))
     selectedApplicationIds.value = selectedApplicationIds.value.filter((id) => allowedIds.has(Number(id)))
-    setTableLoadStatus('success', '候選人資料載入成功')
+    setTableLoadStatus('success')
   } catch (error) {
     const nextMessage = error?.message || '初始化資料失敗'
     message.value = nextMessage
