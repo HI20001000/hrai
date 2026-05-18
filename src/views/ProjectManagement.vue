@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import AppSelect from '../components/AppSelect.vue'
+import { normalizeSearchText } from '../scripts/searchNormalize.js'
 
 const activeView = ref('manage')
 const pageMessage = ref('')
@@ -102,7 +103,7 @@ const activeAssignedPersonnelIds = computed(() =>
   new Set(activeAssignments.value.map((row) => Number(row.personnelId)).filter((id) => Number.isInteger(id) && id > 0))
 )
 const filteredPersonnelRows = computed(() => {
-  const keyword = String(personnelKeyword.value || '').trim().toLowerCase()
+  const keyword = normalizeSearchText(personnelKeyword.value)
   if (!keyword) return personnelRows.value
   return personnelRows.value.filter((row) =>
     [
@@ -113,7 +114,7 @@ const filteredPersonnelRows = computed(() => {
       row.email,
       row.phone,
       row.managerName,
-    ].join(' ').toLowerCase().includes(keyword)
+    ].map((item) => normalizeSearchText(item)).join(' ').includes(keyword)
   )
 })
 const selectedPersonnelForAdd = computed(() =>

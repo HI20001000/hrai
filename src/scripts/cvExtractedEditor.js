@@ -504,6 +504,7 @@ export const resolveExtractedPayload = ({
   extracted = null,
   parser = '',
   missingFields = [],
+  source = '',
 } = {}) => {
   const payloadFromContent = typeof content === 'string' ? parseJsonObject(content) : null
   const resolvedExtracted = extracted && typeof extracted === 'object' && Object.keys(extracted).length
@@ -515,6 +516,7 @@ export const resolveExtractedPayload = ({
         : {}
 
   const resolvedParser = normalizeText(parser) || normalizeText(payloadFromContent?.parser)
+  const resolvedSource = normalizeText(source) || normalizeText(payloadFromContent?.source)
   const resolvedMissingFields = Array.isArray(missingFields) && missingFields.length
     ? normalizeList(missingFields, 40)
     : normalizeList(payloadFromContent?.missingFields, 40)
@@ -522,6 +524,7 @@ export const resolveExtractedPayload = ({
   return {
     extracted: resolvedExtracted,
     parser: resolvedParser,
+    source: resolvedSource,
     missingFields: resolvedMissingFields,
   }
 }
@@ -554,8 +557,9 @@ export const buildExtractedPreviewData = ({
   extracted = null,
   parser = '',
   missingFields = [],
+  source = '',
 } = {}) => {
-  const resolved = resolveExtractedPayload({ content, extracted, parser, missingFields })
+  const resolved = resolveExtractedPayload({ content, extracted, parser, missingFields, source })
   const extractedObj = resolved.extracted && typeof resolved.extracted === 'object' ? resolved.extracted : {}
   const profile = extractedObj.profile && typeof extractedObj.profile === 'object' ? extractedObj.profile : {}
   const parserLower = normalizeText(resolved.parser).toLowerCase()
@@ -575,6 +579,7 @@ export const buildExtractedPreviewData = ({
       buildRow({ label: '姓名', value: toDisplayText(extractedObj.fullName), rawValue: extractedObj.fullName, fieldKey: 'fullName', editable: true }),
       buildRow({ label: 'Email', value: toDisplayText(extractedObj.email), rawValue: extractedObj.email, fieldKey: 'email', editable: true }),
       buildRow({ label: '電話', value: toDisplayText(extractedObj.phone), rawValue: extractedObj.phone, fieldKey: 'phone', editable: true }),
+      buildRow({ label: 'CV 來源', value: toDisplayText(resolved.source), rawValue: resolved.source }),
       buildRow({ label: '解析來源', value: parserLabel, rawValue: parserLabel, emptyText: EXTRACTED_UNTAGGED_TEXT }),
       buildRow({ label: '缺漏欄位', value: missingFieldLabels.length ? missingFieldLabels.join('、') : '無', rawValue: resolved.missingFields }),
     ],

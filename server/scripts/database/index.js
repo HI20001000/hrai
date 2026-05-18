@@ -110,6 +110,7 @@ export const ensureCvTables = async (pool) => {
       mime_type VARCHAR(100) NOT NULL,
       file_size BIGINT NOT NULL,
       sha256 CHAR(64) NOT NULL,
+      source VARCHAR(20) NULL,
       uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_candidate_id (candidate_id),
       INDEX idx_candidate_uploaded_at (uploaded_at),
@@ -179,6 +180,7 @@ export const ensureCvTables = async (pool) => {
       application_status VARCHAR(40) NOT NULL DEFAULT 'screening',
       first_interview_arrangement VARCHAR(40) NULL,
       remark TEXT NULL,
+      owner_user_id BIGINT NULL,
       matched_score INT NULL,
       matched_level VARCHAR(20) NULL,
       matched_position VARCHAR(255) NULL,
@@ -187,6 +189,7 @@ export const ensureCvTables = async (pool) => {
       UNIQUE KEY uniq_job_post_application_cv (candidate_cv_id),
       INDEX idx_job_post_applications_job_post (job_post_id),
       INDEX idx_job_post_applications_candidate (candidate_id),
+      INDEX idx_job_post_applications_owner (owner_user_id),
       CONSTRAINT fk_job_post_applications_job_post FOREIGN KEY (job_post_id) REFERENCES job_posts(id) ON DELETE CASCADE,
       CONSTRAINT fk_job_post_applications_candidate FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE,
       CONSTRAINT fk_job_post_applications_cv FOREIGN KEY (candidate_cv_id) REFERENCES candidate_cvs(id) ON DELETE CASCADE
@@ -211,6 +214,10 @@ export const ensureCvTables = async (pool) => {
   } catch (error) {
     if (!/duplicate column name/i.test(String(error?.message || ''))) throw error
   }
+
+  await ensureColumn('ALTER TABLE candidate_cvs ADD COLUMN source VARCHAR(20) NULL AFTER sha256')
+  await ensureColumn('ALTER TABLE job_post_applications ADD COLUMN owner_user_id BIGINT NULL AFTER remark')
+  await ensureIndex('ALTER TABLE job_post_applications ADD INDEX idx_job_post_applications_owner (owner_user_id)')
 
   await pool.query(`
     UPDATE job_post_applications

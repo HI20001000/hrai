@@ -16,6 +16,7 @@ const props = defineProps({
 const emit = defineEmits(['change-page'])
 
 const isMobileMenuOpen = ref(false)
+const isSettingsMenuOpen = ref(false)
 
 const pageItems = [
   { key: 'reports', label: '職缺管理', description: '管理職缺與投遞', icon: 'briefcase' },
@@ -33,10 +34,19 @@ const settingsItem = {
   icon: 'gear',
 }
 
-const allItems = [...pageItems, settingsItem]
+const settingsSubItems = [
+  { key: 'settings-profile', label: '用戶配置' },
+  { key: 'settings-job-dictionary', label: '職位字典配置' },
+]
+
+const allItems = [...pageItems, ...settingsSubItems]
 
 const activeItem = computed(
   () => allItems.find((item) => item.key === props.activePage) || pageItems[0]
+)
+
+const isSettingsActive = computed(() =>
+  props.activePage === settingsItem.key || settingsSubItems.some((item) => item.key === props.activePage)
 )
 
 const displayUserName = computed(() => {
@@ -59,8 +69,9 @@ const displayAvatarBgColor = computed(() => {
 })
 
 const selectPage = (key) => {
-  emit('change-page', key)
+  emit('change-page', key === settingsItem.key ? settingsSubItems[0].key : key)
   isMobileMenuOpen.value = false
+  isSettingsMenuOpen.value = false
 }
 </script>
 
@@ -117,23 +128,38 @@ const selectPage = (key) => {
         </button>
       </nav>
 
-      <button
-        class="nav-button settings-button"
-        :class="{ active: props.activePage === settingsItem.key }"
-        type="button"
-        @click="selectPage(settingsItem.key)"
-      >
-        <span class="nav-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none">
-            <path d="M12 8.4A3.6 3.6 0 1 0 12 15.6A3.6 3.6 0 1 0 12 8.4Z" />
-            <path d="M19.4 13.2v-2.4l-2-.4a5.7 5.7 0 0 0-.5-1.3l1.2-1.6-1.7-1.7-1.6 1.2a5.7 5.7 0 0 0-1.3-.5l-.4-2h-2.4l-.4 2a5.7 5.7 0 0 0-1.3.5L7.4 5.8 5.7 7.5l1.2 1.6a5.7 5.7 0 0 0-.5 1.3l-2 .4v2.4l2 .4a5.7 5.7 0 0 0 .5 1.3l-1.2 1.6 1.7 1.7 1.6-1.2c.42.22.86.38 1.3.5l.4 2h2.4l.4-2c.44-.12.88-.28 1.3-.5l1.6 1.2 1.7-1.7-1.2-1.6c.22-.42.38-.86.5-1.3l2-.4Z" />
-          </svg>
-        </span>
-        <span class="nav-copy">
-          <strong>{{ settingsItem.label }}</strong>
-          <span>{{ settingsItem.description }}</span>
-        </span>
-      </button>
+      <div class="settings-menu-wrap" @mouseenter="isSettingsMenuOpen = true" @mouseleave="isSettingsMenuOpen = false">
+        <button
+          class="nav-button settings-button"
+          :class="{ active: isSettingsActive }"
+          type="button"
+          @focus="isSettingsMenuOpen = true"
+          @click="isSettingsMenuOpen = !isSettingsMenuOpen"
+        >
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 8.4A3.6 3.6 0 1 0 12 15.6A3.6 3.6 0 1 0 12 8.4Z" />
+              <path d="M19.4 13.2v-2.4l-2-.4a5.7 5.7 0 0 0-.5-1.3l1.2-1.6-1.7-1.7-1.6 1.2a5.7 5.7 0 0 0-1.3-.5l-.4-2h-2.4l-.4 2a5.7 5.7 0 0 0-1.3.5L7.4 5.8 5.7 7.5l1.2 1.6a5.7 5.7 0 0 0-.5 1.3l-2 .4v2.4l2 .4a5.7 5.7 0 0 0 .5 1.3l-1.2 1.6 1.7 1.7 1.6-1.2c.42.22.86.38 1.3.5l.4 2h2.4l.4-2c.44-.12.88-.28 1.3-.5l1.6 1.2 1.7-1.7-1.2-1.6c.22-.42.38-.86.5-1.3l2-.4Z" />
+            </svg>
+          </span>
+          <span class="nav-copy">
+            <strong>{{ settingsItem.label }}</strong>
+            <span>{{ settingsItem.description }}</span>
+          </span>
+        </button>
+        <div v-if="isSettingsMenuOpen" class="settings-submenu">
+          <button
+            v-for="item in settingsSubItems"
+            :key="item.key"
+            type="button"
+            class="settings-submenu-btn"
+            :class="{ active: props.activePage === item.key }"
+            @click="selectPage(item.key)"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+      </div>
     </aside>
 
     <div class="mobile-toolbar">
@@ -317,11 +343,49 @@ const selectPage = (key) => {
   background: rgba(255, 255, 255, 0.98);
 }
 
-.settings-button {
+.settings-menu-wrap {
+  position: relative;
   margin-top: auto;
+}
+
+.settings-button {
   padding-top: 1rem;
   border-top: 1px solid rgba(16, 24, 40, 0.08);
   border-radius: 0;
+}
+
+.settings-submenu {
+  position: absolute;
+  left: calc(100% + 0.75rem);
+  bottom: 0;
+  z-index: 50;
+  display: grid;
+  gap: 0.45rem;
+  min-width: 172px;
+  padding: 0.55rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.14);
+}
+
+.settings-submenu-btn {
+  min-height: 38px;
+  padding: 0.52rem 0.68rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--text-base);
+  background: transparent;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-submenu-btn:hover,
+.settings-submenu-btn.active {
+  color: var(--accent);
+  border-color: rgba(47, 111, 237, 0.14);
+  background: rgba(47, 111, 237, 0.08);
 }
 
 .mobile-toolbar {

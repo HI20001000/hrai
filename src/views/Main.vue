@@ -8,6 +8,7 @@ import OnboardedPersonnelManagement from './OnboardedPersonnelManagement.vue'
 import BlacklistManagement from './BlacklistManagement.vue'
 import ProjectManagement from './ProjectManagement.vue'
 import SettingsView from './Settings.vue'
+import JobDictionaryPanel from '../components/job/JobDictionaryPanel.vue'
 
 const activePage = ref('reports')
 const currentUser = ref(null)
@@ -82,10 +83,19 @@ onUnmounted(() => {
           <BlacklistManagement v-else-if="activePage === 'blacklist'" />
           <ProjectManagement v-else-if="activePage === 'projects'" />
           <SettingsView
-            v-else-if="activePage === 'settings'"
+            v-else-if="activePage === 'settings-profile'"
             :user-profile="currentUser"
             @profile-updated="handleProfileUpdated"
           />
+          <section v-else-if="activePage === 'settings-job-dictionary'" class="settings-dictionary-page">
+            <header class="page-header">
+              <div>
+                <h2>職位字典配置</h2>
+                <p>集中維護職位字典，職缺建立時會從這裡載入最新配置。</p>
+              </div>
+            </header>
+            <JobDictionaryPanel />
+          </section>
           <section class="page-header" v-else>
             <div>
               <h2>Workspace</h2>

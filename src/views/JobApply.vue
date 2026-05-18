@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import CvUploadFlowPanel from '../components/CvUploadFlowPanel.vue'
+import { normalizeSearchText } from '../scripts/searchNormalize.js'
 
 const message = ref('')
 const jobPosts = ref([])
@@ -9,8 +10,6 @@ const selectedJobPost = ref(null)
 const searchKeyword = ref('')
 const isLoading = ref(false)
 const isUploadModalOpen = ref(false)
-
-const normalizeSearchText = (value) => String(value ?? '').trim().toLowerCase()
 
 const filteredJobPosts = computed(() => {
   const keyword = normalizeSearchText(searchKeyword.value)

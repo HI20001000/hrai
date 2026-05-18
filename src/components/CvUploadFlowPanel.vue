@@ -4,6 +4,8 @@ import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import CvExtractedFilePreview from './CvExtractedFilePreview.vue'
 import MatchDimensionBreakdown from './MatchDimensionBreakdown.vue'
 import ProjectExperiencesField from './ProjectExperiencesField.vue'
+import AppSelect from './AppSelect.vue'
+import { CV_SOURCE_OPTIONS, detectCvSourceFromFileName, normalizeCvSource } from '../scripts/cvSource.js'
 import {
   EDITABLE_EXTRACTED_FIELDS,
   buildDraftFieldsFromRows,
@@ -37,6 +39,8 @@ const selectedFiles = ref([])
 const selectedFile = ref(null)
 const cachedCvId = ref('')
 const cachedCvName = ref('')
+const singleSource = ref('')
+const singleSourceError = ref('')
 const parsedCandidate = ref(null)
 const parsedExtractedText = ref('')
 const singleMatchResult = ref(null)
@@ -61,6 +65,8 @@ const message = ref('')
 const isCaching = ref(false)
 const isParsing = ref(false)
 const isConfirmingUpload = ref(false)
+
+const sourceSelectOptions = CV_SOURCE_OPTIONS
 
 const isBatchMode = computed(() => selectedFiles.value.length > 1)
 const hasSelectedFiles = computed(() => selectedFiles.value.length > 0)
@@ -171,14 +177,18 @@ const createBatchItem = (file, index) => ({
   file,
   fileName: file.name,
   cacheId: '',
+  source: detectCvSourceFromFileName(file.name),
+  sourceError: '',
   status: 'pending',
   stage: 'waiting',
   message: '等待解析',
   selected: false,
   candidate: null,
-  extractedText: '',
-  edited: false,
-  applicationId: null,
+          extractedText: '',
+          edited: false,
+          source: detectCvSourceFromFileName(item.fileName),
+          sourceError: '',
+          applicationId: null,
   matchedPosition: '',
 })
 
@@ -217,6 +227,29 @@ const getMessageTone = (value) => {
   return ''
 }
 
+const requireSingleSource = () => {
+  const source = normalizeCvSource(singleSource.value)
+  singleSource.value = source
+  if (source) {
+    singleSourceError.value = ''
+    return source
+  }
+  singleSourceError.value = '請先補充 CV 來源'
+  window.requestAnimationFrame(() => {
+    document.querySelector('.source-required-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+  return ''
+}
+
+const setBatchItemSource = (itemId, source) => {
+  updateBatchItem(itemId, {
+    source: normalizeCvSource(source),
+    sourceError: '',
+  })
+}
+
+const getBatchItemSource = (item) => normalizeCvSource(item?.source) || detectCvSourceFromFileName(item?.fileName)
+
 const getMessageSegments = (value) => {
   const text = String(value || '')
   if (!text) return []
@@ -249,6 +282,8 @@ const buildBatchItem = (file, index) => ({
   file,
   fileName: file.name,
   cacheId: '',
+  source: detectCvSourceFromFileName(file.name),
+  sourceError: '',
   status: 'pending',
   stage: 'waiting',
   message: '等待處理',
@@ -315,6 +350,8 @@ const clearSingleState = () => {
   selectedFile.value = null
   cachedCvId.value = ''
   cachedCvName.value = ''
+  singleSource.value = ''
+  singleSourceError.value = ''
   resetParsedState()
 }
 
@@ -348,6 +385,20 @@ const parseJsonResponse = async (response) => {
   } catch {
     return {}
   }
+}
+
+const parseJsonSafe = (value) => {
+  try {
+    return JSON.parse(String(value || '{}'))
+  } catch {
+    return null
+  }
+}
+
+const getAuthHeaders = (headers = {}) => {
+  const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
+  const token = String(auth?.token || '').trim()
+  return token ? { ...headers, Authorization: `Bearer ${token}` } : { ...headers }
 }
 
 const requestCache = async (file) => {
@@ -384,18 +435,20 @@ const requestParse = async (cacheId) => {
   return { response, data }
 }
 
-const requestIntake = async (cacheId, editedExtracted = null) => {
+const requestIntake = async (cacheId, editedExtracted = null, source = '') => {
   const endpoint = getScopedEndpoint('/cv/intake')
   if (!endpoint) throw new Error('請先選擇有效的職位')
 
   const payload = { cacheId }
+  const normalizedSource = normalizeCvSource(source)
+  if (normalizedSource) payload.source = normalizedSource
   if (editedExtracted && typeof editedExtracted === 'object') {
     payload.editedExtracted = editedExtracted
   }
 
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   })
 
@@ -453,6 +506,8 @@ const handleFileChange = (event) => {
     selectedFile.value = files[0] || null
     cachedCvId.value = ''
     cachedCvName.value = ''
+    singleSource.value = selectedFile.value ? detectCvSourceFromFileName(selectedFile.value.name) : ''
+    singleSourceError.value = ''
     resetParsedState()
     return
   }
@@ -492,6 +547,8 @@ const parseCv = async () => {
 
     parsedCandidate.value = data.candidate || null
     parsedExtractedText.value = String(data.extractedText || '')
+    singleSource.value = normalizeCvSource(singleSource.value) || normalizeCvSource(data.source) || detectCvSourceFromFileName(selectedFile.value?.name)
+    singleSourceError.value = ''
     isEditingExtracted.value = false
     hasEditedExtracted.value = false
     draftFields.value = {}
@@ -569,12 +626,18 @@ const confirmUpload = async () => {
     message.value = '請先儲存或取消編輯後再提交'
     return
   }
+  const source = requireSingleSource()
+  if (!source) {
+    message.value = '請先補充 CV 來源'
+    return
+  }
 
   isConfirmingUpload.value = true
   try {
     let { response, data } = await requestIntake(
       cachedCvId.value,
-      hasEditedExtracted.value ? parsedCandidate.value?.extracted : null
+      hasEditedExtracted.value ? parsedCandidate.value?.extracted : null,
+      source
     )
 
     if (!response.ok && isExpiredCacheResponse(response, data)) {
@@ -582,7 +645,8 @@ const confirmUpload = async () => {
       if (!recached) return
       ;({ response, data } = await requestIntake(
         cachedCvId.value,
-        hasEditedExtracted.value ? parsedCandidate.value?.extracted : null
+        hasEditedExtracted.value ? parsedCandidate.value?.extracted : null,
+        source
       ))
     }
 
@@ -770,6 +834,8 @@ const startBatchProcessing = async () => {
         message: '解析完成，可編輯並匹配',
         candidate: parseResult.data?.candidate || null,
         extractedText: String(parseResult.data?.extractedText || ''),
+        source: getBatchItemSource(item) || normalizeCvSource(parseResult.data?.source),
+        sourceError: '',
       })
 
       if (!activeBatchItemId.value) activeBatchItemId.value = item.id
@@ -809,16 +875,38 @@ const matchBatchItemsByIds = async (itemIds, actionLabel = '批量匹配') => {
     return
   }
 
+  const validIds = []
+  let missingSourceCount = 0
+  for (const id of ids) {
+    const item = batchItems.value.find((entry) => entry.id === id)
+    const source = getBatchItemSource(item)
+    if (!source) {
+      missingSourceCount += 1
+      updateBatchItem(id, {
+        sourceError: '請先補充 CV 來源',
+        message: '請先補充 CV 來源後再匹配',
+      })
+      continue
+    }
+    updateBatchItem(id, { source, sourceError: '' })
+    validIds.push(id)
+  }
+
+  if (!validIds.length) {
+    message.value = '請先補充 CV 來源後再匹配'
+    return
+  }
+
   isBatchMatching.value = true
   currentBatchItemId.value = ''
   currentBatchStage.value = ''
-  batchOperationTotal.value = ids.length
+  batchOperationTotal.value = validIds.length
   batchOperationCompleted.value = 0
 
   let successCount = 0
   let errorCount = 0
 
-  await runConcurrentBatch(ids, async (itemId, index) => {
+  await runConcurrentBatch(validIds, async (itemId, index) => {
     const item = batchItems.value.find((entry) => entry.id === itemId)
     if (!canMatchBatchItem(item)) {
       batchOperationCompleted.value += 1
@@ -829,14 +917,15 @@ const matchBatchItemsByIds = async (itemIds, actionLabel = '批量匹配') => {
     updateBatchItem(item.id, {
       status: 'matching',
       stage: 'matching',
-      message: `正在匹配第 ${index + 1} / ${ids.length} 份 CV`,
+      message: `正在匹配第 ${index + 1} / ${validIds.length} 份 CV`,
       selected: false,
     })
     currentBatchStage.value = '正在提交並匹配職位'
 
     try {
       let workingCacheId = item.cacheId
-      let intakeResult = await requestIntake(workingCacheId, item.candidate?.extracted || null)
+      const source = getBatchItemSource(item)
+      let intakeResult = await requestIntake(workingCacheId, item.candidate?.extracted || null, source)
 
       if (!intakeResult.response.ok && isExpiredCacheResponse(intakeResult.response, intakeResult.data)) {
         const cacheData = await requestCache(item.file)
@@ -845,7 +934,7 @@ const matchBatchItemsByIds = async (itemIds, actionLabel = '批量匹配') => {
           cacheId: workingCacheId,
           message: '快取已更新，重新匹配中',
         })
-        intakeResult = await requestIntake(workingCacheId, item.candidate?.extracted || null)
+        intakeResult = await requestIntake(workingCacheId, item.candidate?.extracted || null, source)
       }
 
       if (!intakeResult.response.ok) {
@@ -883,13 +972,13 @@ const matchBatchItemsByIds = async (itemIds, actionLabel = '批量匹配') => {
   isBatchMatching.value = false
   currentBatchItemId.value = ''
   currentBatchStage.value = ''
-  message.value = `${actionLabel}完成：成功 ${successCount} 份，失敗 ${errorCount} 份`
+  message.value = `${actionLabel}完成：成功 ${successCount} 份，失敗 ${errorCount + missingSourceCount} 份`
 
   emit('uploaded', {
     mode: 'batch',
     total: ids.length,
     successCount,
-    errorCount,
+    errorCount: errorCount + missingSourceCount,
     jobPostId: Number(props.jobPostId || 0) || null,
   })
 }
@@ -1173,8 +1262,10 @@ const clearBatchQueueLegacy = () => {
               <span class="batch-meta">
                 {{ resolveBatchStatusLabel(item.status) }}｜{{ resolveBatchStageLabel(item.stage) }}
                 <template v-if="item.candidate?.fullName">｜{{ item.candidate.fullName }}</template>
+                <template v-if="item.source">｜{{ item.source }}</template>
                 <template v-if="item.matchedPosition">｜{{ item.matchedPosition }}</template>
               </span>
+              <span v-if="item.sourceError" class="batch-message error-message">{{ item.sourceError }}</span>
               <span class="batch-message" :class="getMessageTone(item.message)">{{ item.message }}</span>
             </button>
           </div>
@@ -1219,6 +1310,20 @@ const clearBatchQueueLegacy = () => {
             匹配此 CV
           </button>
         </div>
+      </div>
+
+      <div class="source-required-card">
+        <label class="source-field">
+          <span>CV 來源</span>
+          <AppSelect
+            :model-value="activeBatchItem.source"
+            :options="sourceSelectOptions"
+            placeholder="請選擇來源"
+            :disabled="isBusy || !canMatchBatchItem(activeBatchItem)"
+            @update:model-value="setBatchItemSource(activeBatchItem.id, $event)"
+          />
+        </label>
+        <p v-if="activeBatchItem.sourceError" class="source-error">{{ activeBatchItem.sourceError }}</p>
       </div>
 
       <div v-if="isEditingBatchExtracted" class="editor-wrap">
@@ -1270,6 +1375,7 @@ const clearBatchQueueLegacy = () => {
         :extracted="activeBatchItem.candidate.extracted || {}"
         :parser="activeBatchItem.candidate.parser || ''"
         :missing-fields="activeBatchItem.candidate.missingFields || []"
+        :source="activeBatchItem.source"
       />
 
       <p v-else class="hint">此 CV 尚未完成解析，完成後可在這裡查看與編輯。</p>
@@ -1287,6 +1393,19 @@ const clearBatchQueueLegacy = () => {
         >
           編輯
         </button>
+      </div>
+
+      <div class="source-required-card">
+        <label class="source-field">
+          <span>CV 來源</span>
+          <AppSelect
+            v-model="singleSource"
+            :options="sourceSelectOptions"
+            placeholder="請選擇來源"
+            :disabled="isConfirmingUpload || hasSingleMatchResult"
+          />
+        </label>
+        <p v-if="singleSourceError" class="source-error">{{ singleSourceError }}</p>
       </div>
 
       <div v-if="isEditingExtracted" class="editor-wrap">
@@ -1338,6 +1457,7 @@ const clearBatchQueueLegacy = () => {
         :extracted="parsedCandidate.extracted || {}"
         :parser="parsedCandidate.parser || ''"
         :missing-fields="parsedCandidate.missingFields || []"
+        :source="singleSource"
       />
 
       <div v-if="hasSingleMatchResult" class="match-result-card">
@@ -1488,6 +1608,31 @@ const clearBatchQueueLegacy = () => {
 
 .file-name.placeholder {
   color: var(--text-muted);
+}
+
+.source-required-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(226, 156, 32, 0.24);
+  border-radius: 16px;
+  background: rgba(255, 251, 235, 0.78);
+}
+
+.source-field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.source-field :deep(.app-select) {
+  max-width: 220px;
+}
+
+.source-error {
+  margin: 0;
+  color: #dc2626;
+  font-size: 0.86rem;
+  font-weight: 700;
 }
 
 .info-line,

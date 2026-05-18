@@ -394,6 +394,38 @@ const getMyProfile = async (pool, req, res) => {
   sendJson(res, 200, { user: buildUserPayload(user) })
 }
 
+const listUserOptions = async (pool, req, res) => {
+  const user = await getAuthedUser(pool, req)
+  if (!user) {
+    sendJson(res, 401, { message: 'Unauthorized' })
+    return
+  }
+
+  const [rows] = await pool.query(
+    `SELECT
+        id,
+        email,
+        username,
+        avatar_text AS avatarText,
+        avatar_bg_color AS avatarBgColor
+      FROM users
+      ORDER BY username ASC, email ASC, id ASC`
+  )
+
+  sendJson(res, 200, {
+    users: rows.map((row) => {
+      const payload = buildUserPayload(row)
+      return {
+        id: payload.id,
+        username: payload.username,
+        email: payload.mail,
+        avatarText: payload.avatarText,
+        avatarBgColor: payload.avatarBgColor,
+      }
+    }),
+  })
+}
+
 const updateMyProfile = async (pool, req, res) => {
   const authedUser = await getAuthedUser(pool, req)
   if (!authedUser) {
@@ -784,6 +816,7 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
   }
 
   const blacklistEntries = await listCandidateBlacklistRows(pool)
+  const duplicateApplicationIds = await listDuplicateApplicationIds(pool)
 
   const [rows] = await pool.query(
     `SELECT
@@ -794,6 +827,11 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
         app.matched_score AS matchedScore,
         app.matched_level AS matchedLevel,
         app.matched_position AS matchedPosition,
+        app.owner_user_id AS ownerUserId,
+        owner_user.email AS ownerEmail,
+        owner_user.username AS ownerUsername,
+        owner_user.avatar_text AS ownerAvatarText,
+        owner_user.avatar_bg_color AS ownerAvatarBgColor,
         app.created_at AS createdAt,
         c.id AS candidateId,
         c.full_name AS fullName,
@@ -801,6 +839,7 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
         c.phone AS phone,
         cv.id AS cvId,
         cv.original_filename AS cvFileName,
+        cv.source AS source,
         cv.storage_key AS storageKey,
         extracts.target_position AS targetPosition,
         CASE WHEN extracts.cv_text IS NOT NULL AND extracts.cv_text <> '' THEN 1 ELSE 0 END AS hasCvPreview,
@@ -809,6 +848,7 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
       INNER JOIN candidates c ON c.id = app.candidate_id
       INNER JOIN candidate_cvs cv ON cv.id = app.candidate_cv_id
       LEFT JOIN candidate_cv_extractions extracts ON extracts.candidate_cv_id = cv.id
+      LEFT JOIN users owner_user ON owner_user.id = app.owner_user_id
       WHERE app.job_post_id = ?
       ORDER BY app.created_at DESC, app.id DESC`,
     [jobPostId]
@@ -837,6 +877,9 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
         fullName: normalizeText(row.fullName),
         targetPosition: normalizeText(row.targetPosition),
         matchedPosition: normalizeText(row.matchedPosition),
+        source: normalizeCvSource(row.source),
+        ownerUser: buildOwnerUserPayload(row),
+        isDuplicateApplication: duplicateApplicationIds.has(Number(row.applicationId)),
         matchedScore: Number(row.matchedScore || 0),
         matchedLevel: normalizeText(row.matchedLevel) || '',
         phone: normalizeText(row.phone),
@@ -872,6 +915,11 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
         app.matched_score AS matchedScore,
         app.matched_level AS matchedLevel,
         app.matched_position AS matchedPosition,
+        app.owner_user_id AS ownerUserId,
+        owner_user.email AS ownerEmail,
+        owner_user.username AS ownerUsername,
+        owner_user.avatar_text AS ownerAvatarText,
+        owner_user.avatar_bg_color AS ownerAvatarBgColor,
         app.created_at AS createdAt,
         jp.title AS jobPostTitle,
         c.full_name AS fullName,
@@ -879,6 +927,7 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
         c.phone AS phone,
         cv.id AS cvId,
         cv.original_filename AS cvFileName,
+        cv.source AS source,
         cv.storage_key AS storageKey,
         COALESCE(extracts.target_position, '') AS targetPosition,
         CASE WHEN extracts.cv_text IS NOT NULL AND extracts.cv_text <> '' THEN 1 ELSE 0 END AS hasCvPreview,
@@ -888,6 +937,7 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
       INNER JOIN candidates c ON c.id = app.candidate_id
       INNER JOIN candidate_cvs cv ON cv.id = app.candidate_cv_id
       LEFT JOIN candidate_cv_extractions extracts ON extracts.candidate_cv_id = cv.id
+      LEFT JOIN users owner_user ON owner_user.id = app.owner_user_id
       WHERE app.id = ?
       LIMIT 1`,
     [applicationId]
@@ -905,6 +955,7 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
     email: row.email,
   })
   const statusHistory = await listJobPostApplicationStatusHistory(pool, applicationId)
+  const duplicateApplicationIds = await listDuplicateApplicationIds(pool)
   const matches = await listCandidateCvJobMatches(pool, Number(row.cvId))
   const primaryMatch = matches[0] || null
 
@@ -920,6 +971,9 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
       matchedScore: Number(row.matchedScore || 0),
       matchedLevel: normalizeText(row.matchedLevel),
       matchedPosition: normalizeText(row.matchedPosition),
+      source: normalizeCvSource(row.source),
+      ownerUser: buildOwnerUserPayload(row),
+      isDuplicateApplication: duplicateApplicationIds.has(Number(row.applicationId)),
       match: primaryMatch,
       dimensionEvaluations: primaryMatch?.dimensionEvaluations || [],
       jobPostTitle: normalizeText(row.jobPostTitle),
@@ -1020,9 +1074,13 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
 
   await pool.query(
     `UPDATE job_post_applications
-      SET application_status = ?, first_interview_arrangement = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+      SET application_status = ?,
+          first_interview_arrangement = ?,
+          remark = ?,
+          owner_user_id = COALESCE(?, owner_user_id),
+          updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [nextStatus, arrangementResult.value || null, nextRemark, applicationId]
+    [nextStatus, arrangementResult.value || null, nextRemark, operatorUserId, applicationId]
   )
   await syncJobPostApplicationStatusHistory(
     pool,
@@ -1375,8 +1433,9 @@ const insertCandidateCv = async (
   fileName,
   mimeType,
   buffer,
-  { fullName = '', createdAt = '' } = {}
+  { fullName = '', createdAt = '', source = '' } = {}
 ) => {
+  const normalizedSource = normalizeCvSource(source) || null
   const renamedFileName = buildRenamedCandidateCvFileName({
     fullName,
     createdAt,
@@ -1397,9 +1456,18 @@ const insertCandidateCv = async (
 
   const [result] = await pool.query(
     `INSERT INTO candidate_cvs
-      (candidate_id, version_no, storage_provider, storage_key, original_filename, mime_type, file_size, sha256)
-     VALUES (?, ?, 'local', ?, ?, ?, ?, ?)`,
-    [candidateId, nextVersion, storageFileName, renamedFileName, mimeType || 'application/octet-stream', buffer.length, fileHash]
+      (candidate_id, version_no, storage_provider, storage_key, original_filename, mime_type, file_size, sha256, source)
+     VALUES (?, ?, 'local', ?, ?, ?, ?, ?, ?)`,
+    [
+      candidateId,
+      nextVersion,
+      storageFileName,
+      renamedFileName,
+      mimeType || 'application/octet-stream',
+      buffer.length,
+      fileHash,
+      normalizedSource,
+    ]
   )
 
   return {
@@ -1407,6 +1475,7 @@ const insertCandidateCv = async (
     candidateId,
     versionNo: nextVersion,
     originalFileName: renamedFileName,
+    source: normalizedSource || '',
     size: buffer.length,
     storagePath,
   }
@@ -1427,6 +1496,80 @@ const normalizeText = (value) => String(value ?? '').trim()
 const normalizeEmailIdentity = (value) => normalizeText(value).toLowerCase()
 
 const normalizePhoneIdentity = (value) => normalizeText(value).replace(/[\s\-()]/g, '')
+
+const CV_SOURCE_VALUES = new Set(['BOSS', '智聯', '內推'])
+
+const normalizeCvSource = (value) => {
+  const text = normalizeText(value)
+  if (!text) return ''
+  if (/^boss$/i.test(text)) return 'BOSS'
+  if (text === '智联' || text === '智聯') return '智聯'
+  if (text === '内推' || text === '內推') return '內推'
+  return CV_SOURCE_VALUES.has(text) ? text : ''
+}
+
+const detectCvSourceFromFileName = (fileName = '') => {
+  const text = normalizeText(fileName)
+  if (!text) return ''
+  if (/(智联简历|智聯簡歷)/.test(text)) return '智聯'
+  if (/(内推|內推)/.test(text)) return '內推'
+  if (/^【[^】]+_[^】]+\s+[^】]+】.+\s+\S+/.test(text)) return 'BOSS'
+  return ''
+}
+
+const resolveCvSource = (value, fileName = '') =>
+  normalizeCvSource(value) || detectCvSourceFromFileName(fileName)
+
+const buildOwnerUserPayload = (row = {}) => {
+  if (!row.ownerUserId) return null
+  return buildUserPayload({
+    id: row.ownerUserId,
+    email: row.ownerEmail,
+    username: row.ownerUsername,
+    avatarText: row.ownerAvatarText,
+    avatarBgColor: row.ownerAvatarBgColor,
+  })
+}
+
+const buildDuplicateApplicationIdSet = (rows = []) => {
+  const buckets = new Map()
+  const addBucket = (key, applicationId) => {
+    if (!key || !applicationId) return
+    const ids = buckets.get(key) || new Set()
+    ids.add(Number(applicationId))
+    buckets.set(key, ids)
+  }
+
+  for (const row of rows) {
+    const applicationId = Number(row.applicationId || 0)
+    const name = normalizeText(row.fullName)
+    if (!applicationId || !name) continue
+    const phone = normalizePhoneIdentity(row.phone)
+    const email = normalizeEmailIdentity(row.email)
+    if (phone) addBucket(`phone:${name}:${phone}`, applicationId)
+    if (email) addBucket(`email:${name}:${email}`, applicationId)
+  }
+
+  const duplicateIds = new Set()
+  for (const ids of buckets.values()) {
+    if (ids.size <= 1) continue
+    for (const id of ids) duplicateIds.add(id)
+  }
+  return duplicateIds
+}
+
+const listDuplicateApplicationIds = async (pool) => {
+  const [rows] = await pool.query(
+    `SELECT
+        app.id AS applicationId,
+        c.full_name AS fullName,
+        c.email AS email,
+        c.phone AS phone
+      FROM job_post_applications app
+      INNER JOIN candidates c ON c.id = app.candidate_id`
+  )
+  return buildDuplicateApplicationIdSet(rows)
+}
 
 const PERSONNEL_STATUS_VALUES = new Set(['active', 'inactive'])
 
@@ -1803,15 +1946,21 @@ const getLatestJobPostApplicationStatusHistory = async (pool, applicationId) => 
 const syncApplicationFromLatestStatusHistory = async (pool, applicationId) => {
   const latest = await getLatestJobPostApplicationStatusHistory(pool, applicationId)
   if (!latest) return null
+  const latestOperatorUserId = Number(latest.operatorUser?.id || 0) || null
 
   await pool.query(
     `UPDATE job_post_applications
-      SET application_status = ?, first_interview_arrangement = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+      SET application_status = ?,
+          first_interview_arrangement = ?,
+          remark = ?,
+          owner_user_id = COALESCE(?, owner_user_id),
+          updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
     [
       latest.applicationStatus,
       latest.firstInterviewArrangement || null,
       normalizeApplicationRemark(latest.remark),
+      latestOperatorUserId,
       applicationId,
     ]
   )
@@ -2591,15 +2740,24 @@ const findOrCreateCandidateForApplication = async (pool, { fullName = '', email 
   }
 }
 
-const createJobPostApplication = async (pool, jobPostId, candidateId, candidateCvId, match = null) => {
+const createJobPostApplication = async (
+  pool,
+  jobPostId,
+  candidateId,
+  candidateCvId,
+  match = null,
+  { ownerUserId = null } = {}
+) => {
+  const normalizedOwnerUserId = Number(ownerUserId || 0) || null
   const [result] = await pool.query(
     `INSERT INTO job_post_applications
-      (job_post_id, candidate_id, candidate_cv_id, application_status, matched_score, matched_level, matched_position)
-     VALUES (?, ?, ?, 'screening', ?, ?, ?)`,
+      (job_post_id, candidate_id, candidate_cv_id, application_status, owner_user_id, matched_score, matched_level, matched_position)
+     VALUES (?, ?, ?, 'screening', ?, ?, ?, ?)`,
     [
       jobPostId,
       candidateId,
       candidateCvId,
+      normalizedOwnerUserId,
       match ? Number(match.matchScore || 0) : null,
       match ? normalizeText(match.matchLevel) || null : null,
       match ? normalizeText(match.matchedPosition || match.jobTitle) || null : null,
@@ -2610,7 +2768,7 @@ const createJobPostApplication = async (pool, jobPostId, candidateId, candidateC
     applicationStatus: 'screening',
     firstInterviewArrangement: '',
     remark: '',
-  })
+  }, { operatorUserId: normalizedOwnerUserId })
   return applicationId
 }
 
@@ -2982,6 +3140,7 @@ const cacheCvUpload = async (pool, req, res, jobPostId = null) => {
   const fileName = body?.fileName
   const contentBase64 = body?.contentBase64
   const mimeType = body?.mimeType || 'application/octet-stream'
+  const source = resolveCvSource(body?.source, fileName)
 
   if (!fileName || !contentBase64) {
     sendJson(res, 400, { message: 'fileName and contentBase64 are required' })
@@ -3036,6 +3195,7 @@ const parseCvFromCache = async (pool, req, res, jobPostId = null) => {
     cacheId,
     fileName: cached.fileName,
     mimeType: cached.mimeType,
+    source: detectCvSourceFromFileName(cached.fileName),
     extractedText: parsed?.extractedText || '',
     candidate: {
       fullName: extracted.fullName || '',
@@ -3077,6 +3237,12 @@ const intakeCv = async (pool, req, res, jobPostId = null) => {
   }
 
   const { fileName, mimeType, buffer } = cached
+  const source = resolveCvSource(body?.source, fileName)
+  if (!source) {
+    sendJson(res, 400, { message: 'source is required and must be BOSS, 智聯, or 內推' })
+    return
+  }
+  const operatorUserId = await getRequestOperatorUserId(pool, req)
   const parsed = await parseCachedCvExtraction(cached)
   const extraction = parsed?.extraction || {}
   const cvText = parsed?.cvText || ''
@@ -3102,11 +3268,14 @@ const intakeCv = async (pool, req, res, jobPostId = null) => {
   const cv = await insertCandidateCv(pool, candidateId, fileName, mimeType, buffer, {
     fullName: candidate.fullName || derivedName,
     createdAt: candidate.createdAt || new Date(),
+    source,
   })
   const targetPosition = Array.isArray(finalExtracted?.profile?.targetPosition)
     ? finalExtracted.profile.targetPosition.join(', ')
     : ''
-  const applicationId = await createJobPostApplication(pool, jobPostId, candidateId, cv.id, null)
+  const applicationId = await createJobPostApplication(pool, jobPostId, candidateId, cv.id, null, {
+    ownerUserId: operatorUserId,
+  })
   const match = await runJobPostApplicationMatching(pool, {
     applicationId,
     candidateId,
@@ -3119,6 +3288,7 @@ const intakeCv = async (pool, req, res, jobPostId = null) => {
       extracted: finalExtracted,
       missingFields: finalMissingFields,
       parser,
+      source,
     },
     match
   )
@@ -3142,6 +3312,7 @@ const intakeCv = async (pool, req, res, jobPostId = null) => {
       jobPostId: jobPost.id,
       applicationStatus: 'screening',
       remark: '',
+      source,
       matchedScore: Number(match?.matchScore || 0),
       matchedLevel: normalizeText(match?.matchLevel),
       matchedPosition: normalizeText(match?.matchedPosition || match?.jobTitle),
@@ -3155,6 +3326,7 @@ const intakeCv = async (pool, req, res, jobPostId = null) => {
       missingFields: finalMissingFields,
       llmJson: extraction?.llmJson || null,
       parser,
+      source,
     },
     cv,
     match,
@@ -3191,6 +3363,7 @@ const uploadCandidateCv = async (pool, req, res, candidateId) => {
   const cv = await insertCandidateCv(pool, candidateId, fileName, mimeType, buffer, {
     fullName: candidate.fullName || '',
     createdAt: candidate.createdAt || '',
+    source,
   })
   const cvText = await extractTextFromBuffer(buffer, fileName, mimeType)
   await insertCandidateCvExtraction(pool, candidateId, cv.id, {
@@ -3222,9 +3395,14 @@ const intakeCandidateCvToJobPost = async (pool, req, res, candidateId, jobPostId
   const fileName = normalizeText(body?.fileName)
   const contentBase64 = body?.contentBase64
   const mimeType = normalizeText(body?.mimeType) || 'application/octet-stream'
+  const source = resolveCvSource(body?.source, fileName)
 
   if (!fileName || !contentBase64) {
     sendJson(res, 400, { message: 'fileName and contentBase64 are required' })
+    return
+  }
+  if (!source) {
+    sendJson(res, 400, { message: 'source is required and must be BOSS, 智聯, or 內推' })
     return
   }
 
@@ -3252,12 +3430,16 @@ const intakeCandidateCvToJobPost = async (pool, req, res, candidateId, jobPostId
   const cv = await insertCandidateCv(pool, Number(candidateId), fileName, mimeType, buffer, {
     fullName: nextFullName,
     createdAt: candidate.createdAt || new Date(),
+    source,
   })
 
   const targetPosition = Array.isArray(finalExtracted?.profile?.targetPosition)
     ? finalExtracted.profile.targetPosition.join(', ')
     : ''
-  const applicationId = await createJobPostApplication(pool, Number(jobPostId), Number(candidateId), cv.id, null)
+  const operatorUserId = await getRequestOperatorUserId(pool, req)
+  const applicationId = await createJobPostApplication(pool, Number(jobPostId), Number(candidateId), cv.id, null, {
+    ownerUserId: operatorUserId,
+  })
   const match = await runJobPostApplicationMatching(pool, {
     applicationId,
     candidateId: Number(candidateId),
@@ -3271,6 +3453,7 @@ const intakeCandidateCvToJobPost = async (pool, req, res, candidateId, jobPostId
       extracted: finalExtracted,
       missingFields: finalMissingFields,
       parser,
+      source,
     },
     match
   )
@@ -3295,6 +3478,7 @@ const intakeCandidateCvToJobPost = async (pool, req, res, candidateId, jobPostId
       jobPostId: jobPost.id,
       applicationStatus: 'screening',
       remark: '',
+      source,
       matchedScore: Number(match?.matchScore || 0),
       matchedLevel: normalizeText(match?.matchLevel),
       matchedPosition: normalizeText(match?.matchedPosition || match?.jobTitle),
@@ -3308,6 +3492,7 @@ const intakeCandidateCvToJobPost = async (pool, req, res, candidateId, jobPostId
       missingFields: finalMissingFields,
       llmJson: extraction?.llmJson || null,
       parser,
+      source,
     },
     cv,
     match,
@@ -3385,6 +3570,7 @@ const listCandidateCvTable = async (pool, _req, res) => {
 
 const listAllJobPostApplicationsTable = async (pool, _req, res) => {
   const blacklistEntries = await listCandidateBlacklistRows(pool)
+  const duplicateApplicationIds = await listDuplicateApplicationIds(pool)
   const [rows] = await pool.query(
     `SELECT
         app.id AS applicationId,
@@ -3394,6 +3580,11 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
         app.matched_score AS matchedScore,
         app.matched_level AS matchedLevel,
         app.matched_position AS matchedPosition,
+        app.owner_user_id AS ownerUserId,
+        owner_user.email AS ownerEmail,
+        owner_user.username AS ownerUsername,
+        owner_user.avatar_text AS ownerAvatarText,
+        owner_user.avatar_bg_color AS ownerAvatarBgColor,
         app.created_at AS createdAt,
         jp.id AS jobPostId,
         jp.title AS jobPostTitle,
@@ -3403,6 +3594,7 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
         c.phone AS phone,
         cv.id AS cvId,
         cv.original_filename AS cvFileName,
+        cv.source AS source,
         cv.storage_key AS storageKey,
         COALESCE(extracts.target_position, '') AS targetPosition,
         CASE WHEN extracts.cv_text IS NOT NULL AND extracts.cv_text <> '' THEN 1 ELSE 0 END AS hasCvPreview,
@@ -3412,6 +3604,7 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
       INNER JOIN candidates c ON c.id = app.candidate_id
       INNER JOIN candidate_cvs cv ON cv.id = app.candidate_cv_id
       LEFT JOIN candidate_cv_extractions extracts ON extracts.candidate_cv_id = cv.id
+      LEFT JOIN users owner_user ON owner_user.id = app.owner_user_id
       ORDER BY app.created_at DESC, app.id DESC`
   )
   const statusHistories = await listJobPostApplicationStatusHistories(
@@ -3435,6 +3628,9 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
         matchedScore: Number(row.matchedScore || 0),
         matchedLevel: normalizeText(row.matchedLevel),
         matchedPosition: normalizeText(row.matchedPosition),
+        source: normalizeCvSource(row.source),
+        ownerUser: buildOwnerUserPayload(row),
+        isDuplicateApplication: duplicateApplicationIds.has(applicationId),
         createdAt: row.createdAt,
         jobPostId: Number(row.jobPostId),
         jobPostTitle: normalizeText(row.jobPostTitle),
@@ -3473,6 +3669,7 @@ const getCandidateCvPreview = async (pool, _req, res, candidateCvId, previewType
     `SELECT
         cv.id AS cvId,
         cv.original_filename AS cvFileName,
+        cv.source AS source,
         extracts.cv_text AS cvText,
         extracts.extracted_text AS extractedText
       FROM candidate_cvs cv
@@ -3498,6 +3695,7 @@ const getCandidateCvPreview = async (pool, _req, res, candidateCvId, previewType
     cvId: Number(row.cvId),
     previewType: type,
     fileName: type === 'extracted' ? `${row.cvFileName}.extracted.txt` : row.cvFileName,
+    source: normalizeCvSource(row.source),
     text,
   })
 }
@@ -3527,6 +3725,7 @@ const updateCandidateCvExtractedField = async (pool, req, res, candidateCvId) =>
     `SELECT
         cv.id AS cvId,
         cv.candidate_id AS candidateId,
+        cv.source AS source,
         extracts.extracted_text AS extractedText
       FROM candidate_cvs cv
       LEFT JOIN candidate_cv_extractions extracts ON extracts.candidate_cv_id = cv.id
@@ -3542,6 +3741,7 @@ const updateCandidateCvExtractedField = async (pool, req, res, candidateCvId) =>
   }
 
   const payload = parseJsonObject(row.extractedText) || {}
+  payload.source = normalizeText(payload.source) || normalizeCvSource(row.source)
   const extracted = payload.extracted && typeof payload.extracted === 'object' ? payload.extracted : {}
   const updateResult = applyExtractedFieldUpdate(extracted, fieldKey, value)
   if (updateResult.error) {
@@ -3595,6 +3795,7 @@ const updateCandidateCvExtractedField = async (pool, req, res, candidateCvId) =>
     extracted: payload.extracted,
     missingFields: payload.missingFields,
     parser: payload.parser,
+    source: payload.source || '',
     match,
   })
 }
@@ -3615,6 +3816,7 @@ const updateCandidateCvExtractedFields = async (pool, req, res, candidateCvId) =
     `SELECT
         cv.id AS cvId,
         cv.candidate_id AS candidateId,
+        cv.source AS source,
         extracts.extracted_text AS extractedText
       FROM candidate_cvs cv
       LEFT JOIN candidate_cv_extractions extracts ON extracts.candidate_cv_id = cv.id
@@ -3630,6 +3832,7 @@ const updateCandidateCvExtractedFields = async (pool, req, res, candidateCvId) =
   }
 
   const payload = parseJsonObject(row.extractedText) || {}
+  payload.source = normalizeText(payload.source) || normalizeCvSource(row.source)
   let extracted = payload.extracted && typeof payload.extracted === 'object' ? payload.extracted : {}
 
   for (const [rawFieldKey, value] of entries) {
@@ -3688,6 +3891,7 @@ const updateCandidateCvExtractedFields = async (pool, req, res, candidateCvId) =
     extracted: payload.extracted,
     missingFields: payload.missingFields,
     parser: payload.parser,
+    source: payload.source || '',
     match,
   })
 }
@@ -4499,6 +4703,7 @@ const start = async () => {
       if (url.pathname === '/api/auth/profile' && req.method === 'GET') return getMyProfile(pool, req, res)
       if (url.pathname === '/api/auth/profile' && req.method === 'POST') return updateMyProfile(pool, req, res)
       if (url.pathname === '/api/auth/change-password' && req.method === 'POST') return changeMyPassword(pool, req, res)
+      if (url.pathname === '/api/users/options' && req.method === 'GET') return listUserOptions(pool, req, res)
       if (url.pathname === '/api/job-dictionary' && req.method === 'GET') return getJobDictionaryHandler(pool, req, res)
       if (url.pathname === '/api/job-dictionary' && req.method === 'PUT') return updateJobDictionaryHandler(pool, req, res)
       if (url.pathname === '/api/job-dictionary/rubric-suggestions' && req.method === 'POST') {

@@ -4,7 +4,6 @@ import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import { resolveJobDictionary } from '../scripts/jobDictionary.js'
 import AppSelect from '../components/AppSelect.vue'
 import CandidateApplicationsTable from '../components/candidate/CandidateApplicationsTable.vue'
-import JobDictionaryPanel from '../components/job/JobDictionaryPanel.vue'
 
 const message = ref('')
 const jobPosts = ref([])
@@ -479,7 +478,7 @@ onUnmounted(() => {
           title="目前職位候選人清單"
           :subtitle="selectedJobPost?.title || '請先選擇職位'"
           empty-text="尚無候選人資料"
-          search-placeholder="搜尋候選人 / 狀態 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案"
+          search-placeholder="搜尋候選人 / 來源 / 對接人 / 狀態 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案"
           @selection-change="selectedApplicationIds = $event"
           @delete-selected="deleteSelectedApplications"
           @rows-updated="handleApplicationsUpdated"
@@ -488,11 +487,6 @@ onUnmounted(() => {
       </section>
     </div>
 
-    <JobDictionaryPanel
-      :selected-title="selectedDictionaryTitle"
-      @updated="handleDictionaryUpdated"
-      @selected-title-change="handleDictionaryTitleSelected"
-    />
   </section>
 </template>
 

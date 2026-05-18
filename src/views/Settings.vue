@@ -1,7 +1,6 @@
 <script setup>
 import { onMounted, ref, watch } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
-import JobDictionaryPanel from '../components/job/JobDictionaryPanel.vue'
 
 const props = defineProps({
   userProfile: {
@@ -274,7 +273,7 @@ onMounted(() => {
     <header class="page-header settings-hero">
       <div>
         <h2>系統設定</h2>
-        <p>在這裡管理個人資料、密碼與職位字典，維持乾淨一致的編輯體驗。</p>
+        <p>在這裡管理個人資料與密碼，維持乾淨一致的使用體驗。</p>
       </div>
     </header>
 
@@ -397,7 +396,6 @@ onMounted(() => {
       <p v-if="passwordError" class="error-msg">{{ passwordError }}</p>
     </div>
 
-    <JobDictionaryPanel />
   </section>
 </template>
 

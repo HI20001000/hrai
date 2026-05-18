@@ -10,6 +10,7 @@ import {
   normalizeCandidateApplicationStatus,
   normalizeFirstInterviewArrangement,
 } from '../../scripts/candidateApplicationStatus.js'
+import { normalizeSearchText } from '../../scripts/searchNormalize.js'
 import CandidateTextPreviewModal from './CandidateTextPreviewModal.vue'
 
 const props = defineProps({
@@ -85,6 +86,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  showOwnerFilter: {
+    type: Boolean,
+    default: true,
+  },
   paginated: {
     type: Boolean,
     default: false,
@@ -143,7 +148,7 @@ const props = defineProps({
   },
   searchPlaceholder: {
     type: String,
-    default: '搜尋候選人 / 狀態 / 面試安排 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案',
+    default: '搜尋候選人 / 來源 / 對接人 / 狀態 / 面試安排 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案',
   },
 })
 
@@ -164,6 +169,7 @@ const emit = defineEmits([
 const searchKeyword = ref('')
 const statusFilter = ref('')
 const jobFilter = ref('')
+const ownerFilter = ref('')
 const currentPage = ref(1)
 const statusOverrides = ref({})
 const savingStatusIds = ref([])
@@ -187,7 +193,6 @@ const previewDownloadUrl = ref('')
 const previewDownloadFileName = ref('')
 const previewFileUrl = ref('')
 
-const normalizeSearchText = (value) => String(value ?? '').trim().toLowerCase()
 const normalizeFilterText = (value) => String(value ?? '').trim()
 
 const formatDateTime = (value) => {
@@ -270,6 +275,14 @@ const parseJsonSafe = (value) => {
   }
 }
 
+const attachPreviewSource = (text, source) => {
+  const normalizedSource = String(source || '').trim()
+  if (!normalizedSource) return String(text || '')
+  const parsed = parseJsonSafe(text)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return String(text || '')
+  return JSON.stringify({ ...parsed, source: parsed.source || normalizedSource }, null, 2)
+}
+
 const withAuthHeaders = (headers = {}) => {
   const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
   const token = String(auth?.token || '').trim()
@@ -292,6 +305,25 @@ const getStatusHistoryOperatorAvatarText = (history) => {
 const getStatusHistoryOperatorAvatarStyle = (history) => {
   const operator = getStatusHistoryOperator(history)
   const color = String(operator?.avatarBgColor || '').trim()
+  return { background: /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#64748b' }
+}
+
+const getOwnerUser = (row) => row?.ownerUser || null
+
+const getOwnerUserName = (row) => {
+  const owner = getOwnerUser(row)
+  return String(owner?.username || owner?.email || owner?.mail || '').trim()
+}
+
+const getOwnerUserAvatarText = (row) => {
+  const owner = getOwnerUser(row)
+  const fallback = getOwnerUserName(row).slice(0, 1).toUpperCase() || 'U'
+  return String(owner?.avatarText || '').trim() || fallback
+}
+
+const getOwnerUserAvatarStyle = (row) => {
+  const owner = getOwnerUser(row)
+  const color = String(owner?.avatarBgColor || '').trim()
   return { background: /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#64748b' }
 }
 
@@ -341,10 +373,27 @@ const jobFilterOptions = computed(() => {
   return [{ value: '', label: '全部' }, ...options]
 })
 
+const ownerFilterOptions = computed(() => {
+  const seen = new Set()
+  const options = []
+
+  for (const row of displayRows.value) {
+    const owner = getOwnerUser(row)
+    const value = owner?.id ? String(owner.id) : ''
+    const label = getOwnerUserName(row)
+    if (!value || !label || seen.has(value)) continue
+    seen.add(value)
+    options.push({ value, label })
+  }
+
+  return [{ value: '', label: '全部' }, ...options]
+})
+
 const filteredRows = computed(() => {
   const keyword = normalizeSearchText(searchKeyword.value)
   const selectedStatus = normalizeCandidateApplicationStatus(statusFilter.value, '')
   const selectedJob = normalizeFilterText(jobFilter.value)
+  const selectedOwner = normalizeFilterText(ownerFilter.value)
 
   return displayRows.value.filter((row) => {
     if (
@@ -358,11 +407,17 @@ const filteredRows = computed(() => {
       return false
     }
 
+    if (selectedOwner && String(row.ownerUser?.id || '') !== selectedOwner) {
+      return false
+    }
+
     if (!keyword) return true
 
     const haystack = [
       props.showJobColumn ? row.jobPostTitle : '',
       row.fullName,
+      row.source,
+      getOwnerUserName(row),
       getCandidateApplicationStatusLabel(row.applicationStatus),
       getFirstInterviewArrangementLabel(row.firstInterviewArrangement),
       props.showTargetPositionColumn ? row.targetPosition : '',
@@ -470,7 +525,7 @@ const bulkBlacklistActionLabel = computed(() => {
 })
 
 const tableColumnCount = computed(() => {
-  let count = 8
+  let count = 10
   if (props.showJobColumn) count += 1
   if (props.showTargetPositionColumn) count += 1
   if (props.showPhoneColumn) count += 1
@@ -482,7 +537,7 @@ const goToPage = (page) => {
   currentPage.value = Math.max(1, Math.min(Number(page) || 1, totalPages.value))
 }
 
-watch([searchKeyword, statusFilter, jobFilter], () => {
+watch([searchKeyword, statusFilter, jobFilter, ownerFilter], () => {
   currentPage.value = 1
 })
 
@@ -555,7 +610,8 @@ const openPreview = async (row, type) => {
       previewError.value = data.message || '讀取預覽失敗'
       return
     }
-    previewContent.value = data.text || ''
+    previewContent.value =
+      normalizedType === 'extracted' ? attachPreviewSource(data.text || '', data.source || row.source) : data.text || ''
   } catch {
     previewError.value = '讀取預覽失敗'
   } finally {
@@ -828,7 +884,7 @@ onBeforeUnmount(() => {
           :placeholder="searchPlaceholder"
         />
       </div>
-      <div v-if="showJobFilter || showStatusFilter" class="table-filters">
+      <div v-if="showJobFilter || showStatusFilter || showOwnerFilter" class="table-filters">
         <label v-if="showJobFilter" class="filter-control job-filter-control">
           <span>職位篩選</span>
           <AppSelect
@@ -846,6 +902,16 @@ onBeforeUnmount(() => {
             class="filter-select"
             :options="statusFilterOptions"
             placeholder="全部"
+          />
+        </label>
+        <label v-if="showOwnerFilter" class="filter-control owner-filter-control">
+          <span>對接人篩選</span>
+          <AppSelect
+            v-model="ownerFilter"
+            class="filter-select"
+            :options="ownerFilterOptions"
+            placeholder="全部"
+            empty-text="目前沒有對接人"
           />
         </label>
       </div>
@@ -910,6 +976,8 @@ onBeforeUnmount(() => {
             <th v-if="showTargetPositionColumn" class="position-col">期望職位</th>
             <th class="position-col">匹配職位</th>
             <th v-if="showPhoneColumn" class="phone-col">電話</th>
+            <th class="source-col">CV 來源</th>
+            <th class="owner-col">對接人</th>
             <th class="file-col">CV檔案</th>
             <th class="file-col">AI分析檔案</th>
             <th class="time-col">投遞時間</th>
@@ -925,6 +993,7 @@ onBeforeUnmount(() => {
             :key="row.applicationId"
             :class="{
               'blacklist-row': row.isBlacklisted,
+              'duplicate-row': !row.isBlacklisted && row.isDuplicateApplication,
               'selected-row': selectable && selectedIds.includes(Number(row.applicationId)),
               'selectable-row': selectable,
             }"
@@ -956,6 +1025,9 @@ onBeforeUnmount(() => {
                 >
                   {{ isBlacklistSaving(row.applicationId) ? '加入中...' : '加入 Blacklist' }}
                 </button>
+                <span v-if="!row.isBlacklisted && row.isDuplicateApplication" class="duplicate-badge">
+                  重複投遞
+                </span>
                 <button
                   v-if="showProjectTransferAction && normalizeCandidateApplicationStatus(row.applicationStatus) === 'onboarded'"
                   type="button"
@@ -1083,6 +1155,16 @@ onBeforeUnmount(() => {
               <span v-else>--</span>
             </td>
             <td v-if="showPhoneColumn" class="phone-col">{{ row.phone || '--' }}</td>
+            <td class="source-col">{{ row.source || '--' }}</td>
+            <td class="owner-col">
+              <span v-if="getOwnerUser(row)" class="owner-user-pill">
+                <span class="owner-avatar" :style="getOwnerUserAvatarStyle(row)">
+                  {{ getOwnerUserAvatarText(row) }}
+                </span>
+                <span>{{ getOwnerUserName(row) }}</span>
+              </span>
+              <span v-else>--</span>
+            </td>
             <td class="file-column file-col">
               <button
                 v-if="canPreviewCv(row)"
@@ -1438,6 +1520,18 @@ onBeforeUnmount(() => {
   outline: none;
 }
 
+.duplicate-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0.14rem 0.52rem;
+  border-radius: 999px;
+  color: #a15c00;
+  background: rgba(226, 156, 32, 0.16);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
 .blacklist-badge:focus-visible {
   box-shadow: 0 0 0 3px rgba(217, 45, 32, 0.16);
 }
@@ -1530,6 +1624,10 @@ onBeforeUnmount(() => {
   background: rgba(217, 45, 32, 0.05);
 }
 
+.duplicate-row td {
+  background: rgba(226, 156, 32, 0.08);
+}
+
 .selectable-row {
   cursor: pointer;
 }
@@ -1548,6 +1646,14 @@ onBeforeUnmount(() => {
 
 .blacklist-row:hover td {
   background: rgba(217, 45, 32, 0.08);
+}
+
+.duplicate-row.selected-row td {
+  background: linear-gradient(0deg, rgba(47, 111, 237, 0.08), rgba(47, 111, 237, 0.08)), rgba(226, 156, 32, 0.1);
+}
+
+.duplicate-row:hover td {
+  background: rgba(226, 156, 32, 0.12);
 }
 
 .status-col {
@@ -1574,6 +1680,33 @@ th.status-col {
 
 .phone-col {
   min-width: 140px;
+}
+
+.source-col {
+  min-width: 100px;
+}
+
+.owner-col {
+  min-width: 150px;
+}
+
+.owner-user-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.owner-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .file-col {

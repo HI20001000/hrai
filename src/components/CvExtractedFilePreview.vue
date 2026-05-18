@@ -8,6 +8,7 @@ const props = defineProps({
   extracted: { type: Object, default: () => ({}) },
   parser: { type: String, default: '' },
   missingFields: { type: Array, default: () => [] },
+  source: { type: String, default: '' },
 })
 
 const previewData = computed(() =>
@@ -16,6 +17,7 @@ const previewData = computed(() =>
     extracted: props.extracted,
     parser: props.parser,
     missingFields: props.missingFields,
+    source: props.source,
   })
 )
 
