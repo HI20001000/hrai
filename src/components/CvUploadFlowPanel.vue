@@ -26,6 +26,11 @@ const props = defineProps({
 
 const emit = defineEmits(['uploaded', 'closed'])
 
+const BATCH_CONCURRENCY = Math.min(
+  10,
+  Math.max(1, Number(import.meta.env.VITE_CV_BATCH_CONCURRENCY || 3) || 3)
+)
+
 const fileInputRef = ref(null)
 const selectedFiles = ref([])
 
@@ -273,6 +278,23 @@ const getBatchStageLabel = (stage) => {
 
 const updateBatchItem = (itemId, patch) => {
   batchItems.value = batchItems.value.map((item) => (item.id === itemId ? { ...item, ...patch } : item))
+}
+
+const runConcurrentBatch = async (items, worker, concurrency = BATCH_CONCURRENCY) => {
+  const queue = Array.isArray(items) ? items : []
+  if (!queue.length) return
+
+  let nextIndex = 0
+  const workerCount = Math.min(Math.max(1, Number(concurrency) || 1), queue.length)
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < queue.length) {
+        const index = nextIndex
+        nextIndex += 1
+        await worker(queue[index], index)
+      }
+    })
+  )
 }
 
 const resetParsedState = () => {
@@ -706,8 +728,8 @@ const startBatchProcessing = async () => {
     selected: false,
   }))
 
-  for (let index = 0; index < batchItems.value.length; index += 1) {
-    const item = batchItems.value[index]
+  const itemsToParse = batchItems.value.map((item) => ({ ...item }))
+  await runConcurrentBatch(itemsToParse, async (item, index) => {
     currentBatchItemId.value = item.id
 
     try {
@@ -758,9 +780,9 @@ const startBatchProcessing = async () => {
         message: error?.message || '批量解析失敗',
       })
     } finally {
-      batchOperationCompleted.value = index + 1
+      batchOperationCompleted.value += 1
     }
-  }
+  })
 
   isBatchParsing.value = false
   currentBatchItemId.value = ''
@@ -796,12 +818,11 @@ const matchBatchItemsByIds = async (itemIds, actionLabel = '批量匹配') => {
   let successCount = 0
   let errorCount = 0
 
-  for (let index = 0; index < ids.length; index += 1) {
-    const itemId = ids[index]
+  await runConcurrentBatch(ids, async (itemId, index) => {
     const item = batchItems.value.find((entry) => entry.id === itemId)
     if (!canMatchBatchItem(item)) {
-      batchOperationCompleted.value = index + 1
-      continue
+      batchOperationCompleted.value += 1
+      return
     }
 
     currentBatchItemId.value = item.id
@@ -855,9 +876,9 @@ const matchBatchItemsByIds = async (itemIds, actionLabel = '批量匹配') => {
       })
       errorCount += 1
     } finally {
-      batchOperationCompleted.value = index + 1
+      batchOperationCompleted.value += 1
     }
-  }
+  })
 
   isBatchMatching.value = false
   currentBatchItemId.value = ''
