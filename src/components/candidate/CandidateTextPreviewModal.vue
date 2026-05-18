@@ -362,14 +362,16 @@ onBeforeUnmount(() => {
           <Transition name="preview-load-fade">
             <div
               v-if="previewLoadStatus"
-              class="preview-load-status"
+              class="preview-load-backdrop"
               :class="`preview-load-${previewLoadStatus}`"
               :aria-busy="previewLoadStatus === 'loading'"
               aria-live="polite"
             >
-              <span v-if="previewLoadStatus === 'loading'" class="preview-spinner" aria-hidden="true"></span>
-              <span v-else class="preview-status-icon" aria-hidden="true">{{ previewLoadIcon }}</span>
-              <span>{{ previewLoadMessage }}</span>
+              <div class="preview-load-status" role="status">
+                <span v-if="previewLoadStatus === 'loading'" class="preview-spinner" aria-hidden="true"></span>
+                <span v-else class="preview-status-icon" aria-hidden="true">{{ previewLoadIcon }}</span>
+                <span>{{ previewLoadMessage }}</span>
+              </div>
             </div>
           </Transition>
 
@@ -516,6 +518,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .preview-panel {
+  position: relative;
   display: grid;
   grid-template-rows: auto 1fr;
   width: min(1360px, calc(100vw - 2rem));
@@ -536,36 +539,53 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 
-.preview-load-status {
+.preview-load-backdrop {
   --preview-load-color: var(--accent-hover);
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(10px);
+}
+
+.preview-load-status {
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
-  width: fit-content;
-  min-height: 42px;
-  margin: 0 0 0.9rem;
-  padding: 0.62rem 0.9rem;
-  border: 1px solid rgba(47, 111, 237, 0.14);
-  border-radius: 999px;
+  width: min(320px, calc(100vw - 2rem));
+  min-height: 72px;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 18px;
   color: var(--accent-hover);
-  background: rgba(47, 111, 237, 0.08);
-  font-size: 0.88rem;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 0.95rem;
   font-weight: 800;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(18px);
 }
 
 .preview-load-success {
   --preview-load-color: var(--success);
+}
+
+.preview-load-success .preview-load-status {
   color: var(--success);
   border-color: rgba(31, 143, 99, 0.18);
-  background: var(--success-soft);
+  background: rgba(245, 253, 249, 0.94);
 }
 
 .preview-load-error {
   --preview-load-color: var(--danger);
+}
+
+.preview-load-error .preview-load-status {
   color: var(--danger);
   border-color: rgba(197, 82, 82, 0.18);
-  background: var(--danger-soft);
+  background: rgba(255, 247, 247, 0.94);
 }
 
 .preview-spinner,

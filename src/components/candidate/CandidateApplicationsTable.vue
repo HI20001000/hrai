@@ -885,14 +885,16 @@ onBeforeUnmount(() => {
     <Transition name="load-status-fade">
       <div
         v-if="showLoadStatus"
-        class="load-status-card"
+        class="load-status-backdrop"
         :class="`load-status-${effectiveLoadStatus}`"
         :aria-busy="effectiveLoadStatus === 'loading'"
         aria-live="polite"
       >
-        <span v-if="effectiveLoadStatus === 'loading'" class="load-spinner" aria-hidden="true"></span>
-        <span v-else class="load-status-icon" aria-hidden="true">{{ loadStatusIcon }}</span>
-        <span>{{ loadStatusMessage }}</span>
+        <div class="load-status-modal" role="status">
+          <span v-if="effectiveLoadStatus === 'loading'" class="load-spinner" aria-hidden="true"></span>
+          <span v-else class="load-status-icon" aria-hidden="true">{{ loadStatusIcon }}</span>
+          <span>{{ loadStatusMessage }}</span>
+        </div>
       </div>
     </Transition>
     <div
@@ -1293,36 +1295,53 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.load-status-card {
+.load-status-backdrop {
   --load-status-color: var(--accent-hover);
+  position: fixed;
+  inset: 0;
+  z-index: 980;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.load-status-modal {
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
-  width: fit-content;
-  min-height: 42px;
-  margin: 0.15rem 0;
-  padding: 0.62rem 0.9rem;
-  border: 1px solid rgba(47, 111, 237, 0.14);
-  border-radius: 999px;
+  width: min(320px, calc(100vw - 2rem));
+  min-height: 72px;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 18px;
   color: var(--accent-hover);
-  background: rgba(47, 111, 237, 0.08);
-  font-size: 0.88rem;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 0.95rem;
   font-weight: 800;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(18px);
 }
 
 .load-status-success {
   --load-status-color: var(--success);
+}
+
+.load-status-success .load-status-modal {
   color: var(--success);
   border-color: rgba(31, 143, 99, 0.18);
-  background: var(--success-soft);
+  background: rgba(245, 253, 249, 0.94);
 }
 
 .load-status-error {
   --load-status-color: var(--danger);
+}
+
+.load-status-error .load-status-modal {
   color: var(--danger);
   border-color: rgba(197, 82, 82, 0.18);
-  background: var(--danger-soft);
+  background: rgba(255, 247, 247, 0.94);
 }
 
 .load-spinner,
