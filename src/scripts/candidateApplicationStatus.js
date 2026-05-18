@@ -4,7 +4,6 @@ export const CANDIDATE_APPLICATION_STATUS_OPTIONS = [
   { value: 'screening_hr_rejected', label: '簡歷篩選 - HR不通過' },
   { value: 'screening_department_approved', label: '簡歷篩選 - 部門通過' },
   { value: 'screening_department_rejected', label: '簡歷篩選 - 部門不通過' },
-  { value: 'screening_rejected', label: '簡歷篩選不通過' },
   { value: 'hr_interview', label: 'HR面試' },
   { value: 'hr_interview_rejected', label: 'HR面試不通過' },
   { value: 'department_interview', label: '部門面試' },
@@ -27,14 +26,19 @@ const STATUS_LABEL_MAP = Object.fromEntries(
   CANDIDATE_APPLICATION_STATUS_OPTIONS.map((item) => [item.value, item.label])
 )
 
+const LEGACY_STATUS_MAP = {
+  submitted: 'screening',
+  rejected: 'screening_hr_rejected',
+  screening_rejected: 'screening_hr_rejected',
+}
+
 const FIRST_INTERVIEW_ARRANGEMENT_LABEL_MAP = Object.fromEntries(
   FIRST_INTERVIEW_ARRANGEMENT_OPTIONS.map((item) => [item.value, item.label])
 )
 
 export const normalizeCandidateApplicationStatus = (value, fallback = 'screening') => {
   const normalized = String(value || '').trim().toLowerCase()
-  if (normalized === 'submitted') return 'screening'
-  if (normalized === 'rejected') return 'screening_rejected'
+  if (LEGACY_STATUS_MAP[normalized]) return LEGACY_STATUS_MAP[normalized]
   return STATUS_LABEL_MAP[normalized] ? normalized : fallback
 }
 

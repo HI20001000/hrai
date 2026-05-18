@@ -75,6 +75,8 @@ AUTH_AUTO_LOGIN_TTL_MS=
 AUTH_AUTO_LOGIN_TTL_MINUTES=
 ```
 
+當 `AUTH_AUTO_LOGIN_TTL_MINUTES` 設為負數時，登入 token 會使用永久登入模式。
+
 ## 本機開發
 
 1. 安裝前端依賴：

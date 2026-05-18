@@ -49,17 +49,22 @@ const loadEnvFile = (filePath) => {
 loadEnvFile(path.resolve(__dirname, '../.env'))
 loadEnvFile(path.resolve(__dirname, '.env'))
 
-const resolveTokenTtlMs = () => {
+const PERMANENT_AUTH_EXPIRES_AT = new Date('9999-12-31T23:59:59.000Z')
+
+const resolveTokenTtlConfig = () => {
   const asMs = Number(process.env.AUTH_AUTO_LOGIN_TTL_MS || '')
-  if (Number.isFinite(asMs) && asMs > 0) return asMs
+  if (Number.isFinite(asMs) && asMs > 0) return { ttlMs: asMs, permanent: false }
 
   const asMinutes = Number(process.env.AUTH_AUTO_LOGIN_TTL_MINUTES || '')
-  if (Number.isFinite(asMinutes) && asMinutes > 0) return Math.floor(asMinutes * 60 * 1000)
+  if (Number.isFinite(asMinutes) && asMinutes < 0) return { ttlMs: null, permanent: true }
+  if (Number.isFinite(asMinutes) && asMinutes > 0) {
+    return { ttlMs: Math.floor(asMinutes * 60 * 1000), permanent: false }
+  }
 
-  return 60 * 60 * 1000
+  return { ttlMs: 60 * 60 * 1000, permanent: false }
 }
 
-const TOKEN_TTL_MS = resolveTokenTtlMs()
+const TOKEN_TTL_CONFIG = resolveTokenTtlConfig()
 const CODE_TTL_MS = 60 * 1000
 const verificationCodes = new Map()
 const CV_CACHE_TTL_MS = 10 * 60 * 1000
@@ -362,7 +367,9 @@ const loginUser = async (pool, req, res) => {
   }
 
   const token = createAuthToken()
-  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS)
+  const expiresAt = TOKEN_TTL_CONFIG.permanent
+    ? PERMANENT_AUTH_EXPIRES_AT
+    : new Date(Date.now() + TOKEN_TTL_CONFIG.ttlMs)
   await pool.query('DELETE FROM auth_tokens WHERE user_id = ? OR expires_at <= NOW()', [user.id])
   await pool.query('INSERT INTO auth_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)', [
     user.id,
@@ -1645,7 +1652,6 @@ const APPLICATION_STATUS_VALUES = new Set([
   'screening_hr_rejected',
   'screening_department_approved',
   'screening_department_rejected',
-  'screening_rejected',
   'hr_interview',
   'hr_interview_rejected',
   'department_interview',
@@ -1665,8 +1671,8 @@ const normalizeApplicationStatus = (value, fallback = 'screening') => {
   const normalized = normalizeText(value).toLowerCase()
   const mapped = normalized === 'submitted'
     ? 'screening'
-    : normalized === 'rejected'
-      ? 'screening_rejected'
+    : normalized === 'rejected' || normalized === 'screening_rejected'
+      ? 'screening_hr_rejected'
       : normalized
   return APPLICATION_STATUS_VALUES.has(mapped) ? mapped : fallback
 }

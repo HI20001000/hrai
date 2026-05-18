@@ -2032,7 +2032,6 @@ th.status-col {
 .status-tone-screening_hr_rejected,
 .status-tone-screening_department_approved,
 .status-tone-screening_department_rejected,
-.status-tone-screening_rejected,
 .status-tone-hr_interview,
 .status-tone-hr_interview_rejected,
 .status-tone-department_interview,
