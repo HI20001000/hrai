@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import titleLogoUrl from '../assets/web_icon.png'
 
 const props = defineProps({
@@ -17,6 +17,7 @@ const emit = defineEmits(['change-page'])
 
 const isMobileMenuOpen = ref(false)
 const isSettingsMenuOpen = ref(false)
+let settingsMenuCloseTimer = null
 
 const pageItems = [
   { key: 'reports', label: '職缺管理', description: '管理職缺與投遞', icon: 'briefcase' },
@@ -73,6 +74,29 @@ const selectPage = (key) => {
   isMobileMenuOpen.value = false
   isSettingsMenuOpen.value = false
 }
+
+const clearSettingsMenuTimer = () => {
+  if (!settingsMenuCloseTimer) return
+  window.clearTimeout(settingsMenuCloseTimer)
+  settingsMenuCloseTimer = null
+}
+
+const openSettingsMenu = () => {
+  clearSettingsMenuTimer()
+  isSettingsMenuOpen.value = true
+}
+
+const scheduleSettingsMenuClose = () => {
+  clearSettingsMenuTimer()
+  settingsMenuCloseTimer = window.setTimeout(() => {
+    isSettingsMenuOpen.value = false
+    settingsMenuCloseTimer = null
+  }, 220)
+}
+
+onBeforeUnmount(() => {
+  clearSettingsMenuTimer()
+})
 </script>
 
 <template>
@@ -128,13 +152,17 @@ const selectPage = (key) => {
         </button>
       </nav>
 
-      <div class="settings-menu-wrap" @mouseenter="isSettingsMenuOpen = true" @mouseleave="isSettingsMenuOpen = false">
+      <div
+        class="settings-menu-wrap"
+        @mouseenter="openSettingsMenu"
+        @mouseleave="scheduleSettingsMenuClose"
+      >
         <button
           class="nav-button settings-button"
           :class="{ active: isSettingsActive }"
           type="button"
-          @focus="isSettingsMenuOpen = true"
-          @click="isSettingsMenuOpen = !isSettingsMenuOpen"
+          @focus="openSettingsMenu"
+          @click="openSettingsMenu"
         >
           <span class="nav-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none">
@@ -147,7 +175,12 @@ const selectPage = (key) => {
             <span>{{ settingsItem.description }}</span>
           </span>
         </button>
-        <div v-if="isSettingsMenuOpen" class="settings-submenu">
+        <div
+          v-if="isSettingsMenuOpen"
+          class="settings-submenu"
+          @mouseenter="openSettingsMenu"
+          @mouseleave="scheduleSettingsMenuClose"
+        >
           <button
             v-for="item in settingsSubItems"
             :key="item.key"
@@ -203,10 +236,12 @@ const selectPage = (key) => {
   position: fixed;
   top: 1rem;
   left: 1rem;
+  z-index: 1000;
   display: flex;
   width: 272px;
   min-height: calc(100dvh - 2rem);
   margin-right: 1rem;
+  overflow: visible;
 }
 
 .main-toolbar {
@@ -222,6 +257,7 @@ const selectPage = (key) => {
     linear-gradient(180deg, rgba(255, 255, 255, 0.86) 0%, rgba(246, 249, 253, 0.94) 100%);
   box-shadow: var(--shadow-md);
   backdrop-filter: blur(22px);
+  overflow: visible;
 }
 
 .toolbar-brand,
@@ -345,7 +381,17 @@ const selectPage = (key) => {
 
 .settings-menu-wrap {
   position: relative;
+  z-index: 10;
   margin-top: auto;
+}
+
+.settings-menu-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 100%;
+  width: 0.9rem;
+  height: 100%;
 }
 
 .settings-button {
@@ -356,9 +402,9 @@ const selectPage = (key) => {
 
 .settings-submenu {
   position: absolute;
-  left: calc(100% + 0.75rem);
+  left: calc(100% + 0.42rem);
   bottom: 0;
-  z-index: 50;
+  z-index: 1001;
   display: grid;
   gap: 0.45rem;
   min-width: 172px;
