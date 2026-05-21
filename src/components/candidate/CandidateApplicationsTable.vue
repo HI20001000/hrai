@@ -179,6 +179,8 @@ const remarkDrafts = ref({})
 const savingRemarkIds = ref([])
 const addingBlacklistIds = ref([])
 const activeStatusPopoverKey = ref('')
+const activeStatusPopoverRow = ref(null)
+const statusPopoverStyle = ref({})
 let statusPopoverCloseTimer = null
 
 const isPreviewOpen = ref(false)
@@ -244,16 +246,53 @@ const clearStatusPopoverTimer = () => {
   }
 }
 
-const openStatusPopover = (row) => {
+const buildStatusPopoverStyle = (target) => {
+  if (!target || typeof target.getBoundingClientRect !== 'function') return {}
+  const rect = target.getBoundingClientRect()
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768
+  const gap = 8
+  const margin = 16
+  const width = Math.min(520, Math.max(300, viewportWidth - margin * 2))
+  const left = Math.min(Math.max(rect.left, margin), Math.max(margin, viewportWidth - width - margin))
+  const spaceBelow = viewportHeight - rect.bottom - gap - margin
+  const spaceAbove = rect.top - gap - margin
+  const openAbove = spaceBelow < 220 && spaceAbove > spaceBelow
+  const maxHeight = Math.max(180, Math.min(360, openAbove ? spaceAbove : spaceBelow))
+
+  return openAbove
+    ? {
+        left: `${left}px`,
+        bottom: `${Math.max(margin, viewportHeight - rect.top + gap)}px`,
+        width: `${width}px`,
+        maxHeight: `${maxHeight}px`,
+      }
+    : {
+        left: `${left}px`,
+        top: `${Math.min(rect.bottom + gap, viewportHeight - margin)}px`,
+        width: `${width}px`,
+        maxHeight: `${maxHeight}px`,
+      }
+}
+
+const closeStatusPopover = () => {
+  activeStatusPopoverKey.value = ''
+  activeStatusPopoverRow.value = null
+  statusPopoverStyle.value = {}
+}
+
+const openStatusPopover = (row, event = null) => {
   if (!props.statusActionable) return
   clearStatusPopoverTimer()
   activeStatusPopoverKey.value = getStatusPopoverKey(row)
+  activeStatusPopoverRow.value = row
+  statusPopoverStyle.value = buildStatusPopoverStyle(event?.currentTarget)
 }
 
 const scheduleStatusPopoverClose = () => {
   clearStatusPopoverTimer()
   statusPopoverCloseTimer = window.setTimeout(() => {
-    activeStatusPopoverKey.value = ''
+    closeStatusPopover()
     statusPopoverCloseTimer = null
   }, 420)
 }
@@ -869,6 +908,7 @@ const quickAddToBlacklist = async (row) => {
 
 onBeforeUnmount(() => {
   clearStatusPopoverTimer()
+  closeStatusPopover()
 })
 </script>
 
@@ -1045,9 +1085,9 @@ onBeforeUnmount(() => {
               <div
                 class="status-cell-wrap"
                 :class="{ actionable: statusActionable, 'popover-active': isStatusPopoverActive(row) }"
-                @mouseenter="openStatusPopover(row)"
+                @mouseenter="openStatusPopover(row, $event)"
                 @mouseleave="scheduleStatusPopoverClose"
-                @focusin="openStatusPopover(row)"
+                @focusin="openStatusPopover(row, $event)"
                 @focusout="scheduleStatusPopoverClose"
               >
                 <div
@@ -1078,38 +1118,6 @@ onBeforeUnmount(() => {
                   {{ getCandidateApplicationStatusLabel(row.applicationStatus) }}
                 </span>
 
-                <div v-if="statusActionable" class="status-history-popover" role="tooltip">
-                  <p class="status-history-title">狀態記錄</p>
-                  <ol class="status-history-list">
-                    <li
-                      v-for="(history, index) in getRowStatusHistory(row)"
-                      :key="getStatusHistoryKey(history, index)"
-                      :class="{ current: index === 0 }"
-                    >
-                      <span class="history-dot" aria-hidden="true"></span>
-                      <span class="history-main">
-                        <strong>{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</strong>
-                        <em v-if="history.firstInterviewArrangement">
-                          面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
-                        </em>
-                        <span class="history-remark">{{ history.remark || '未填寫備註' }}</span>
-                        <span class="history-meta-row">
-                          <small>狀態時間 {{ formatDateTime(history.createdAt) }}</small>
-                          <small v-if="history.updatedAt">修改時間 {{ formatDateTime(history.updatedAt) }}</small>
-                          <span class="history-operator">
-                            <span
-                              class="history-operator-avatar"
-                              :style="getStatusHistoryOperatorAvatarStyle(history)"
-                            >
-                              {{ getStatusHistoryOperatorAvatarText(history) }}
-                            </span>
-                            <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
-                          </span>
-                        </span>
-                      </span>
-                    </li>
-                  </ol>
-                </div>
               </div>
             </td>
             <td class="first-interview-col">
@@ -1239,6 +1247,48 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="statusActionable && activeStatusPopoverRow"
+        class="status-history-popover is-floating"
+        role="tooltip"
+        :style="statusPopoverStyle"
+        @mouseenter="clearStatusPopoverTimer"
+        @mouseleave="scheduleStatusPopoverClose"
+      >
+        <p class="status-history-title">狀態記錄</p>
+        <ol class="status-history-list">
+          <li
+            v-for="(history, index) in getRowStatusHistory(activeStatusPopoverRow)"
+            :key="getStatusHistoryKey(history, index)"
+            :class="{ current: index === 0 }"
+          >
+            <span class="history-dot" aria-hidden="true"></span>
+            <span class="history-main">
+              <strong>{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</strong>
+              <em v-if="history.firstInterviewArrangement">
+                面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
+              </em>
+              <span class="history-remark">{{ history.remark || '未填寫備註' }}</span>
+              <span class="history-meta-row">
+                <small>狀態時間 {{ formatDateTime(history.createdAt) }}</small>
+                <small v-if="history.updatedAt">修改時間 {{ formatDateTime(history.updatedAt) }}</small>
+                <span class="history-operator">
+                  <span
+                    class="history-operator-avatar"
+                    :style="getStatusHistoryOperatorAvatarStyle(history)"
+                  >
+                    {{ getStatusHistoryOperatorAvatarText(history) }}
+                  </span>
+                  <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
+                </span>
+              </span>
+            </span>
+          </li>
+        </ol>
+      </div>
+    </Teleport>
 
     <CandidateTextPreviewModal
       :open="isPreviewOpen"
@@ -2047,6 +2097,14 @@ th.status-col {
     0 8px 20px rgba(47, 111, 237, 0.08);
   pointer-events: auto;
   white-space: normal;
+}
+
+.status-history-popover.is-floating {
+  position: fixed;
+  top: auto;
+  bottom: auto;
+  z-index: 20000;
+  display: block;
 }
 
 .status-cell-wrap.actionable.popover-active .status-history-popover {
