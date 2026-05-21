@@ -264,6 +264,10 @@ const PUBLIC_WRITE_ROUTES = [
   { method: 'POST', pattern: /^\/api\/auth\/request-code$/ },
   { method: 'POST', pattern: /^\/api\/auth\/register$/ },
   { method: 'POST', pattern: /^\/api\/auth\/login$/ },
+  { method: 'POST', pattern: /^\/api\/cv\/cache$/ },
+  { method: 'POST', pattern: /^\/api\/cv\/parse$/ },
+  { method: 'POST', pattern: /^\/api\/job-posts\/\d+\/cv\/cache$/ },
+  { method: 'POST', pattern: /^\/api\/job-posts\/\d+\/cv\/parse$/ },
 ]
 const SELF_SERVICE_WRITE_ROUTES = [
   { method: 'POST', pattern: /^\/api\/auth\/profile$/ },
