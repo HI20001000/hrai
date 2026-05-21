@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
+import { handleUnauthorizedResponse, requireAuthToken, withAuthHeaders } from '../scripts/authState.js'
 import CandidateApplicationsTable from '../components/candidate/CandidateApplicationsTable.vue'
 import {
   getInterviewLocationLabel,
@@ -19,20 +20,6 @@ const message = ref('')
 const currentMonth = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1))
 const selectedDateKey = ref('')
 const isRelatedModalOpen = ref(false)
-
-const parseJsonSafe = (value) => {
-  try {
-    return JSON.parse(String(value || '{}'))
-  } catch {
-    return null
-  }
-}
-
-const withAuthHeaders = (headers = {}) => {
-  const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
-  const token = String(auth?.token || '').trim()
-  return token ? { ...headers, Authorization: `Bearer ${token}` } : { ...headers }
-}
 
 const pad = (number) => String(number).padStart(2, '0')
 
@@ -138,10 +125,12 @@ const loadSchedule = async () => {
   isLoading.value = true
   message.value = ''
   try {
+    if (!requireAuthToken()) throw new Error('登入已失效，請重新登入')
     const response = await fetch(`${apiBaseUrl}/api/schedule/interviews?month=${monthKey.value}`, {
       headers: withAuthHeaders(),
     })
     const data = await response.json().catch(() => ({}))
+    if (handleUnauthorizedResponse(response)) throw new Error('登入已失效，請重新登入')
     if (!response.ok) throw new Error(data.message || '讀取時間表失敗')
     scheduleData.value = {
       month: data.month || monthKey.value,

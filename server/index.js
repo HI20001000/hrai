@@ -75,7 +75,7 @@ const DB_NAME = getDatabaseName()
 const withCors = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-InnerAI-Auth-Token')
 }
 
 const sendJson = (res, status, payload) => {
@@ -188,7 +188,8 @@ const buildUserPayload = (row = {}) => {
 const readBearerToken = (req) => {
   const raw = String(req.headers.authorization || '').trim()
   const match = raw.match(/^Bearer\s+(.+)$/i)
-  return match?.[1] ? match[1].trim() : ''
+  if (match?.[1]) return match[1].trim()
+  return String(req.headers['x-innerai-auth-token'] || '').trim()
 }
 
 const getAuthedUser = async (pool, req) => {

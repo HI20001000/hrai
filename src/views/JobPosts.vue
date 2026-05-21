@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
+import { handleUnauthorizedResponse, requireAuthToken, withAuthHeaders } from '../scripts/authState.js'
 import { resolveJobDictionary } from '../scripts/jobDictionary.js'
 import AppSelect from '../components/AppSelect.vue'
 import CandidateApplicationsTable from '../components/candidate/CandidateApplicationsTable.vue'
@@ -31,20 +32,6 @@ const getStatusLabel = (status) => {
   if (value === 'draft') return '草稿'
   if (value === 'closed') return '已關閉'
   return status || '--'
-}
-
-const parseJsonSafe = (value) => {
-  try {
-    return JSON.parse(String(value || '{}'))
-  } catch {
-    return null
-  }
-}
-
-const getAuthHeaders = () => {
-  const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
-  const token = String(auth?.token || '').trim()
-  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
 const sortedDictionaryEntries = computed(() =>
@@ -89,12 +76,12 @@ const syncCreateFormFromDictionary = (jobTitle) => {
 }
 
 const loadJobDictionary = async () => {
+  if (!requireAuthToken()) throw new Error('登入已失效，請重新登入')
   const response = await fetch(`${apiBaseUrl}/api/job-dictionary`, {
-    headers: {
-      ...getAuthHeaders(),
-    },
+    headers: withAuthHeaders(),
   })
   const data = await response.json()
+  if (handleUnauthorizedResponse(response)) throw new Error('登入已失效，請重新登入')
   if (!response.ok) throw new Error(data.message || '讀取職位字典失敗')
   jobDictionary.value = resolveJobDictionary(data)
 }
