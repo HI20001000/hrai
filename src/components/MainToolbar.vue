@@ -236,7 +236,7 @@ onBeforeUnmount(() => {
   position: fixed;
   top: 1rem;
   left: 1rem;
-  z-index: 1000;
+  z-index: 10000;
   display: flex;
   width: 272px;
   min-height: calc(100dvh - 2rem);
@@ -388,10 +388,10 @@ onBeforeUnmount(() => {
 .settings-menu-wrap::after {
   content: '';
   position: absolute;
-  top: 0;
+  top: -8rem;
   left: 100%;
-  width: 0.9rem;
-  height: 100%;
+  width: 1.15rem;
+  height: calc(100% + 8rem);
 }
 
 .settings-button {
@@ -402,9 +402,9 @@ onBeforeUnmount(() => {
 
 .settings-submenu {
   position: absolute;
-  left: calc(100% + 0.42rem);
+  left: calc(100% + 0.16rem);
   bottom: 0;
-  z-index: 1001;
+  z-index: 10001;
   display: grid;
   gap: 0.45rem;
   min-width: 172px;
