@@ -184,11 +184,9 @@ const createBatchItem = (file, index) => ({
   message: '等待解析',
   selected: false,
   candidate: null,
-          extractedText: '',
-          edited: false,
-          source: detectCvSourceFromFileName(item.fileName),
-          sourceError: '',
-          applicationId: null,
+  extractedText: '',
+  edited: false,
+  applicationId: null,
   matchedPosition: '',
 })
 
