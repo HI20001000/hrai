@@ -7,6 +7,8 @@ import {
   FIRST_INTERVIEW_ARRANGEMENT_OPTIONS,
   getCandidateApplicationStatusLabel,
   getFirstInterviewArrangementLabel,
+  getInterviewLocationLabel,
+  getInterviewStatusLabel,
   normalizeCandidateApplicationStatus,
   normalizeFirstInterviewArrangement,
 } from '../../scripts/candidateApplicationStatus.js'
@@ -218,6 +220,32 @@ const getStatusToneClass = (status) => {
   return `status-tone-${normalized}`
 }
 
+const getInterviewUserName = (interview) => {
+  const user = interview?.interviewerUser || null
+  return String(user?.username || user?.email || user?.mail || '').trim()
+}
+
+const getInterviewSummaryParts = (row) => {
+  const interview = row?.interview || {}
+  const interviewerName = getInterviewUserName(interview)
+  const hasInterviewInfo =
+    Boolean(interview.scheduledAt || interview.location || interviewerName) ||
+    String(interview.status || '').trim() === 'passed' ||
+    String(interview.status || '').trim() === 'failed'
+  const parts = []
+  if (interview.scheduledAt) parts.push(formatDateTime(interview.scheduledAt))
+  if (interview.location) parts.push(getInterviewLocationLabel(interview.location))
+  if (interviewerName) parts.push(`面試官：${interviewerName}`)
+  if (hasInterviewInfo && interview.status) parts.push(getInterviewStatusLabel(interview.status))
+  return parts.filter(Boolean)
+}
+
+const getInterviewSummaryText = (row) => {
+  const parts = getInterviewSummaryParts(row)
+  if (parts.length) return parts.join('｜')
+  return getFirstInterviewArrangementLabel(row?.firstInterviewArrangement) || '--'
+}
+
 const getRowStatusHistory = (row) => {
   const history = Array.isArray(row?.statusHistory) ? row.statusHistory : []
   if (history.length) return history
@@ -227,6 +255,7 @@ const getRowStatusHistory = (row) => {
       id: 0,
       applicationStatus: row?.applicationStatus,
       firstInterviewArrangement: row?.firstInterviewArrangement,
+      interview: row?.interview,
       remark: row?.remark,
       createdAt: row?.createdAt,
       updatedAt: row?.createdAt,
@@ -460,6 +489,7 @@ const filteredRows = computed(() => {
       getOwnerUserName(row),
       getCandidateApplicationStatusLabel(row.applicationStatus),
       getFirstInterviewArrangementLabel(row.firstInterviewArrangement),
+      getInterviewSummaryText(row),
       props.showTargetPositionColumn ? row.targetPosition : '',
       row.matchedPosition,
       props.showPhoneColumn ? row.phone : '',
@@ -1135,9 +1165,7 @@ onBeforeUnmount(() => {
                   @update:model-value="updateFirstInterviewArrangement(row, $event)"
                 />
               </div>
-              <span v-else class="first-interview-text">
-                {{ getFirstInterviewArrangementLabel(row.firstInterviewArrangement) || '--' }}
-              </span>
+              <span v-else class="first-interview-text">{{ getInterviewSummaryText(row) }}</span>
             </td>
             <td class="remark-col">
               <textarea
@@ -1269,6 +1297,9 @@ onBeforeUnmount(() => {
               <strong>{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</strong>
               <em v-if="history.firstInterviewArrangement">
                 面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
+              </em>
+              <em v-if="getInterviewSummaryParts(history).length">
+                面試資訊：{{ getInterviewSummaryText(history) }}
               </em>
               <span class="history-remark">{{ history.remark || '未填寫備註' }}</span>
               <span class="history-meta-row">

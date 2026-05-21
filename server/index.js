@@ -2462,6 +2462,10 @@ const syncApplicationFromLatestStatusHistory = async (pool, applicationId) => {
     `UPDATE job_post_applications
       SET application_status = ?,
           first_interview_arrangement = ?,
+          interview_scheduled_at = ?,
+          interviewer_user_id = ?,
+          interview_location = ?,
+          interview_status = ?,
           remark = ?,
           owner_user_id = COALESCE(?, owner_user_id),
           updated_at = CURRENT_TIMESTAMP

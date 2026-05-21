@@ -1,0 +1,577 @@
+<script setup>
+import { computed, onMounted, ref } from 'vue'
+import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
+import CandidateApplicationsTable from '../components/candidate/CandidateApplicationsTable.vue'
+import {
+  getInterviewLocationLabel,
+  getInterviewStatusLabel,
+} from '../scripts/candidateApplicationStatus.js'
+
+const scheduleData = ref({
+  month: '',
+  stats: {},
+  relatedApplications: [],
+  events: [],
+  tasksByDate: {},
+})
+const isLoading = ref(false)
+const message = ref('')
+const currentMonth = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1))
+const selectedDateKey = ref('')
+const isRelatedModalOpen = ref(false)
+
+const parseJsonSafe = (value) => {
+  try {
+    return JSON.parse(String(value || '{}'))
+  } catch {
+    return null
+  }
+}
+
+const withAuthHeaders = (headers = {}) => {
+  const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
+  const token = String(auth?.token || '').trim()
+  return token ? { ...headers, Authorization: `Bearer ${token}` } : { ...headers }
+}
+
+const pad = (number) => String(number).padStart(2, '0')
+
+const toDateKey = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+
+const monthKey = computed(() => `${currentMonth.value.getFullYear()}-${pad(currentMonth.value.getMonth() + 1)}`)
+
+const monthTitle = computed(() => `${currentMonth.value.getFullYear()}年 ${currentMonth.value.getMonth() + 1}月`)
+
+const formatDateTime = (value) => {
+  if (!value) return '--'
+  const date = new Date(String(value).replace(' ', 'T'))
+  if (Number.isNaN(date.getTime())) return String(value)
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const formatTime = (value) => {
+  if (!value) return '--'
+  const date = new Date(String(value).replace(' ', 'T'))
+  if (Number.isNaN(date.getTime())) return String(value).slice(11, 16) || '--'
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const getUserName = (user) => String(user?.username || user?.email || user?.mail || '').trim() || '--'
+
+const getInterview = (row) => row?.interview || {}
+
+const getTaskStatusClass = (status) => `interview-${String(status || 'in_progress').trim() || 'in_progress'}`
+
+const selectedDateTasks = computed(() => {
+  const key = selectedDateKey.value
+  return Array.isArray(scheduleData.value.tasksByDate?.[key]) ? scheduleData.value.tasksByDate[key] : []
+})
+
+const selectedDateTitle = computed(() => {
+  if (!selectedDateKey.value) return '未選擇日期'
+  const date = new Date(`${selectedDateKey.value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return selectedDateKey.value
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+})
+
+const calendarDays = computed(() => {
+  const start = new Date(currentMonth.value.getFullYear(), currentMonth.value.getMonth(), 1)
+  const firstWeekday = start.getDay()
+  const gridStart = new Date(start)
+  gridStart.setDate(start.getDate() - firstWeekday)
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart)
+    date.setDate(gridStart.getDate() + index)
+    const key = toDateKey(date)
+    const tasks = Array.isArray(scheduleData.value.tasksByDate?.[key]) ? scheduleData.value.tasksByDate[key] : []
+    return {
+      key,
+      date,
+      day: date.getDate(),
+      inMonth: date.getMonth() === currentMonth.value.getMonth(),
+      isSelected: key === selectedDateKey.value,
+      isToday: key === toDateKey(new Date()),
+      tasks,
+    }
+  })
+})
+
+const statusCards = computed(() => [
+  {
+    key: 'total',
+    label: '與我相關',
+    value: Number(scheduleData.value.stats?.total || 0),
+    hint: '對接人或面試官為我的候選人',
+    tone: 'neutral',
+  },
+  {
+    key: 'passed',
+    label: '通過',
+    value: Number(scheduleData.value.stats?.passed || 0),
+    hint: '面試狀態為通過',
+    tone: 'success',
+  },
+  {
+    key: 'inProgress',
+    label: '進行中',
+    value: Number(scheduleData.value.stats?.inProgress || 0),
+    hint: '面試狀態仍在跟進',
+    tone: 'warning',
+  },
+  {
+    key: 'unscheduled',
+    label: '未安排時間',
+    value: Number(scheduleData.value.stats?.unscheduled || 0),
+    hint: '尚未填寫面試時間',
+    tone: 'soft',
+  },
+  {
+    key: 'failed',
+    label: '不通過',
+    value: Number(scheduleData.value.stats?.failed || 0),
+    hint: '面試狀態為不通過',
+    tone: 'danger',
+  },
+])
+
+const loadSchedule = async () => {
+  isLoading.value = true
+  message.value = ''
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/schedule/interviews?month=${monthKey.value}`, {
+      headers: withAuthHeaders(),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.message || '讀取時間表失敗')
+    scheduleData.value = {
+      month: data.month || monthKey.value,
+      stats: data.stats || {},
+      relatedApplications: Array.isArray(data.relatedApplications) ? data.relatedApplications : [],
+      events: Array.isArray(data.events) ? data.events : [],
+      tasksByDate: data.tasksByDate || {},
+    }
+    if (!selectedDateKey.value || !selectedDateKey.value.startsWith(monthKey.value)) {
+      selectedDateKey.value = monthKey.value === toDateKey(new Date()).slice(0, 7)
+        ? toDateKey(new Date())
+        : `${monthKey.value}-01`
+    }
+  } catch (error) {
+    message.value = error?.message || '讀取時間表失敗'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const changeMonth = async (offset) => {
+  currentMonth.value = new Date(currentMonth.value.getFullYear(), currentMonth.value.getMonth() + offset, 1)
+  selectedDateKey.value = ''
+  await loadSchedule()
+}
+
+onMounted(loadSchedule)
+</script>
+
+<template>
+  <section class="schedule-page">
+    <header class="page-header">
+      <div>
+        <h2>時間表</h2>
+        <p>按當前登入用戶匯總對接與面試任務，集中查看本月面試安排。</p>
+      </div>
+      <button type="button" class="secondary-btn" :disabled="isLoading" @click="loadSchedule">
+        {{ isLoading ? '刷新中...' : '刷新' }}
+      </button>
+    </header>
+
+    <p v-if="message" class="message">{{ message }}</p>
+
+    <section class="status-grid" aria-label="面試任務統計">
+      <button
+        v-for="card in statusCards"
+        :key="card.key"
+        type="button"
+        class="status-card"
+        :class="`tone-${card.tone}`"
+        @click="isRelatedModalOpen = true"
+      >
+        <span>{{ card.label }}</span>
+        <strong>{{ card.value }}</strong>
+        <em>{{ card.hint }}</em>
+      </button>
+    </section>
+
+    <div class="schedule-layout">
+      <section class="task-panel">
+        <header class="panel-header">
+          <div>
+            <h3>{{ selectedDateTitle }}</h3>
+            <p>{{ selectedDateTasks.length ? `當天共有 ${selectedDateTasks.length} 場面試` : '當天暫無面試安排' }}</p>
+          </div>
+        </header>
+
+        <div class="task-list">
+          <article v-for="task in selectedDateTasks" :key="task.applicationId" class="task-item">
+            <time>{{ formatTime(getInterview(task).scheduledAt) }}</time>
+            <div>
+              <h4>{{ task.fullName || '候選人' }}｜{{ task.jobPostTitle || '--' }}</h4>
+              <p>
+                面試官：{{ getUserName(getInterview(task).interviewerUser) }}
+                ｜地點：{{ getInterviewLocationLabel(getInterview(task).location) || '--' }}
+                ｜狀態：{{ getInterviewStatusLabel(getInterview(task).status) }}
+              </p>
+              <p class="task-meta">
+                對接人：{{ getUserName(task.ownerUser) }}｜時間：{{ formatDateTime(getInterview(task).scheduledAt) }}
+              </p>
+            </div>
+            <span class="task-status" :class="getTaskStatusClass(getInterview(task).status)">
+              {{ getInterviewStatusLabel(getInterview(task).status) }}
+            </span>
+          </article>
+          <p v-if="!selectedDateTasks.length" class="empty-state">選擇有標記的日期即可查看面試任務。</p>
+        </div>
+      </section>
+
+      <section class="calendar-panel">
+        <header class="panel-header calendar-header">
+          <div>
+            <h3>本月行事曆</h3>
+            <p>只顯示已填寫面試時間的候選人記錄。</p>
+          </div>
+          <div class="month-controls">
+            <button type="button" class="icon-btn" :disabled="isLoading" @click="changeMonth(-1)">‹</button>
+            <strong>{{ monthTitle }}</strong>
+            <button type="button" class="icon-btn" :disabled="isLoading" @click="changeMonth(1)">›</button>
+          </div>
+        </header>
+
+        <div class="calendar-grid">
+          <span v-for="week in ['日', '一', '二', '三', '四', '五', '六']" :key="week" class="weekday">{{ week }}</span>
+          <button
+            v-for="day in calendarDays"
+            :key="day.key"
+            type="button"
+            class="calendar-day"
+            :class="{ muted: !day.inMonth, selected: day.isSelected, today: day.isToday, 'has-task': day.tasks.length }"
+            @click="selectedDateKey = day.key"
+          >
+            <span>{{ day.day }}</span>
+            <em v-if="day.tasks.length">{{ day.tasks.length }} 場面試</em>
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="isRelatedModalOpen" class="modal-backdrop" @click.self="isRelatedModalOpen = false">
+      <div class="modal-panel related-modal">
+        <header class="modal-header">
+          <div>
+            <h3>與我相關候選人</h3>
+            <p class="subtle">包含對接人為我，或面試官為我的所有候選人。</p>
+          </div>
+          <button type="button" class="ghost-btn" @click="isRelatedModalOpen = false">關閉</button>
+        </header>
+        <CandidateApplicationsTable
+          title="候選人清單"
+          :rows="scheduleData.relatedApplications"
+          :loading="isLoading"
+          :show-job-column="true"
+          :show-target-position-column="false"
+          :show-phone-column="false"
+          :show-owner-filter="true"
+          :show-status-filter="true"
+          :show-job-filter="true"
+          :paginated="true"
+          :page-size="12"
+          table-max-height="52vh"
+          empty-text="暫無與你相關的候選人"
+          search-placeholder="搜尋候選人 / 職位 / 對接人 / 面試官 / 面試時間 / 面試狀態"
+        />
+      </div>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.schedule-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.page-header,
+.panel-header,
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.page-header h2,
+.panel-header h3,
+.modal-header h3 {
+  margin: 0;
+  color: var(--text-strong);
+}
+
+.page-header p,
+.panel-header p,
+.subtle,
+.task-item p,
+.empty-state {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.message {
+  margin: 0;
+  color: #b45309;
+  font-weight: 700;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.status-card {
+  display: grid;
+  gap: 0.45rem;
+  min-height: 132px;
+  padding: 1.15rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 18px;
+  background: #fff;
+  text-align: left;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.status-card strong {
+  color: var(--text-strong);
+  font-size: 2rem;
+}
+
+.status-card span,
+.status-card em {
+  color: var(--text-muted);
+  font-style: normal;
+  font-weight: 700;
+}
+
+.status-card.tone-success {
+  background: #dcfce7;
+}
+
+.status-card.tone-warning,
+.status-card.tone-soft {
+  background: #fef3c7;
+}
+
+.status-card.tone-danger {
+  background: #fee2e2;
+}
+
+.schedule-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.95fr) minmax(420px, 1.05fr);
+  gap: 1rem;
+}
+
+.task-panel,
+.calendar-panel {
+  min-width: 0;
+  padding: 1.1rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--shadow-sm);
+}
+
+.task-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.task-item {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: start;
+  padding: 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.task-item h4 {
+  margin: 0 0 0.35rem;
+  color: var(--text-strong);
+}
+
+.task-item time {
+  color: #1d4ed8;
+  font-weight: 800;
+}
+
+.task-meta {
+  margin-top: 0.3rem !important;
+  font-size: 0.82rem;
+}
+
+.task-status {
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.interview-passed {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.interview-in_progress {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.interview-failed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.month-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.icon-btn,
+.secondary-btn,
+.ghost-btn {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text-base);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.secondary-btn,
+.ghost-btn {
+  padding: 0.55rem 0.9rem;
+}
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-top: 1rem;
+}
+
+.weekday {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.calendar-day {
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  min-height: 82px;
+  padding: 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: var(--text-strong);
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendar-day.muted {
+  opacity: 0.38;
+}
+
+.calendar-day.today {
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.35);
+}
+
+.calendar-day.selected {
+  border-color: #334155;
+  background: #eef2ff;
+}
+
+.calendar-day.has-task {
+  background: #dcfce7;
+}
+
+.calendar-day em {
+  width: fit-content;
+  padding: 0.18rem 0.42rem;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.modal-panel {
+  width: min(1120px, 96vw);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 1rem;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--shadow-lg);
+}
+
+.related-modal {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (max-width: 1180px) {
+  .status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .schedule-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .status-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .task-item {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-day {
+    min-height: 66px;
+    padding: 0.5rem;
+  }
+}
+</style>

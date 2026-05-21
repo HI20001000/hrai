@@ -8,10 +8,16 @@ import CandidateCvUploadModal from '../components/candidate/CandidateCvUploadMod
 import {
   CANDIDATE_APPLICATION_STATUS_OPTIONS,
   FIRST_INTERVIEW_ARRANGEMENT_OPTIONS,
+  INTERVIEW_LOCATION_OPTIONS,
+  INTERVIEW_STATUS_OPTIONS,
   getCandidateApplicationStatusLabel,
   getFirstInterviewArrangementLabel,
+  getInterviewLocationLabel,
+  getInterviewStatusLabel,
   normalizeCandidateApplicationStatus,
   normalizeFirstInterviewArrangement,
+  normalizeInterviewLocation,
+  normalizeInterviewStatus,
 } from '../scripts/candidateApplicationStatus.js'
 
 const message = ref('')
@@ -46,6 +52,11 @@ const isBlacklistEditorOpen = ref(false)
 const statusDraft = ref('')
 const remarkDraft = ref('')
 const firstInterviewDraft = ref('')
+const interviewScheduledAtDraft = ref('')
+const interviewerUserIdDraft = ref('')
+const interviewLocationDraft = ref('')
+const interviewStatusDraft = ref('in_progress')
+const userOptions = ref([])
 const blacklistReasonDraft = ref('')
 const isSavingStatus = ref(false)
 const isSavingRemark = ref(false)
@@ -67,6 +78,16 @@ const formatDateTime = (value) => {
   if (Number.isNaN(date.getTime())) return String(value)
   const pad = (n) => String(n).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const toDateTimeLocalValue = (value) => {
+  if (!value) return ''
+  const text = String(value).trim()
+  const normalized = text.includes('T') ? text : text.replace(' ', 'T')
+  const date = new Date(normalized)
+  if (Number.isNaN(date.getTime())) return normalized.slice(0, 16)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 const parseJsonSafe = (value) => {
@@ -106,6 +127,35 @@ const getStatusHistoryOperatorAvatarStyle = (history) => {
   const color = String(operator?.avatarBgColor || '').trim()
   return { background: /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#64748b' }
 }
+
+const getInterviewUserName = (interview) => {
+  const user = interview?.interviewerUser || null
+  return String(user?.username || user?.email || user?.mail || '').trim()
+}
+
+const getInterviewSummaryParts = (interview) => {
+  const interviewerName = getInterviewUserName(interview)
+  const hasInterviewInfo =
+    Boolean(interview?.scheduledAt || interview?.location || interviewerName) ||
+    String(interview?.status || '').trim() === 'passed' ||
+    String(interview?.status || '').trim() === 'failed'
+  const parts = []
+  if (interview?.scheduledAt) parts.push(formatDateTime(interview.scheduledAt))
+  if (interview?.location) parts.push(getInterviewLocationLabel(interview.location))
+  if (interviewerName) parts.push(`面試官：${interviewerName}`)
+  if (hasInterviewInfo && interview?.status) parts.push(getInterviewStatusLabel(interview.status))
+  return parts.filter(Boolean)
+}
+
+const getInterviewSummaryText = (interview) => getInterviewSummaryParts(interview).join('｜')
+
+const interviewerOptions = computed(() => [
+  { value: '', label: '未指定' },
+  ...userOptions.value.map((user) => ({
+    value: String(user.id),
+    label: user.username || user.email || `用戶 #${user.id}`,
+  })),
+])
 
 const hasBlacklistIdentity = (row) =>
   Boolean(String(row?.phone || '').trim() || String(row?.email || '').trim())
@@ -192,6 +242,7 @@ const activeStatusHistory = computed(() => {
       id: 0,
       applicationStatus: activeApplication.value.applicationStatus,
       firstInterviewArrangement: activeApplication.value.firstInterviewArrangement,
+      interview: activeApplication.value.interview,
       remark: activeApplication.value.remark,
       createdAt: activeApplication.value.createdAt,
       updatedAt: activeApplication.value.createdAt,
@@ -261,6 +312,11 @@ const setTableLoadStatus = (status, nextMessage = '') => {
 const resetDetailDrafts = (application = activeApplication.value) => {
   statusDraft.value = normalizeCandidateApplicationStatus(application?.applicationStatus)
   firstInterviewDraft.value = normalizeFirstInterviewArrangement(application?.firstInterviewArrangement)
+  const interview = application?.interview || {}
+  interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt)
+  interviewerUserIdDraft.value = String(interview.interviewerUser?.id || '')
+  interviewLocationDraft.value = normalizeInterviewLocation(interview.location, '')
+  interviewStatusDraft.value = normalizeInterviewStatus(interview.status)
   remarkDraft.value = String(application?.remark || '')
   blacklistReasonDraft.value = String(application?.blacklistEntry?.reason || application?.blacklistReason || '')
   isRemarkEditorOpen.value = false
@@ -271,6 +327,11 @@ const startNewStatusHistoryDraft = () => {
   editingStatusHistoryId.value = null
   statusDraft.value = normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus)
   firstInterviewDraft.value = normalizeFirstInterviewArrangement(activeApplication.value?.firstInterviewArrangement)
+  const interview = activeApplication.value?.interview || {}
+  interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt)
+  interviewerUserIdDraft.value = String(interview.interviewerUser?.id || '')
+  interviewLocationDraft.value = normalizeInterviewLocation(interview.location, '')
+  interviewStatusDraft.value = normalizeInterviewStatus(interview.status)
   remarkDraft.value = ''
 }
 
@@ -280,6 +341,11 @@ const editStatusHistoryDraft = (history) => {
   editingStatusHistoryId.value = historyId
   statusDraft.value = normalizeCandidateApplicationStatus(history?.applicationStatus)
   firstInterviewDraft.value = normalizeFirstInterviewArrangement(history?.firstInterviewArrangement)
+  const interview = history?.interview || {}
+  interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt)
+  interviewerUserIdDraft.value = String(interview.interviewerUser?.id || '')
+  interviewLocationDraft.value = normalizeInterviewLocation(interview.location, '')
+  interviewStatusDraft.value = normalizeInterviewStatus(interview.status)
   remarkDraft.value = String(history?.remark || '')
 }
 
@@ -301,6 +367,16 @@ const loadApplicationTable = async () => {
     setTableLoadStatus('error', nextMessage)
   } finally {
     isLoading.value = false
+  }
+}
+
+const loadUserOptions = async () => {
+  try {
+    const data = await fetchJson(`${apiBaseUrl}/api/users/options`)
+    userOptions.value = Array.isArray(data.users) ? data.users : []
+  } catch (error) {
+    userOptions.value = []
+    message.value = error?.message || '讀取用戶清單失敗'
   }
 }
 
@@ -377,6 +453,12 @@ const saveStatusModalChanges = async () => {
   const payload = {
     applicationStatus: nextStatus,
     firstInterviewArrangement: nextFirstInterview,
+    interview: {
+      scheduledAt: interviewScheduledAtDraft.value || '',
+      interviewerUserId: interviewerUserIdDraft.value || '',
+      location: interviewLocationDraft.value || '',
+      status: normalizeInterviewStatus(interviewStatusDraft.value),
+    },
     remark: String(remarkDraft.value || '').trim(),
   }
 
@@ -863,6 +945,7 @@ const removeActiveFromBlacklist = async () => {
 onMounted(async () => {
   window.addEventListener('hrai-applications-updated', handleApplicationsUpdated)
   window.addEventListener('focus', handleApplicationsUpdated)
+  await loadUserOptions()
   await loadApplicationTable()
 })
 
@@ -1122,6 +1205,9 @@ onUnmounted(() => {
                 <p v-if="history.firstInterviewArrangement" class="timeline-extra">
                   面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
                 </p>
+                <p v-if="getInterviewSummaryText(history.interview)" class="timeline-extra">
+                  面試資訊：{{ getInterviewSummaryText(history.interview) }}
+                </p>
                 <div class="timeline-meta-row">
                   <span class="timeline-meta">狀態時間 {{ formatDateTime(history.createdAt) }}</span>
                   <span v-if="history.updatedAt" class="timeline-meta">修改時間 {{ formatDateTime(history.updatedAt) }}</span>
@@ -1243,6 +1329,49 @@ onUnmounted(() => {
               />
             </label>
 
+            <label class="field">
+              <span>面試時間</span>
+              <input
+                v-model="interviewScheduledAtDraft"
+                type="datetime-local"
+                autocomplete="off"
+                :disabled="isSavingStatusModal"
+              />
+            </label>
+
+            <label class="field">
+              <span>面試官</span>
+              <AppSelect
+                :model-value="interviewerUserIdDraft"
+                :options="interviewerOptions"
+                placeholder="請選擇面試官"
+                :disabled="isSavingStatusModal"
+                @update:model-value="interviewerUserIdDraft = $event"
+              />
+            </label>
+
+            <label class="field">
+              <span>面試地點</span>
+              <AppSelect
+                :model-value="interviewLocationDraft"
+                :options="[{ value: '', label: '未指定' }, ...INTERVIEW_LOCATION_OPTIONS]"
+                placeholder="請選擇地點"
+                :disabled="isSavingStatusModal"
+                @update:model-value="interviewLocationDraft = $event"
+              />
+            </label>
+
+            <label class="field">
+              <span>面試狀態</span>
+              <AppSelect
+                :model-value="interviewStatusDraft"
+                :options="INTERVIEW_STATUS_OPTIONS"
+                placeholder="請選擇面試狀態"
+                :disabled="isSavingStatusModal"
+                @update:model-value="interviewStatusDraft = $event"
+              />
+            </label>
+
             <label class="field full-span">
               <span>備註</span>
               <textarea
@@ -1277,6 +1406,9 @@ onUnmounted(() => {
                   <p class="timeline-remark">{{ history.remark || '未填寫備註' }}</p>
                   <p v-if="history.firstInterviewArrangement" class="timeline-extra">
                     面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
+                  </p>
+                  <p v-if="getInterviewSummaryText(history.interview)" class="timeline-extra">
+                    面試資訊：{{ getInterviewSummaryText(history.interview) }}
                   </p>
                   <div class="timeline-meta-row">
                     <span class="timeline-meta">狀態時間 {{ formatDateTime(history.createdAt) }}</span>
@@ -1606,8 +1738,21 @@ onUnmounted(() => {
   gap: 0.9rem;
 }
 
-.status-modal-editor textarea {
+.status-modal-editor textarea,
+.status-modal-editor input {
   min-height: 98px;
+}
+
+.status-modal-editor input {
+  min-height: 42px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 12px;
+  color: var(--text-base);
+  font: inherit;
+}
+
+.status-modal-editor textarea {
   resize: vertical;
 }
 

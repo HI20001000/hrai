@@ -22,6 +22,17 @@ export const FIRST_INTERVIEW_ARRANGEMENT_OPTIONS = [
   { value: 'unsuitable', label: '不合適' },
 ]
 
+export const INTERVIEW_LOCATION_OPTIONS = [
+  { value: 'zhuhai', label: '珠海' },
+  { value: 'macau', label: '澳門' },
+]
+
+export const INTERVIEW_STATUS_OPTIONS = [
+  { value: 'passed', label: '通過' },
+  { value: 'in_progress', label: '進行中' },
+  { value: 'failed', label: '不通過' },
+]
+
 const STATUS_LABEL_MAP = Object.fromEntries(
   CANDIDATE_APPLICATION_STATUS_OPTIONS.map((item) => [item.value, item.label])
 )
@@ -34,6 +45,14 @@ const LEGACY_STATUS_MAP = {
 
 const FIRST_INTERVIEW_ARRANGEMENT_LABEL_MAP = Object.fromEntries(
   FIRST_INTERVIEW_ARRANGEMENT_OPTIONS.map((item) => [item.value, item.label])
+)
+
+const INTERVIEW_LOCATION_LABEL_MAP = Object.fromEntries(
+  INTERVIEW_LOCATION_OPTIONS.map((item) => [item.value, item.label])
+)
+
+const INTERVIEW_STATUS_LABEL_MAP = Object.fromEntries(
+  INTERVIEW_STATUS_OPTIONS.map((item) => [item.value, item.label])
 )
 
 export const normalizeCandidateApplicationStatus = (value, fallback = 'screening') => {
@@ -52,3 +71,19 @@ export const normalizeFirstInterviewArrangement = (value, fallback = '') => {
 
 export const getFirstInterviewArrangementLabel = (value) =>
   FIRST_INTERVIEW_ARRANGEMENT_LABEL_MAP[normalizeFirstInterviewArrangement(value)] || ''
+
+export const normalizeInterviewLocation = (value, fallback = '') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return INTERVIEW_LOCATION_LABEL_MAP[normalized] ? normalized : fallback
+}
+
+export const getInterviewLocationLabel = (value) =>
+  INTERVIEW_LOCATION_LABEL_MAP[normalizeInterviewLocation(value)] || ''
+
+export const normalizeInterviewStatus = (value, fallback = 'in_progress') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return INTERVIEW_STATUS_LABEL_MAP[normalized] ? normalized : fallback
+}
+
+export const getInterviewStatusLabel = (value) =>
+  INTERVIEW_STATUS_LABEL_MAP[normalizeInterviewStatus(value)] || INTERVIEW_STATUS_LABEL_MAP.in_progress
