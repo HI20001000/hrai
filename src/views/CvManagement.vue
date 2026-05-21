@@ -34,6 +34,7 @@ const bulkBlacklistReasonDraft = ref('')
 const isUploadModalOpen = ref(false)
 const isStatusModalOpen = ref(false)
 const isSavingStatusModal = ref(false)
+const deletingStatusHistoryIds = ref([])
 const editingStatusHistoryId = ref(null)
 const isProjectTransferModalOpen = ref(false)
 const isProjectTransferSaving = ref(false)
@@ -250,15 +251,9 @@ const activeStatusHistory = computed(() => {
   ]
 })
 
-const canEditFirstInterview = computed(
-  () => normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus) === 'screening_hr_approved'
+const isStatusModalBusy = computed(
+  () => isDetailLoading.value || isSavingStatusModal.value || deletingStatusHistoryIds.value.length > 0
 )
-
-const canEditFirstInterviewDraft = computed(
-  () => normalizeCandidateApplicationStatus(statusDraft.value, '') === 'screening_hr_approved'
-)
-
-const isStatusModalBusy = computed(() => isDetailLoading.value || isSavingStatusModal.value)
 
 const isEditingStatusHistory = computed(() => Number(editingStatusHistoryId.value || 0) > 0)
 
@@ -447,9 +442,7 @@ const saveStatusModalChanges = async () => {
   }
 
   const historyId = Number(editingStatusHistoryId.value || 0)
-  const nextFirstInterview = canEditFirstInterviewDraft.value
-    ? normalizeFirstInterviewArrangement(firstInterviewDraft.value, '')
-    : ''
+  const nextFirstInterview = normalizeFirstInterviewArrangement(firstInterviewDraft.value, '')
   const payload = {
     applicationStatus: nextStatus,
     firstInterviewArrangement: nextFirstInterview,
@@ -493,6 +486,32 @@ const saveStatusModalChanges = async () => {
     message.value = error?.message || '保存狀態記錄失敗'
   } finally {
     isSavingStatusModal.value = false
+  }
+}
+
+const isStatusHistoryDeleting = (historyId) =>
+  deletingStatusHistoryIds.value.includes(Number(historyId || 0))
+
+const deleteStatusHistory = async (history) => {
+  const applicationId = Number(activeApplication.value?.applicationId || 0)
+  const historyId = Number(history?.id || 0)
+  if (!applicationId || !historyId || isStatusModalBusy.value) return
+  if (!window.confirm('確認刪除此狀態記錄？')) return
+
+  deletingStatusHistoryIds.value = [...deletingStatusHistoryIds.value, historyId]
+  try {
+    await fetchJson(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status-history/${historyId}`, {
+      method: 'DELETE',
+    })
+    message.value = '已刪除狀態記錄'
+    await loadApplicationTable()
+    await loadApplicationDetail(applicationId, 'list')
+    startNewStatusHistoryDraft()
+    window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
+  } catch (error) {
+    message.value = error?.message || '刪除狀態記錄失敗'
+  } finally {
+    deletingStatusHistoryIds.value = deletingStatusHistoryIds.value.filter((id) => id !== historyId)
   }
 }
 
@@ -834,7 +853,7 @@ const updateFirstInterviewArrangement = async (nextValue) => {
   const applicationId = Number(activeApplication.value?.applicationId || 0)
   const normalizedValue = normalizeFirstInterviewArrangement(nextValue, '')
   const previousValue = normalizeFirstInterviewArrangement(activeApplication.value?.firstInterviewArrangement)
-  if (!applicationId || !canEditFirstInterview.value) {
+  if (!applicationId) {
     firstInterviewDraft.value = previousValue
     return
   }
@@ -1158,7 +1177,7 @@ onUnmounted(() => {
                   :model-value="firstInterviewDraft"
                   :options="FIRST_INTERVIEW_ARRANGEMENT_OPTIONS"
                   placeholder="請選擇"
-                  :disabled="!canEditFirstInterview || isSavingFirstInterview"
+                  :disabled="isSavingFirstInterview"
                   @update:model-value="updateFirstInterviewArrangement"
                 />
               </div>
@@ -1324,7 +1343,7 @@ onUnmounted(() => {
                 :model-value="firstInterviewDraft"
                 :options="FIRST_INTERVIEW_ARRANGEMENT_OPTIONS"
                 placeholder="請選擇"
-                :disabled="!canEditFirstInterviewDraft || isSavingStatusModal"
+                :disabled="isSavingStatusModal"
                 @update:model-value="firstInterviewDraft = $event"
               />
             </label>
@@ -1386,17 +1405,20 @@ onUnmounted(() => {
           <section class="status-history-section">
             <h4>狀態記錄</h4>
             <div class="status-timeline">
-              <button
+              <div
                 v-for="(history, index) in activeStatusHistory"
                 :key="history.id || `${history.applicationStatus}-${index}`"
-                type="button"
                 class="timeline-row"
                 :class="{
                   current: index === 0,
                   selected: Number(editingStatusHistoryId) === Number(history.id),
+                  disabled: isStatusModalBusy || !history.id,
                 }"
-                :disabled="isStatusModalBusy || !history.id"
+                role="button"
+                tabindex="0"
                 @click="editStatusHistoryDraft(history)"
+                @keydown.enter.prevent="editStatusHistoryDraft(history)"
+                @keydown.space.prevent="editStatusHistoryDraft(history)"
               >
                 <div class="timeline-label">
                   <span class="timeline-dot" aria-hidden="true"></span>
@@ -1423,8 +1445,17 @@ onUnmounted(() => {
                       <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
                     </span>
                   </div>
+                  <button
+                    v-if="history.id"
+                    type="button"
+                    class="timeline-delete-btn"
+                    :disabled="isStatusModalBusy || isStatusHistoryDeleting(history.id)"
+                    @click.stop="deleteStatusHistory(history)"
+                  >
+                    {{ isStatusHistoryDeleting(history.id) ? '刪除中...' : '刪除記錄' }}
+                  </button>
                 </div>
-              </button>
+              </div>
             </div>
           </section>
         </template>
@@ -1785,11 +1816,11 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.timeline-row:disabled {
+.timeline-row.disabled {
   cursor: default;
 }
 
-.timeline-row:not(:disabled):hover .timeline-label,
+.timeline-row:not(.disabled):hover .timeline-label,
 .timeline-row.selected .timeline-label {
   border-color: rgba(47, 111, 237, 0.24);
   box-shadow: 0 8px 18px rgba(47, 111, 237, 0.08);
@@ -1853,6 +1884,24 @@ onUnmounted(() => {
   min-width: 0;
   padding-top: 0.24rem;
   border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.timeline-delete-btn {
+  width: fit-content;
+  margin-top: 0.15rem;
+  padding: 0.34rem 0.72rem;
+  border: 1px solid rgba(220, 38, 38, 0.18);
+  border-radius: var(--radius-pill);
+  background: rgba(254, 226, 226, 0.72);
+  color: #b91c1c;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.timeline-delete-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .timeline-operator {

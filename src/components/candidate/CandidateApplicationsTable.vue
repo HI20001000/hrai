@@ -823,9 +823,7 @@ const updateApplicationStatus = async (row, nextStatus) => {
   }
 }
 
-const canEditFirstInterviewArrangement = (row) =>
-  props.editableStatus &&
-  normalizeCandidateApplicationStatus(row?.applicationStatus) === 'screening_hr_approved'
+const canEditFirstInterviewArrangement = () => props.editableStatus
 
 const updateFirstInterviewArrangement = async (row, nextValue) => {
   const applicationId = Number(row?.applicationId)

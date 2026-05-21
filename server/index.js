@@ -257,6 +257,7 @@ const DB_OPERATION_ROUTES = [
   { method: 'PATCH', pattern: /^\/api\/job-post-applications\/\d+\/status$/, type: 'application.status.update' },
   { method: 'POST', pattern: /^\/api\/job-post-applications\/\d+\/status-history$/, type: 'application.status_history.create' },
   { method: 'PATCH', pattern: /^\/api\/job-post-applications\/\d+\/status-history\/\d+$/, type: 'application.status_history.update' },
+  { method: 'DELETE', pattern: /^\/api\/job-post-applications\/\d+\/status-history\/\d+$/, type: 'application.status_history.delete' },
   { method: 'POST', pattern: /^\/api\/candidate-cvs\/\d+\/extracted-field$/, type: 'candidate_cv.extracted_field.update' },
   { method: 'POST', pattern: /^\/api\/candidate-cvs\/\d+\/extracted-fields$/, type: 'candidate_cv.extracted_fields.update' },
 ]
@@ -1399,17 +1400,6 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
     sendJson(res, 400, { message: 'Invalid firstInterviewArrangement' })
     return
   }
-  if (
-    hasFirstInterviewArrangement &&
-    currentStatus !== 'screening_hr_approved' &&
-    nextStatus !== 'screening_hr_approved'
-  ) {
-    sendJson(res, 400, {
-      message: 'firstInterviewArrangement can only be updated when HR screening is approved',
-    })
-    return
-  }
-
   const nextRemark = hasRemark ? normalizeApplicationRemark(body?.remark) : normalizeApplicationRemark(existing.remark)
   const interviewResult = resolveInterviewInput(hasInterview ? body?.interview : {}, buildInterviewFallback(existing))
   if (!interviewResult.valid) {
@@ -1489,13 +1479,6 @@ const createJobPostApplicationStatusHistory = async (pool, req, res, application
     sendJson(res, 400, { message: 'Invalid firstInterviewArrangement' })
     return
   }
-  if (nextStatus !== 'screening_hr_approved' && arrangementResult.value) {
-    sendJson(res, 400, {
-      message: 'firstInterviewArrangement can only be set when HR screening is approved',
-    })
-    return
-  }
-
   const nextRemark = normalizeApplicationRemark(body?.remark)
   const interviewResult = resolveInterviewInput(body?.interview || {})
   if (!interviewResult.valid) {
@@ -1514,7 +1497,7 @@ const createJobPostApplicationStatusHistory = async (pool, req, res, application
     [
       applicationId,
       nextStatus,
-      nextStatus === 'screening_hr_approved' ? arrangementResult.value || null : null,
+      arrangementResult.value || null,
       interviewResult.value.scheduledAt,
       interviewResult.value.interviewerUserId,
       interviewResult.value.location,
@@ -1586,13 +1569,6 @@ const updateJobPostApplicationStatusHistory = async (pool, req, res, application
     sendJson(res, 400, { message: 'Invalid firstInterviewArrangement' })
     return
   }
-  if (nextStatus !== 'screening_hr_approved' && arrangementResult.value) {
-    sendJson(res, 400, {
-      message: 'firstInterviewArrangement can only be set when HR screening is approved',
-    })
-    return
-  }
-
   const nextRemark = hasRemark ? normalizeApplicationRemark(body?.remark) : normalizeApplicationRemark(existing.remark)
   const interviewResult = resolveInterviewInput(hasInterview ? body?.interview : {}, buildInterviewFallback(existing))
   if (!interviewResult.valid) {
@@ -1614,7 +1590,7 @@ const updateJobPostApplicationStatusHistory = async (pool, req, res, application
      WHERE id = ? AND application_id = ?`,
     [
       nextStatus,
-      nextStatus === 'screening_hr_approved' ? arrangementResult.value || null : null,
+      arrangementResult.value || null,
       interviewResult.value.scheduledAt,
       interviewResult.value.interviewerUserId,
       interviewResult.value.location,
@@ -1632,6 +1608,30 @@ const updateJobPostApplicationStatusHistory = async (pool, req, res, application
   sendJson(res, 200, {
     message: 'Candidate application status history updated',
     history,
+    statusHistory,
+  })
+}
+
+const deleteJobPostApplicationStatusHistory = async (pool, _req, res, applicationId, historyId) => {
+  const [existingRows] = await pool.query(
+    'SELECT id FROM job_post_application_status_history WHERE id = ? AND application_id = ? LIMIT 1',
+    [historyId, applicationId]
+  )
+  if (!existingRows.length) {
+    sendJson(res, 404, { message: 'Status history not found' })
+    return
+  }
+
+  await pool.query('DELETE FROM job_post_application_status_history WHERE id = ? AND application_id = ?', [
+    historyId,
+    applicationId,
+  ])
+  await syncApplicationFromLatestStatusHistory(pool, applicationId)
+  const statusHistory = await listJobPostApplicationStatusHistory(pool, applicationId)
+
+  sendJson(res, 200, {
+    message: 'Candidate application status history deleted',
+    historyId: Number(historyId),
     statusHistory,
   })
 }
@@ -4332,12 +4332,14 @@ const listScheduleInterviews = async (pool, req, res, url) => {
     tasksByDate[dateKey] = [...(tasksByDate[dateKey] || []), item]
   }
 
+  const unscheduledApplications = relatedApplications.filter((item) => !item.interview.scheduledAt)
+  const scheduledApplications = relatedApplications.filter((item) => item.interview.scheduledAt)
   const stats = {
     total: relatedApplications.length,
-    passed: relatedApplications.filter((item) => item.interview.status === 'passed').length,
-    inProgress: relatedApplications.filter((item) => item.interview.status === 'in_progress').length,
-    unscheduled: relatedApplications.filter((item) => !item.interview.scheduledAt).length,
-    failed: relatedApplications.filter((item) => item.interview.status === 'failed').length,
+    passed: scheduledApplications.filter((item) => item.interview.status === 'passed').length,
+    inProgress: scheduledApplications.filter((item) => item.interview.status === 'in_progress').length,
+    unscheduled: unscheduledApplications.length,
+    failed: scheduledApplications.filter((item) => item.interview.status === 'failed').length,
   }
 
   sendJson(res, 200, {
@@ -5527,6 +5529,15 @@ const start = async () => {
       )
       if (applicationStatusHistoryItemMatch && req.method === 'PATCH') {
         return updateJobPostApplicationStatusHistory(
+          pool,
+          req,
+          res,
+          Number(applicationStatusHistoryItemMatch[1]),
+          Number(applicationStatusHistoryItemMatch[2])
+        )
+      }
+      if (applicationStatusHistoryItemMatch && req.method === 'DELETE') {
+        return deleteJobPostApplicationStatusHistory(
           pool,
           req,
           res,
