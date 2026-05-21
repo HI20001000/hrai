@@ -35,6 +35,7 @@ export const ensureAuthTables = async (pool) => {
       id BIGINT PRIMARY KEY AUTO_INCREMENT,
       email VARCHAR(255) NOT NULL UNIQUE,
       username VARCHAR(80) NULL,
+      \`role\` VARCHAR(40) NOT NULL DEFAULT 'hr',
       avatar_text VARCHAR(16) NULL,
       avatar_bg_color VARCHAR(20) NULL,
       password_hash VARCHAR(255) NOT NULL,
@@ -52,8 +53,18 @@ export const ensureAuthTables = async (pool) => {
   }
 
   await ensureColumn('ALTER TABLE users ADD COLUMN username VARCHAR(80) NULL')
+  await ensureColumn("ALTER TABLE users ADD COLUMN `role` VARCHAR(40) NOT NULL DEFAULT 'hr' AFTER username")
   await ensureColumn('ALTER TABLE users ADD COLUMN avatar_text VARCHAR(16) NULL')
   await ensureColumn('ALTER TABLE users ADD COLUMN avatar_bg_color VARCHAR(20) NULL')
+
+  await pool.query("UPDATE users SET `role` = 'hr' WHERE `role` IS NULL OR `role` = '' OR `role` NOT IN ('admin', 'hr', 'viewer')")
+  const [adminRows] = await pool.query("SELECT id FROM users WHERE `role` = 'admin' LIMIT 1")
+  if (!adminRows.length) {
+    const [firstUserRows] = await pool.query('SELECT id FROM users ORDER BY id ASC LIMIT 1')
+    if (firstUserRows[0]?.id) {
+      await pool.query("UPDATE users SET `role` = 'admin' WHERE id = ?", [firstUserRows[0].id])
+    }
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS auth_tokens (

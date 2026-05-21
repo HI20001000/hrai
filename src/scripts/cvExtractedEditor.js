@@ -430,6 +430,7 @@ export const computeProjectExperienceDurationMonthsByType = (value = []) => {
   )
 }
 
+// 專案/公司/實習時長由結構化專案群組推導，優先使用可解析區間，避免直接信任 LLM 的自由文字總結。
 export const buildProjectExperienceDurationLabels = (value = []) => {
   const durations = computeProjectExperienceDurationMonthsByType(value)
   return {
@@ -552,6 +553,7 @@ const buildProjectExperienceField = (profile = {}) => {
   })
 }
 
+// 預覽資料同時承載可編輯欄位 metadata，modal 會依 valueType/inputType 決定使用純文字或專案經歷編輯器。
 export const buildExtractedPreviewData = ({
   content = '',
   extracted = null,

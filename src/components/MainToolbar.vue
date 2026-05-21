@@ -31,12 +31,13 @@ const pageItems = [
 const settingsItem = {
   key: 'settings',
   label: '設定',
-  description: '個人資料與職位字典',
+  description: '個人資料、權限與字典',
   icon: 'gear',
 }
 
 const settingsSubItems = [
   { key: 'settings-profile', label: '用戶配置' },
+  { key: 'settings-user-roles', label: '用戶權限管理' },
   { key: 'settings-job-dictionary', label: '職位字典配置' },
 ]
 

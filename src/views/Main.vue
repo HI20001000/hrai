@@ -8,6 +8,7 @@ import OnboardedPersonnelManagement from './OnboardedPersonnelManagement.vue'
 import BlacklistManagement from './BlacklistManagement.vue'
 import ProjectManagement from './ProjectManagement.vue'
 import SettingsView from './Settings.vue'
+import UserRoleManagement from './UserRoleManagement.vue'
 import JobDictionaryPanel from '../components/job/JobDictionaryPanel.vue'
 
 const activePage = ref('reports')
@@ -85,6 +86,11 @@ onUnmounted(() => {
           <SettingsView
             v-else-if="activePage === 'settings-profile'"
             :user-profile="currentUser"
+            @profile-updated="handleProfileUpdated"
+          />
+          <UserRoleManagement
+            v-else-if="activePage === 'settings-user-roles'"
+            :current-user="currentUser"
             @profile-updated="handleProfileUpdated"
           />
           <section v-else-if="activePage === 'settings-job-dictionary'" class="settings-dictionary-page">

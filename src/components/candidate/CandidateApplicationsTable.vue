@@ -389,6 +389,7 @@ const ownerFilterOptions = computed(() => {
   return [{ value: '', label: '全部' }, ...options]
 })
 
+// 篩選條件採 AND 關係；關鍵字與 haystack 皆走簡繁 normalize，避免簡繁資料互搜漏命中。
 const filteredRows = computed(() => {
   const keyword = normalizeSearchText(searchKeyword.value)
   const selectedStatus = normalizeCandidateApplicationStatus(statusFilter.value, '')
@@ -566,6 +567,7 @@ const canPreviewCv = (row) => Boolean(row?.cvId && row?.cvFileName && row?.hasDo
 const canPreviewExtracted = (row) =>
   Boolean(row?.cvId && row?.extractedFileName && row?.hasExtractedPreview)
 
+// 原始 CV 走 iframe 檔案預覽；AI 分析預覽則拉文字內容，並兼容較早沒有來源欄位的提取結果。
 const openPreview = async (row, type) => {
   if (!row?.cvId) return
   const normalizedType = type === 'extracted' ? 'extracted' : 'cv'
@@ -702,6 +704,7 @@ const saveApplicationRemark = async (row) => {
   }
 }
 
+// 狀態更新會寫入後端歷史紀錄，後端再同步主表狀態與對接人，所以前端成功後只刷新列表資料源。
 const updateApplicationStatus = async (row, nextStatus) => {
   const applicationId = Number(row?.applicationId)
   const previousStatus = normalizeCandidateApplicationStatus(row?.applicationStatus)
@@ -1620,6 +1623,7 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
+/* 行背景優先級由模板控制：黑名單優先於重複投遞，因此 duplicate-row 只會套在非黑名單列。 */
 .blacklist-row td {
   background: rgba(217, 45, 32, 0.05);
 }

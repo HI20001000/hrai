@@ -25,6 +25,7 @@ import { matchCandidateToJobPost, matchCandidateToJobs } from './scripts/llm/job
 import { suggestJobDictionaryDefinition } from './scripts/llm/job-dictionary-suggester.js'
 import { suggestJobScoringRubrics } from './scripts/llm/rubric-suggester.js'
 import { normalizeScoringRubrics, normalizeScoringWeights } from './scripts/jobs/scoring.js'
+import { logDatabaseOperation, runWithLogContext } from './scripts/logger.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -89,14 +90,22 @@ const getErrorStatusCode = (error) => {
 }
 
 const parseBody = async (req) => {
+  if (Object.prototype.hasOwnProperty.call(req, 'parsedBody')) return req.parsedBody
   const chunks = []
   for await (const chunk of req) chunks.push(chunk)
-  if (!chunks.length) return null
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  } catch {
-    return null
+  if (!chunks.length) {
+    req.rawBody = ''
+    req.parsedBody = null
+    return req.parsedBody
   }
+
+  req.rawBody = Buffer.concat(chunks).toString('utf8')
+  try {
+    req.parsedBody = JSON.parse(req.rawBody)
+  } catch {
+    req.parsedBody = null
+  }
+  return req.parsedBody
 }
 
 const hashPassword = (password, salt) =>
@@ -110,6 +119,38 @@ const hashPassword = (password, salt) =>
 const createAuthToken = () => crypto.randomBytes(32).toString('hex')
 const tokenDigest = (token) => crypto.createHash('sha256').update(token).digest('hex')
 const DEFAULT_AVATAR_BG_COLOR = '#334155'
+const USER_ROLE_DEFINITIONS = [
+  {
+    value: 'admin',
+    label: '系統管理員',
+    description: '可管理全部資料、職位字典與用戶角色。',
+    permissions: ['全部讀寫', '用戶與角色管理', '職位字典配置', '候選人/職缺/項目/黑名單管理'],
+  },
+  {
+    value: 'hr',
+    label: 'HR 使用者',
+    description: '可處理日常招聘與人員資料，不可調整用戶角色。',
+    permissions: ['職缺與候選人管理', 'CV 上傳與匹配', '狀態與對接人更新', '項目/黑名單資料維護'],
+  },
+  {
+    value: 'viewer',
+    label: '只讀檢視',
+    description: '可登入查看資料，不可進行角色管理。',
+    permissions: ['查看職缺、候選人與人員資料', '查看匹配與狀態紀錄'],
+  },
+]
+const USER_ROLE_VALUES = new Set(USER_ROLE_DEFINITIONS.map((role) => role.value))
+
+const normalizeUserRole = (value, fallback = 'hr') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'normal') return 'hr'
+  return USER_ROLE_VALUES.has(normalized) ? normalized : fallback
+}
+
+const getUserRoleDefinition = (role) =>
+  USER_ROLE_DEFINITIONS.find((item) => item.value === normalizeUserRole(role)) || USER_ROLE_DEFINITIONS[1]
+
+const isAdminUser = (user) => normalizeUserRole(user?.role) === 'admin'
 
 const deriveUserNameFromEmail = (email = '') => {
   const localPart = String(email || '').split('@')[0].trim()
@@ -130,6 +171,7 @@ const normalizeAvatarText = (value, fallback = '') => {
 const buildUserPayload = (row = {}) => {
   const mail = String(row.email || '').trim().toLowerCase()
   const username = String(row.username || '').trim() || deriveUserNameFromEmail(mail)
+  const role = normalizeUserRole(row.role)
   const avatarText = normalizeAvatarText(row.avatarText, username.slice(0, 1).toUpperCase())
   const avatarBgColor = normalizeHexColor(row.avatarBgColor, DEFAULT_AVATAR_BG_COLOR)
 
@@ -137,7 +179,7 @@ const buildUserPayload = (row = {}) => {
     id: Number(row.id || 0) || null,
     mail,
     username,
-    role: 'normal',
+    role,
     avatarText,
     avatarBgColor,
   }
@@ -158,6 +200,7 @@ const getAuthedUser = async (pool, req) => {
         u.id,
         u.email,
         u.username,
+        u.\`role\` AS role,
         u.avatar_text AS avatarText,
         u.avatar_bg_color AS avatarBgColor
       FROM auth_tokens t
@@ -173,6 +216,147 @@ const getAuthedUser = async (pool, req) => {
 const getRequestOperatorUserId = async (pool, req) => {
   const user = await getAuthedUser(pool, req)
   return Number(user?.id || 0) || null
+}
+
+const DB_OPERATION_ROUTES = [
+  { method: 'POST', pattern: /^\/api\/auth\/register$/, type: 'auth.register' },
+  { method: 'POST', pattern: /^\/api\/auth\/login$/, type: 'auth.login' },
+  { method: 'POST', pattern: /^\/api\/auth\/profile$/, type: 'user.profile.update' },
+  { method: 'POST', pattern: /^\/api\/auth\/change-password$/, type: 'user.password.change' },
+  { method: 'PATCH', pattern: /^\/api\/users\/\d+\/role$/, type: 'user.role.update' },
+  { method: 'POST', pattern: /^\/api\/job-posts$/, type: 'job_post.create' },
+  { method: 'PUT', pattern: /^\/api\/job-posts\/\d+$/, type: 'job_post.update' },
+  { method: 'DELETE', pattern: /^\/api\/job-posts\/\d+$/, type: 'job_post.delete' },
+  { method: 'POST', pattern: /^\/api\/projects$/, type: 'project.create' },
+  { method: 'PATCH', pattern: /^\/api\/projects\/\d+$/, type: 'project.update' },
+  { method: 'DELETE', pattern: /^\/api\/projects\/\d+$/, type: 'project.delete' },
+  { method: 'POST', pattern: /^\/api\/projects\/\d+\/personnel$/, type: 'project_personnel.add' },
+  { method: 'POST', pattern: /^\/api\/projects\/\d+\/personnel\/import-csv$/, type: 'project_personnel.import' },
+  { method: 'POST', pattern: /^\/api\/project-personnel\/from-application$/, type: 'project_personnel.add_from_application' },
+  { method: 'POST', pattern: /^\/api\/project-personnel-assignments\/\d+\/transfer$/, type: 'project_assignment.transfer' },
+  { method: 'PATCH', pattern: /^\/api\/project-personnel-assignments\/\d+$/, type: 'project_assignment.update' },
+  { method: 'DELETE', pattern: /^\/api\/project-personnel-assignments\/\d+$/, type: 'project_assignment.remove' },
+  { method: 'POST', pattern: /^\/api\/candidates$/, type: 'candidate.create' },
+  { method: 'POST', pattern: /^\/api\/candidates\/batch-delete$/, type: 'candidate.batch_delete' },
+  { method: 'POST', pattern: /^\/api\/candidates\/\d+\/complete-profile$/, type: 'candidate.profile.complete' },
+  { method: 'DELETE', pattern: /^\/api\/candidates\/\d+$/, type: 'candidate.delete' },
+  { method: 'POST', pattern: /^\/api\/candidates\/\d+\/cvs$/, type: 'candidate_cv.upload' },
+  { method: 'POST', pattern: /^\/api\/candidates\/\d+\/job-posts\/\d+\/intake$/, type: 'application.intake_existing_cv' },
+  { method: 'POST', pattern: /^\/api\/personnel$/, type: 'personnel.create' },
+  { method: 'PATCH', pattern: /^\/api\/personnel\/\d+$/, type: 'personnel.update' },
+  { method: 'DELETE', pattern: /^\/api\/personnel\/\d+$/, type: 'personnel.delete' },
+  { method: 'POST', pattern: /^\/api\/candidate-blacklist$/, type: 'blacklist.create' },
+  { method: 'PATCH', pattern: /^\/api\/candidate-blacklist\/\d+$/, type: 'blacklist.update' },
+  { method: 'DELETE', pattern: /^\/api\/candidate-blacklist\/\d+$/, type: 'blacklist.delete' },
+  { method: 'POST', pattern: /^\/api\/cv\/intake$/, type: 'application.intake_cv' },
+  { method: 'POST', pattern: /^\/api\/job-posts\/\d+\/cv\/intake$/, type: 'application.intake_cv' },
+  { method: 'PATCH', pattern: /^\/api\/job-post-applications\/\d+$/, type: 'application.update' },
+  { method: 'DELETE', pattern: /^\/api\/job-post-applications\/\d+$/, type: 'application.delete' },
+  { method: 'POST', pattern: /^\/api\/job-post-applications\/batch-delete$/, type: 'application.batch_delete' },
+  { method: 'PATCH', pattern: /^\/api\/job-post-applications\/\d+\/status$/, type: 'application.status.update' },
+  { method: 'POST', pattern: /^\/api\/job-post-applications\/\d+\/status-history$/, type: 'application.status_history.create' },
+  { method: 'PATCH', pattern: /^\/api\/job-post-applications\/\d+\/status-history\/\d+$/, type: 'application.status_history.update' },
+  { method: 'POST', pattern: /^\/api\/candidate-cvs\/\d+\/extracted-field$/, type: 'candidate_cv.extracted_field.update' },
+  { method: 'POST', pattern: /^\/api\/candidate-cvs\/\d+\/extracted-fields$/, type: 'candidate_cv.extracted_fields.update' },
+]
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+const PUBLIC_WRITE_ROUTES = [
+  { method: 'POST', pattern: /^\/api\/auth\/request-code$/ },
+  { method: 'POST', pattern: /^\/api\/auth\/register$/ },
+  { method: 'POST', pattern: /^\/api\/auth\/login$/ },
+]
+const SELF_SERVICE_WRITE_ROUTES = [
+  { method: 'POST', pattern: /^\/api\/auth\/profile$/ },
+  { method: 'POST', pattern: /^\/api\/auth\/change-password$/ },
+]
+const ROLE_ACCESS_ROUTES = [
+  { method: 'GET', pattern: /^\/api\/users$/, roles: ['admin'] },
+  { method: 'PATCH', pattern: /^\/api\/users\/\d+\/role$/, roles: ['admin'] },
+  { method: 'PUT', pattern: /^\/api\/job-dictionary$/, roles: ['admin'] },
+  { method: 'POST', pattern: /^\/api\/job-dictionary\/rubric-suggestions$/, roles: ['admin'] },
+  { method: 'POST', pattern: /^\/api\/job-dictionary\/job-suggestions$/, roles: ['admin'] },
+]
+
+const matchesMethodRoute = (routes, pathname, method) => {
+  const normalizedMethod = String(method || '').trim().toUpperCase()
+  return routes.some((route) => route.method === normalizedMethod && route.pattern.test(pathname))
+}
+
+const findRoleAccessRule = (pathname, method) => {
+  const normalizedMethod = String(method || '').trim().toUpperCase()
+  return ROLE_ACCESS_ROUTES.find((route) => route.method === normalizedMethod && route.pattern.test(pathname)) || null
+}
+
+const resolveDatabaseOperationType = (pathname, method) => {
+  const normalizedMethod = String(method || '').trim().toUpperCase()
+  const match = DB_OPERATION_ROUTES.find((route) => route.method === normalizedMethod && route.pattern.test(pathname))
+  return match?.type || ''
+}
+
+const enforceRoleAccess = async (pool, req, res, url) => {
+  const method = String(req.method || '').trim().toUpperCase()
+  const roleRule = findRoleAccessRule(url.pathname, method)
+  const isWriteRequest = WRITE_METHODS.has(method)
+
+  if (!roleRule && !isWriteRequest) return true
+  if (matchesMethodRoute(PUBLIC_WRITE_ROUTES, url.pathname, method)) return true
+
+  const user = await getAuthedUser(pool, req)
+  if (!user) {
+    sendJson(res, 401, { message: 'Unauthorized' })
+    return false
+  }
+
+  const role = normalizeUserRole(user.role)
+  if (roleRule && !roleRule.roles.includes(role)) {
+    sendJson(res, 403, { message: 'Permission denied' })
+    return false
+  }
+
+  const isSelfServiceWrite = SELF_SERVICE_WRITE_ROUTES.some(
+    (route) => route.method === method && route.pattern.test(url.pathname)
+  )
+  if (!roleRule && isWriteRequest && !isSelfServiceWrite && role === 'viewer') {
+    sendJson(res, 403, { message: 'Viewer role is read-only' })
+    return false
+  }
+
+  return true
+}
+
+const resolveRequestLogUser = async (pool, req, { includeParsedBody = true } = {}) => {
+  try {
+    const authedUser = await getAuthedUser(pool, req)
+    if (authedUser) return buildUserPayload(authedUser)
+  } catch {
+    // 日誌用戶解析不能影響主請求。
+  }
+
+  const body = includeParsedBody ? req.parsedBody : null
+  const email = String(body?.email || body?.mail || '').trim().toLowerCase()
+  if (email) return email
+  return 'anonymous'
+}
+
+const writeDatabaseOperationLog = async (pool, req, res, operationType, startedAt, routeError, url) => {
+  if (!operationType) return
+
+  const statusCode = Number(res.statusCode || 0) || (routeError ? 500 : 200)
+  const user = await resolveRequestLogUser(pool, req)
+  logDatabaseOperation(operationType, {
+    user,
+    method: req.method,
+    path: url.pathname,
+    status: statusCode,
+    result: routeError || statusCode >= 400 ? 'failed' : 'success',
+    durationMs: Date.now() - startedAt,
+    error: routeError
+      ? {
+          name: routeError?.name || 'Error',
+          message: routeError?.message || String(routeError || 'Unknown error'),
+        }
+      : '',
+  })
 }
 
 const sanitizeFileName = (name) =>
@@ -312,15 +496,18 @@ const registerUser = async (pool, req, res) => {
     return
   }
 
+  const [userCountRows] = await pool.query('SELECT COUNT(*) AS userCount FROM users')
+  const nextRole = Number(userCountRows[0]?.userCount || 0) > 0 ? 'hr' : 'admin'
   const salt = crypto.randomBytes(16).toString('hex')
   const passwordHash = await hashPassword(password, salt)
   const username = deriveUserNameFromEmail(email)
   const avatarText = username.slice(0, 1).toUpperCase() || 'U'
   await pool.query(
-    'INSERT INTO users (email, username, avatar_text, avatar_bg_color, password_hash, password_salt) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO users (email, username, `role`, avatar_text, avatar_bg_color, password_hash, password_salt) VALUES (?, ?, ?, ?, ?, ?, ?)',
     [
     email,
     username,
+    nextRole,
     avatarText,
     DEFAULT_AVATAR_BG_COLOR,
     passwordHash,
@@ -345,6 +532,7 @@ const loginUser = async (pool, req, res) => {
       id,
       email,
       username,
+      \`role\`,
       avatar_text AS avatarText,
       avatar_bg_color AS avatarBgColor,
       password_hash,
@@ -406,6 +594,7 @@ const listUserOptions = async (pool, req, res) => {
         id,
         email,
         username,
+        \`role\`,
         avatar_text AS avatarText,
         avatar_bg_color AS avatarBgColor
       FROM users
@@ -423,6 +612,129 @@ const listUserOptions = async (pool, req, res) => {
         avatarBgColor: payload.avatarBgColor,
       }
     }),
+  })
+}
+
+const buildRolePayload = (role) => {
+  const definition = getUserRoleDefinition(role)
+  return {
+    value: definition.value,
+    label: definition.label,
+    description: definition.description,
+    permissions: definition.permissions,
+  }
+}
+
+const buildUserManagementPayload = (row = {}) => {
+  const payload = buildUserPayload(row)
+  const role = buildRolePayload(payload.role)
+  return {
+    ...payload,
+    email: payload.mail,
+    roleLabel: role.label,
+    roleDescription: role.description,
+    permissions: role.permissions,
+    createdAt: row.createdAt || row.created_at || null,
+  }
+}
+
+const requireAdminUser = async (pool, req, res) => {
+  const user = await getAuthedUser(pool, req)
+  if (!user) {
+    sendJson(res, 401, { message: 'Unauthorized' })
+    return null
+  }
+
+  if (!isAdminUser(user)) {
+    sendJson(res, 403, { message: 'Only system administrators can manage user roles' })
+    return null
+  }
+
+  return user
+}
+
+const listUsersForManagement = async (pool, req, res) => {
+  const user = await requireAdminUser(pool, req, res)
+  if (!user) return
+
+  const [rows] = await pool.query(
+    `SELECT
+        id,
+        email,
+        username,
+        \`role\`,
+        avatar_text AS avatarText,
+        avatar_bg_color AS avatarBgColor,
+        created_at AS createdAt
+      FROM users
+      ORDER BY created_at ASC, id ASC`
+  )
+
+  sendJson(res, 200, {
+    roles: USER_ROLE_DEFINITIONS.map((role) => buildRolePayload(role.value)),
+    users: rows.map((row) => buildUserManagementPayload(row)),
+    currentUser: buildUserPayload(user),
+  })
+}
+
+const updateUserRole = async (pool, req, res, userId) => {
+  const operator = await requireAdminUser(pool, req, res)
+  if (!operator) return
+
+  const nextRole = normalizeUserRole((await parseBody(req))?.role, '')
+  if (!nextRole) {
+    sendJson(res, 400, { message: 'Invalid role' })
+    return
+  }
+
+  const [rows] = await pool.query(
+    `SELECT
+        id,
+        email,
+        username,
+        \`role\`,
+        avatar_text AS avatarText,
+        avatar_bg_color AS avatarBgColor,
+        created_at AS createdAt
+      FROM users
+      WHERE id = ?
+      LIMIT 1`,
+    [userId]
+  )
+  const target = rows[0]
+  if (!target) {
+    sendJson(res, 404, { message: 'User not found' })
+    return
+  }
+
+  if (normalizeUserRole(target.role) === 'admin' && nextRole !== 'admin') {
+    const [adminRows] = await pool.query("SELECT COUNT(*) AS adminCount FROM users WHERE `role` = 'admin'")
+    if (Number(adminRows[0]?.adminCount || 0) <= 1) {
+      sendJson(res, 400, { message: 'At least one system administrator is required' })
+      return
+    }
+  }
+
+  await pool.query('UPDATE users SET `role` = ? WHERE id = ?', [nextRole, userId])
+  const [updatedRows] = await pool.query(
+    `SELECT
+        id,
+        email,
+        username,
+        \`role\`,
+        avatar_text AS avatarText,
+        avatar_bg_color AS avatarBgColor,
+        created_at AS createdAt
+      FROM users
+      WHERE id = ?
+      LIMIT 1`,
+    [userId]
+  )
+
+  sendJson(res, 200, {
+    message: 'User role updated',
+    user: buildUserManagementPayload(updatedRows[0]),
+    currentUser: Number(operator.id) === Number(userId) ? buildUserPayload(updatedRows[0]) : buildUserPayload(operator),
   })
 }
 
@@ -464,7 +776,7 @@ const updateMyProfile = async (pool, req, res) => {
   )
 
   const [rows] = await pool.query(
-    'SELECT id, email, username, avatar_text AS avatarText, avatar_bg_color AS avatarBgColor FROM users WHERE id = ? LIMIT 1',
+    'SELECT id, email, username, `role`, avatar_text AS avatarText, avatar_bg_color AS avatarBgColor FROM users WHERE id = ? LIMIT 1',
     [Number(currentPayload.id)]
   )
 
@@ -1531,6 +1843,7 @@ const buildOwnerUserPayload = (row = {}) => {
   })
 }
 
+// 重複投遞以「姓名+電話」或「姓名+郵件」跨全部投遞建桶，列表端只需要查 id 是否在集合內。
 const buildDuplicateApplicationIdSet = (rows = []) => {
   const buckets = new Map()
   const addBucket = (key, applicationId) => {
@@ -1943,6 +2256,7 @@ const getLatestJobPostApplicationStatusHistory = async (pool, applicationId) => 
   return rows[0] ? buildApplicationStatusHistoryPayload(rows[0]) : null
 }
 
+// 候選人列表顯示的狀態欄位以最新狀態歷史為準，對接人也會跟隨最近一次操作人補齊。
 const syncApplicationFromLatestStatusHistory = async (pool, applicationId) => {
   const latest = await getLatestJobPostApplicationStatusHistory(pool, applicationId)
   if (!latest) return null
@@ -3236,6 +3550,7 @@ const intakeCv = async (pool, req, res, jobPostId = null) => {
     return
   }
 
+  // 最終入庫前重新從快取解析來源與結構化結果，確保 HR 編輯內容、來源與匹配快照一起提交。
   const { fileName, mimeType, buffer } = cached
   const source = resolveCvSource(body?.source, fileName)
   if (!source) {
@@ -3800,6 +4115,7 @@ const updateCandidateCvExtractedField = async (pool, req, res, candidateCvId) =>
   })
 }
 
+// 編輯 AI 提取欄位後同步候選人主資料，並重算相關匹配報告，避免列表與預覽使用不同版本。
 const updateCandidateCvExtractedFields = async (pool, req, res, candidateCvId) => {
   const body = await parseBody(req)
   const updatesSource = body?.updates
@@ -4686,6 +5002,7 @@ const start = async () => {
   await ensureCvTables(pool)
 
   const port = process.env.PORT || 3001
+  // 目前 API 以明確順序分發路由；新增相近路徑時需留意較具體的 regex 分支不要被前面的平面路由吃掉。
   const server = http.createServer(async (req, res) => {
     withCors(res)
     if (!req.url) return sendJson(res, 404, { message: 'Not found' })
@@ -4696,13 +5013,22 @@ const start = async () => {
     }
 
     const url = new URL(req.url, `http://${req.headers.host}`)
-    try {
+    const requestId = crypto.randomUUID()
+    const requestStartedAt = Date.now()
+    const databaseOperationType = resolveDatabaseOperationType(url.pathname, req.method)
+    const logContextUser = await resolveRequestLogUser(pool, req, { includeParsedBody: false })
+    let routeError = null
+
+    return runWithLogContext({ requestId, user: logContextUser, method: req.method, path: url.pathname }, async () => {
+      try {
+      if (!(await enforceRoleAccess(pool, req, res, url))) return
       if (url.pathname === '/api/auth/request-code' && req.method === 'POST') return requestCode(req, res)
       if (url.pathname === '/api/auth/register' && req.method === 'POST') return registerUser(pool, req, res)
       if (url.pathname === '/api/auth/login' && req.method === 'POST') return loginUser(pool, req, res)
       if (url.pathname === '/api/auth/profile' && req.method === 'GET') return getMyProfile(pool, req, res)
       if (url.pathname === '/api/auth/profile' && req.method === 'POST') return updateMyProfile(pool, req, res)
       if (url.pathname === '/api/auth/change-password' && req.method === 'POST') return changeMyPassword(pool, req, res)
+      if (url.pathname === '/api/users' && req.method === 'GET') return listUsersForManagement(pool, req, res)
       if (url.pathname === '/api/users/options' && req.method === 'GET') return listUserOptions(pool, req, res)
       if (url.pathname === '/api/job-dictionary' && req.method === 'GET') return getJobDictionaryHandler(pool, req, res)
       if (url.pathname === '/api/job-dictionary' && req.method === 'PUT') return updateJobDictionaryHandler(pool, req, res)
@@ -4738,6 +5064,11 @@ const start = async () => {
       if (url.pathname === '/api/cv/cache' && req.method === 'POST') return cacheCvUpload(pool, req, res)
       if (url.pathname === '/api/cv/parse' && req.method === 'POST') return await parseCvFromCache(pool, req, res)
       if (url.pathname === '/api/cv/intake' && req.method === 'POST') return await intakeCv(pool, req, res)
+
+      const userRoleMatch = url.pathname.match(/^\/api\/users\/(\d+)\/role$/)
+      if (userRoleMatch && req.method === 'PATCH') {
+        return updateUserRole(pool, req, res, Number(userRoleMatch[1]))
+      }
 
       const jobPostDetailMatch = url.pathname.match(/^\/api\/job-posts\/(\d+)$/)
       if (jobPostDetailMatch && req.method === 'GET') return getJobPostDetail(pool, req, res, Number(jobPostDetailMatch[1]))
@@ -4904,14 +5235,18 @@ const start = async () => {
       }
 
       return sendJson(res, 404, { message: 'Not found' })
-    } catch (error) {
+      } catch (error) {
+        routeError = error
       console.error(error)
       const statusCode = getErrorStatusCode(error)
       const message = error instanceof HttpError
         ? error.message
         : String(error?.message || 'Internal server error')
       return sendJson(res, statusCode, { message })
-    }
+      } finally {
+        await writeDatabaseOperationLog(pool, req, res, databaseOperationType, requestStartedAt, routeError, url)
+      }
+    })
   })
 
   server.listen(port, () => {

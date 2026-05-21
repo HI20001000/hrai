@@ -64,6 +64,7 @@ const focusOptionAt = async (index) => {
   }
 }
 
+// 開啟時把焦點移到目前選項，關閉時可還原到 trigger，確保鍵盤使用者不會丟失操作位置。
 const openDropdown = async (index = selectedIndex.value >= 0 ? selectedIndex.value : 0) => {
   if (props.disabled || !normalizedOptions.value.length) return
   isOpen.value = true
@@ -106,6 +107,7 @@ const moveHighlight = async (direction) => {
   await focusOptionAt(nextIndex)
 }
 
+// trigger 與 option 共用同一組高亮索引，方向鍵在 listbox 內循環移動。
 const handleTriggerKeydown = async (event) => {
   if (props.disabled) return
 
@@ -155,6 +157,7 @@ const handleOptionKeydown = async (event, index, value) => {
   highlightedIndex.value = index
 }
 
+// 監聽 document 的 pointerdown，讓下拉在表格、彈窗等巢狀容器外點擊時也能穩定關閉。
 const handlePointerDown = async (event) => {
   if (!isOpen.value) return
   if (rootRef.value?.contains(event.target)) return

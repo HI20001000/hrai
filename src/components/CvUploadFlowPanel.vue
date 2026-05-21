@@ -227,6 +227,7 @@ const getMessageTone = (value) => {
   return ''
 }
 
+// 來源只在最終提交前確認，提交後前端不再提供修改入口，因此這裡統一攔截單份缺來源情境。
 const requireSingleSource = () => {
   const source = normalizeCvSource(singleSource.value)
   singleSource.value = source
@@ -408,7 +409,7 @@ const requestCache = async (file) => {
   const contentBase64 = await fileToBase64(file)
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       fileName: file.name,
       mimeType: file.type || 'application/octet-stream',
@@ -427,7 +428,7 @@ const requestParse = async (cacheId) => {
 
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ cacheId }),
   })
 
@@ -616,6 +617,7 @@ const cancelParsedUpload = () => {
   message.value = '已取消本次 CV 上傳'
 }
 
+// 單份 CV 流程：先確認解析與編輯狀態，再提交 intake；若快取過期，重新快取同一檔案後重試一次。
 const confirmUpload = async () => {
   message.value = ''
   if (!cachedCvId.value || !parsedCandidate.value) {
@@ -759,6 +761,7 @@ const saveBatchEditedExtracted = () => {
   message.value = `已更新 ${item.fileName} 的提取結果`
 }
 
+// 批量第一階段只解析與快取 CV，不建立投遞；每個項目保留自己的來源、編輯狀態與錯誤訊息。
 const startBatchProcessing = async () => {
   message.value = ''
   if (!isBatchMode.value || !batchItems.value.length) {
@@ -859,6 +862,7 @@ const startBatchProcessing = async () => {
   if (firstReadyItem) activeBatchItemId.value = firstReadyItem.id
 }
 
+// 批量匹配只提交可匹配且已補來源的項目；缺來源的項目留在列表中提示 HR 補齊。
 const matchBatchItemsByIds = async (itemIds, actionLabel = '批量匹配') => {
   if (!itemIds.length) {
     message.value = '請先選擇要匹配的 CV'
