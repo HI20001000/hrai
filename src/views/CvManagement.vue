@@ -1433,7 +1433,7 @@ onUnmounted(() => {
                 <span class="timeline-status">{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</span>
               </div>
               <div class="timeline-content">
-                <p class="timeline-remark">{{ history.remark || '未填寫備註' }}</p>
+                <p v-if="String(history.remark || '').trim()" class="timeline-remark">{{ history.remark }}</p>
                 <p v-if="history.firstInterviewArrangement" class="timeline-extra">
                   面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
                 </p>
@@ -1441,8 +1441,7 @@ onUnmounted(() => {
                   面試資訊：{{ getInterviewSummaryText(history.interview) }}
                 </p>
                 <div class="timeline-meta-row">
-                  <span class="timeline-meta">狀態時間 {{ formatDateTime(history.createdAt) }}</span>
-                  <span v-if="history.updatedAt" class="timeline-meta">修改時間 {{ formatDateTime(history.updatedAt) }}</span>
+                  <span class="timeline-meta">{{ formatDateTime(history.updatedAt || history.createdAt) }}</span>
                   <span class="timeline-operator">
                     <span
                       class="timeline-operator-avatar"
@@ -1450,7 +1449,7 @@ onUnmounted(() => {
                     >
                       {{ getStatusHistoryOperatorAvatarText(history) }}
                     </span>
-                    <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
+                    <span>{{ getStatusHistoryOperatorName(history) }}</span>
                   </span>
                 </div>
               </div>
@@ -1664,7 +1663,7 @@ onUnmounted(() => {
                   <span class="timeline-status">{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</span>
                 </div>
                 <div class="timeline-content">
-                  <p class="timeline-remark">{{ history.remark || '未填寫備註' }}</p>
+                  <p v-if="String(history.remark || '').trim()" class="timeline-remark">{{ history.remark }}</p>
                   <p v-if="history.firstInterviewArrangement" class="timeline-extra">
                     面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
                   </p>
@@ -1672,8 +1671,7 @@ onUnmounted(() => {
                     面試資訊：{{ getInterviewSummaryText(history.interview) }}
                   </p>
                   <div class="timeline-meta-row">
-                    <span class="timeline-meta">狀態時間 {{ formatDateTime(history.createdAt) }}</span>
-                    <span v-if="history.updatedAt" class="timeline-meta">修改時間 {{ formatDateTime(history.updatedAt) }}</span>
+                    <span class="timeline-meta">{{ formatDateTime(history.updatedAt || history.createdAt) }}</span>
                     <span class="timeline-operator">
                       <span
                         class="timeline-operator-avatar"
@@ -1681,7 +1679,7 @@ onUnmounted(() => {
                       >
                         {{ getStatusHistoryOperatorAvatarText(history) }}
                       </span>
-                      <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
+                      <span>{{ getStatusHistoryOperatorName(history) }}</span>
                     </span>
                   </div>
                 </div>
@@ -2297,6 +2295,7 @@ onUnmounted(() => {
   margin: 0;
   color: var(--text-soft);
   font-size: 0.82rem;
+  font-weight: 400;
 }
 
 .timeline-remark {
@@ -2311,18 +2310,20 @@ onUnmounted(() => {
 .timeline-meta-row {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 0.38rem 0.72rem;
   min-width: 0;
   padding-top: 0.24rem;
   border-top: 1px solid rgba(148, 163, 184, 0.18);
+  text-align: right;
 }
 
 .timeline-operator {
   display: inline-flex;
   align-items: center;
   gap: 0.42rem;
-  font-weight: 700;
+  font-weight: 400;
 }
 
 .timeline-operator-avatar {

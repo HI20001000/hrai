@@ -1307,10 +1307,9 @@ onBeforeUnmount(() => {
               <em v-if="getInterviewSummaryParts(history).length">
                 面試資訊：{{ getInterviewSummaryText(history) }}
               </em>
-              <span class="history-remark">{{ history.remark || '未填寫備註' }}</span>
+              <span v-if="String(history.remark || '').trim()" class="history-remark">{{ history.remark }}</span>
               <span class="history-meta-row">
-                <small>狀態時間 {{ formatDateTime(history.createdAt) }}</small>
-                <small v-if="history.updatedAt">修改時間 {{ formatDateTime(history.updatedAt) }}</small>
+                <small>{{ formatDateTime(history.updatedAt || history.createdAt) }}</small>
                 <span class="history-operator">
                   <span
                     class="history-operator-avatar"
@@ -1318,7 +1317,7 @@ onBeforeUnmount(() => {
                   >
                     {{ getStatusHistoryOperatorAvatarText(history) }}
                   </span>
-                  <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
+                  <span>{{ getStatusHistoryOperatorName(history) }}</span>
                 </span>
               </span>
             </span>
@@ -2216,24 +2215,27 @@ th.status-col {
   color: var(--text-soft);
   font-size: 0.76rem;
   font-style: normal;
+  font-weight: 400;
   line-height: 1.35;
 }
 
 .history-meta-row {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 0.32rem 0.55rem;
   min-width: 0;
   padding-top: 0.18rem;
   border-top: 1px solid rgba(148, 163, 184, 0.16);
+  text-align: right;
 }
 
 .history-operator {
   display: inline-flex;
   align-items: center;
   gap: 0.38rem;
-  font-weight: 700;
+  font-weight: 400;
 }
 
 .history-operator-avatar {
