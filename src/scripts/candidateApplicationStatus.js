@@ -1,4 +1,4 @@
-export const CANDIDATE_APPLICATION_STATUS_OPTIONS = [
+const CANDIDATE_APPLICATION_STATUS_LABEL_OPTIONS = [
   { value: 'screening', label: '簡歷篩選中' },
   { value: 'screening_hr_approved', label: '簡歷篩選 - HR通過' },
   { value: 'screening_hr_rejected', label: '簡歷篩選 - HR不通過' },
@@ -16,6 +16,17 @@ export const CANDIDATE_APPLICATION_STATUS_OPTIONS = [
   { value: 'offer_rejected', label: '拒絕Offer' },
   { value: 'hr_withdrew_onboarding', label: 'HR撤銷入職' },
 ]
+
+const REMOVED_SELECTABLE_STATUS_VALUES = new Set([
+  'screening_hr_approved',
+  'screening_hr_rejected',
+  'screening_department_approved',
+  'screening_department_rejected',
+])
+
+export const CANDIDATE_APPLICATION_STATUS_OPTIONS = CANDIDATE_APPLICATION_STATUS_LABEL_OPTIONS.filter(
+  (item) => !REMOVED_SELECTABLE_STATUS_VALUES.has(item.value)
+)
 
 export const FIRST_INTERVIEW_ARRANGEMENT_OPTIONS = [
   { value: 'can_invite', label: '可邀約' },
@@ -41,7 +52,7 @@ export const INTERVIEW_DURATION_PRESET_OPTIONS = [
 ]
 
 const STATUS_LABEL_MAP = Object.fromEntries(
-  CANDIDATE_APPLICATION_STATUS_OPTIONS.map((item) => [item.value, item.label])
+  CANDIDATE_APPLICATION_STATUS_LABEL_OPTIONS.map((item) => [item.value, item.label])
 )
 
 const LEGACY_STATUS_MAP = {

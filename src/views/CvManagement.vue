@@ -127,6 +127,11 @@ const getDurationMode = (minutes) => {
   return ['10', '30', '60'].includes(String(normalized)) ? String(normalized) : 'custom'
 }
 
+const INTERVIEW_APPLICATION_STATUS_VALUES = new Set(['hr_interview', 'department_interview'])
+
+const isInterviewApplicationStatus = (value) =>
+  INTERVIEW_APPLICATION_STATUS_VALUES.has(normalizeCandidateApplicationStatus(value, ''))
+
 const applyInterviewDurationDraft = (minutes) => {
   const normalized = normalizeInterviewDurationMinutes(minutes)
   interviewDurationMinutesDraft.value = String(normalized)
@@ -204,6 +209,8 @@ const interviewerOptions = computed(() => [
 const selectedInterviewDurationMinutes = computed(() =>
   normalizeInterviewDurationMinutes(interviewDurationMinutesDraft.value)
 )
+
+const isInterviewStatusDraft = computed(() => isInterviewApplicationStatus(statusDraft.value))
 
 const availabilityDateLabel = computed(() => {
   const dateKey = getDateKeyFromDateTimeLocal(interviewScheduledAtDraft.value)
@@ -329,6 +336,10 @@ const isStatusModalBusy = computed(
 )
 
 const isEditingStatusHistory = computed(() => Number(editingStatusHistoryId.value || 0) > 0)
+
+const selectedStatusHistory = computed(() =>
+  activeStatusHistory.value.find((history) => Number(history.id) === Number(editingStatusHistoryId.value)) || null
+)
 
 const statusModalEditorTitle = computed(() =>
   isEditingStatusHistory.value ? '編輯狀態記錄' : '新增狀態記錄'
@@ -523,16 +534,32 @@ const saveStatusModalChanges = async () => {
 
   const historyId = Number(editingStatusHistoryId.value || 0)
   const nextFirstInterview = normalizeFirstInterviewArrangement(firstInterviewDraft.value, '')
+  if (isInterviewApplicationStatus(nextStatus)) {
+    if (!interviewScheduledAtDraft.value || !interviewerUserIdDraft.value || !interviewLocationDraft.value) {
+      message.value = '請補充面試時間、面試官與面試地點'
+      return
+    }
+  }
+
+  const interviewPayload = isInterviewApplicationStatus(nextStatus)
+    ? {
+        scheduledAt: interviewScheduledAtDraft.value || '',
+        durationMinutes: selectedInterviewDurationMinutes.value,
+        interviewerUserId: interviewerUserIdDraft.value || '',
+        location: interviewLocationDraft.value || '',
+        status: normalizeInterviewStatus(interviewStatusDraft.value),
+      }
+    : {
+        scheduledAt: '',
+        durationMinutes: selectedInterviewDurationMinutes.value,
+        interviewerUserId: '',
+        location: '',
+        status: 'in_progress',
+      }
   const payload = {
     applicationStatus: nextStatus,
     firstInterviewArrangement: nextFirstInterview,
-    interview: {
-      scheduledAt: interviewScheduledAtDraft.value || '',
-      durationMinutes: selectedInterviewDurationMinutes.value,
-      interviewerUserId: interviewerUserIdDraft.value || '',
-      location: interviewLocationDraft.value || '',
-      status: normalizeInterviewStatus(interviewStatusDraft.value),
-    },
+    interview: interviewPayload,
     remark: String(remarkDraft.value || '').trim(),
   }
 
@@ -606,10 +633,14 @@ const clearAvailabilityLoadTimer = () => {
 const loadInterviewerAvailability = async () => {
   const interviewerUserId = Number(interviewerUserIdDraft.value || 0)
   const dateKey = getDateKeyFromDateTimeLocal(interviewScheduledAtDraft.value)
-  if (!isStatusModalOpen.value || !interviewerUserId || !dateKey) {
+  if (!isStatusModalOpen.value || !isInterviewStatusDraft.value || !interviewerUserId || !dateKey) {
     interviewerAvailability.value = null
     interviewerAvailabilityStatus.value = ''
-    interviewerAvailabilityMessage.value = interviewerUserId ? '請先選擇面試時間' : '請先選擇面試官'
+    interviewerAvailabilityMessage.value = !isInterviewStatusDraft.value
+      ? ''
+      : interviewerUserId
+        ? '請先選擇面試時間'
+        : '請先選擇面試官'
     return
   }
 
@@ -1128,9 +1159,16 @@ const removeActiveFromBlacklist = async () => {
 }
 
 watch(
-  [interviewerUserIdDraft, interviewScheduledAtDraft, selectedInterviewDurationMinutes, isStatusModalOpen],
+  [interviewerUserIdDraft, interviewScheduledAtDraft, selectedInterviewDurationMinutes, statusDraft, isStatusModalOpen],
   () => {
     if (!isStatusModalOpen.value) return
+    if (!isInterviewStatusDraft.value) {
+      clearAvailabilityLoadTimer()
+      interviewerAvailability.value = null
+      interviewerAvailabilityStatus.value = ''
+      interviewerAvailabilityMessage.value = ''
+      return
+    }
     scheduleAvailabilityLoad()
   }
 )
@@ -1500,7 +1538,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="status-modal-body">
+          <div class="status-modal-body" :class="{ 'without-availability': !isInterviewStatusDraft }">
             <div class="status-modal-main">
               <div class="status-modal-editor">
                 <label class="field">
@@ -1525,70 +1563,72 @@ onUnmounted(() => {
               />
                 </label>
 
-                <label class="field">
-              <span>面試時間</span>
-              <input
-                v-model="interviewScheduledAtDraft"
-                type="datetime-local"
-                autocomplete="off"
-                :disabled="isSavingStatusModal"
-              />
-                </label>
+                <template v-if="isInterviewStatusDraft">
+                  <label class="field">
+                <span>面試時間</span>
+                <input
+                  v-model="interviewScheduledAtDraft"
+                  type="datetime-local"
+                  autocomplete="off"
+                  :disabled="isSavingStatusModal"
+                />
+                  </label>
 
-                <label class="field duration-field">
-                  <span>面試時長</span>
-                  <AppSelect
-                    :model-value="interviewDurationModeDraft"
-                    :options="INTERVIEW_DURATION_PRESET_OPTIONS"
-                    placeholder="請選擇時長"
-                    :disabled="isSavingStatusModal"
-                    @update:model-value="handleDurationModeChange"
-                  />
-                  <input
-                    v-if="interviewDurationModeDraft === 'custom'"
-                    v-model="interviewDurationMinutesDraft"
-                    type="number"
-                    min="1"
-                    max="480"
-                    step="1"
-                    autocomplete="off"
-                    :disabled="isSavingStatusModal"
-                    placeholder="分鐘"
-                  />
-                </label>
+                  <label class="field duration-field">
+                    <span>面試時長</span>
+                    <AppSelect
+                      :model-value="interviewDurationModeDraft"
+                      :options="INTERVIEW_DURATION_PRESET_OPTIONS"
+                      placeholder="請選擇時長"
+                      :disabled="isSavingStatusModal"
+                      @update:model-value="handleDurationModeChange"
+                    />
+                    <input
+                      v-if="interviewDurationModeDraft === 'custom'"
+                      v-model="interviewDurationMinutesDraft"
+                      type="number"
+                      min="1"
+                      max="480"
+                      step="1"
+                      autocomplete="off"
+                      :disabled="isSavingStatusModal"
+                      placeholder="分鐘"
+                    />
+                  </label>
 
-                <label class="field">
-              <span>面試官</span>
-              <AppSelect
-                :model-value="interviewerUserIdDraft"
-                :options="interviewerOptions"
-                placeholder="請選擇面試官"
-                :disabled="isSavingStatusModal"
-                @update:model-value="interviewerUserIdDraft = $event"
-              />
-                </label>
+                  <label class="field">
+                <span>面試官</span>
+                <AppSelect
+                  :model-value="interviewerUserIdDraft"
+                  :options="interviewerOptions"
+                  placeholder="請選擇面試官"
+                  :disabled="isSavingStatusModal"
+                  @update:model-value="interviewerUserIdDraft = $event"
+                />
+                  </label>
 
-                <label class="field">
-              <span>面試地點</span>
-              <AppSelect
-                :model-value="interviewLocationDraft"
-                :options="[{ value: '', label: '未指定' }, ...INTERVIEW_LOCATION_OPTIONS]"
-                placeholder="請選擇地點"
-                :disabled="isSavingStatusModal"
-                @update:model-value="interviewLocationDraft = $event"
-              />
-                </label>
+                  <label class="field">
+                <span>面試地點</span>
+                <AppSelect
+                  :model-value="interviewLocationDraft"
+                  :options="[{ value: '', label: '未指定' }, ...INTERVIEW_LOCATION_OPTIONS]"
+                  placeholder="請選擇地點"
+                  :disabled="isSavingStatusModal"
+                  @update:model-value="interviewLocationDraft = $event"
+                />
+                  </label>
 
-                <label class="field">
-              <span>面試狀態</span>
-              <AppSelect
-                :model-value="interviewStatusDraft"
-                :options="INTERVIEW_STATUS_OPTIONS"
-                placeholder="請選擇面試狀態"
-                :disabled="isSavingStatusModal"
-                @update:model-value="interviewStatusDraft = $event"
-              />
-                </label>
+                  <label class="field">
+                <span>面試狀態</span>
+                <AppSelect
+                  :model-value="interviewStatusDraft"
+                  :options="INTERVIEW_STATUS_OPTIONS"
+                  placeholder="請選擇面試狀態"
+                  :disabled="isSavingStatusModal"
+                  @update:model-value="interviewStatusDraft = $event"
+                />
+                  </label>
+                </template>
 
                 <label class="field full-span">
               <span>備註</span>
@@ -1644,22 +1684,13 @@ onUnmounted(() => {
                       <span>最後操作：{{ getStatusHistoryOperatorName(history) }}</span>
                     </span>
                   </div>
-                  <button
-                    v-if="history.id"
-                    type="button"
-                    class="timeline-delete-btn"
-                    :disabled="isStatusModalBusy || isStatusHistoryDeleting(history.id)"
-                    @click.stop="deleteStatusHistory(history)"
-                  >
-                    {{ isStatusHistoryDeleting(history.id) ? '刪除中...' : '刪除記錄' }}
-                  </button>
                 </div>
               </div>
             </div>
               </section>
             </div>
 
-            <aside class="availability-panel">
+            <aside v-if="isInterviewStatusDraft" class="availability-panel">
               <div class="availability-header">
                 <div>
                   <h4>面試官空閒時間</h4>
@@ -1710,6 +1741,15 @@ onUnmounted(() => {
             @click="startNewStatusHistoryDraft"
           >
             改為新增
+          </button>
+          <button
+            v-if="isEditingStatusHistory && selectedStatusHistory"
+            type="button"
+            class="danger-btn"
+            :disabled="isStatusModalBusy || isStatusHistoryDeleting(editingStatusHistoryId)"
+            @click="deleteStatusHistory(selectedStatusHistory)"
+          >
+            {{ isStatusHistoryDeleting(editingStatusHistoryId) ? '刪除中...' : '刪除狀態記錄' }}
           </button>
           <button
             type="button"
@@ -2011,6 +2051,10 @@ onUnmounted(() => {
   align-items: start;
 }
 
+.status-modal-body.without-availability {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .status-modal-main {
   display: grid;
   gap: 1rem;
@@ -2272,24 +2316,6 @@ onUnmounted(() => {
   min-width: 0;
   padding-top: 0.24rem;
   border-top: 1px solid rgba(148, 163, 184, 0.18);
-}
-
-.timeline-delete-btn {
-  width: fit-content;
-  margin-top: 0.15rem;
-  padding: 0.34rem 0.72rem;
-  border: 1px solid rgba(220, 38, 38, 0.18);
-  border-radius: var(--radius-pill);
-  background: rgba(254, 226, 226, 0.72);
-  color: #b91c1c;
-  font-size: 0.8rem;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.timeline-delete-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.58;
 }
 
 .timeline-operator {
