@@ -4463,9 +4463,8 @@ const getInterviewerAvailability = async (pool, req, res, url) => {
         AND app.interview_scheduled_at IS NOT NULL
         AND app.interview_scheduled_at >= ?
         AND app.interview_scheduled_at < ?
-        AND (? = 0 OR app.id <> ?)
       ORDER BY app.interview_scheduled_at ASC, app.id ASC`,
-    [interviewerUserId, dayStart, dayEnd, excludeApplicationId, excludeApplicationId]
+    [interviewerUserId, dayStart, dayEnd]
   )
 
   const workdayStart = new Date(`${dateKey}T09:00:00`)
@@ -4487,10 +4486,11 @@ const getInterviewerAvailability = async (pool, req, res, url) => {
     })
     .filter(Boolean)
     .sort((a, b) => a.start.getTime() - b.start.getTime())
+  const blockingBooked = booked.filter((item) => Number(item.payload.applicationId || 0) !== excludeApplicationId)
 
   const freeSlots = []
   let cursor = new Date(workdayStart)
-  for (const item of booked) {
+  for (const item of blockingBooked) {
     const start = item.start < workdayStart ? workdayStart : item.start
     const end = item.end > workdayEnd ? workdayEnd : item.end
     if (start > cursor) {

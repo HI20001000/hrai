@@ -649,6 +649,9 @@ const handleDurationModeChange = (value) => {
 const getAvailabilityTimeRange = (item) =>
   `${String(item?.start || '').slice(11, 16)}-${String(item?.end || '').slice(11, 16)}`
 
+const getAvailabilityItemKey = (item, index) =>
+  `${item?.type || 'slot'}-${item?.applicationId || 'free'}-${item?.start || index}-${item?.end || index}-${index}`
+
 const doesSlotFitDuration = (slot) =>
   Number(slot?.durationMinutes || 0) >= selectedInterviewDurationMinutes.value
 
@@ -658,7 +661,7 @@ const doesSelectedInterviewFitSlot = (slot) => {
   const selectedEnd = parseLocalDateTime(selectedInterviewEndTime.value)
   const slotStart = parseLocalDateTime(slot?.start)
   const slotEnd = parseLocalDateTime(slot?.end)
-  if (!selectedStart || !selectedEnd || !slotStart || !slotEnd) return true
+  if (!selectedStart || !selectedEnd || !slotStart || !slotEnd) return false
   return selectedStart >= slotStart && selectedEnd <= slotEnd
 }
 
@@ -1673,8 +1676,8 @@ onUnmounted(() => {
 
               <div v-if="availabilityTimelineItems.length" class="availability-timeline">
                 <button
-                  v-for="item in availabilityTimelineItems"
-                  :key="`${item.type}-${item.start}-${item.end}`"
+                  v-for="(item, index) in availabilityTimelineItems"
+                  :key="getAvailabilityItemKey(item, index)"
                   type="button"
                   class="availability-slot"
                   :class="getAvailabilityItemClass(item)"
