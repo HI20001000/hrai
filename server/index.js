@@ -255,6 +255,7 @@ const DB_OPERATION_ROUTES = [
   { method: 'DELETE', pattern: /^\/api\/job-post-applications\/\d+$/, type: 'application.delete' },
   { method: 'POST', pattern: /^\/api\/job-post-applications\/batch-delete$/, type: 'application.batch_delete' },
   { method: 'PATCH', pattern: /^\/api\/job-post-applications\/\d+\/status$/, type: 'application.status.update' },
+  { method: 'PATCH', pattern: /^\/api\/job-post-applications\/\d+\/interview-status$/, type: 'application.interview_status.update' },
   { method: 'POST', pattern: /^\/api\/job-post-applications\/\d+\/status-history$/, type: 'application.status_history.create' },
   { method: 'PATCH', pattern: /^\/api\/job-post-applications\/\d+\/status-history\/\d+$/, type: 'application.status_history.update' },
   { method: 'DELETE', pattern: /^\/api\/job-post-applications\/\d+\/status-history\/\d+$/, type: 'application.status_history.delete' },
@@ -4417,6 +4418,135 @@ const listScheduleInterviews = async (pool, req, res, url) => {
   })
 }
 
+const listArrangedInterviews = async (pool, req, res) => {
+  const user = await getAuthedUser(pool, req)
+  if (!user) {
+    sendJson(res, 401, { message: 'Unauthorized' })
+    return
+  }
+
+  const [rows] = await pool.query(
+    `SELECT
+        app.id AS applicationId,
+        app.application_status AS applicationStatus,
+        app.first_interview_arrangement AS firstInterviewArrangement,
+        app.interview_scheduled_at AS interviewScheduledAt,
+        app.interview_duration_minutes AS interviewDurationMinutes,
+        app.interviewer_user_id AS interviewerUserId,
+        interviewer_user.email AS interviewerEmail,
+        interviewer_user.username AS interviewerUsername,
+        interviewer_user.avatar_text AS interviewerAvatarText,
+        interviewer_user.avatar_bg_color AS interviewerAvatarBgColor,
+        app.interview_location AS interviewLocation,
+        app.interview_status AS interviewStatus,
+        app.remark AS remark,
+        app.owner_user_id AS ownerUserId,
+        owner_user.email AS ownerEmail,
+        owner_user.username AS ownerUsername,
+        owner_user.avatar_text AS ownerAvatarText,
+        owner_user.avatar_bg_color AS ownerAvatarBgColor,
+        app.created_at AS createdAt,
+        jp.id AS jobPostId,
+        jp.title AS jobPostTitle,
+        c.id AS candidateId,
+        c.full_name AS fullName,
+        c.email AS email,
+        c.phone AS phone,
+        cv.source AS source,
+        COALESCE(extracts.target_position, '') AS targetPosition,
+        app.matched_position AS matchedPosition
+      FROM job_post_applications app
+      INNER JOIN job_posts jp ON jp.id = app.job_post_id
+      INNER JOIN candidates c ON c.id = app.candidate_id
+      INNER JOIN candidate_cvs cv ON cv.id = app.candidate_cv_id
+      LEFT JOIN candidate_cv_extractions extracts ON extracts.candidate_cv_id = cv.id
+      LEFT JOIN users owner_user ON owner_user.id = app.owner_user_id
+      LEFT JOIN users interviewer_user ON interviewer_user.id = app.interviewer_user_id
+      WHERE app.interview_scheduled_at IS NOT NULL
+      ORDER BY app.interview_scheduled_at ASC, app.id ASC`
+  )
+
+  sendJson(res, 200, {
+    interviews: rows.map((row) => buildScheduleApplicationPayload(row)),
+  })
+}
+
+const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicationId) => {
+  const [rows] = await pool.query(
+    `SELECT
+        id,
+        application_status AS applicationStatus,
+        first_interview_arrangement AS firstInterviewArrangement,
+        interview_scheduled_at AS interviewScheduledAt,
+        interview_duration_minutes AS interviewDurationMinutes,
+        interviewer_user_id AS interviewerUserId,
+        interview_location AS interviewLocation,
+        interview_status AS interviewStatus,
+        remark
+      FROM job_post_applications
+      WHERE id = ?
+      LIMIT 1`,
+    [applicationId]
+  )
+  const existing = rows[0]
+  if (!existing) {
+    sendJson(res, 404, { message: 'Application not found' })
+    return
+  }
+  if (!existing.interviewScheduledAt) {
+    sendJson(res, 400, { message: 'Interview is not scheduled' })
+    return
+  }
+
+  const body = await parseBody(req)
+  const nextInterviewStatus = normalizeInterviewStatus(body?.status, '')
+  if (!nextInterviewStatus) {
+    sendJson(res, 400, { message: 'Invalid interview status' })
+    return
+  }
+
+  await pool.query(
+    `UPDATE job_post_applications
+      SET interview_status = ?,
+          updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [nextInterviewStatus, applicationId]
+  )
+
+  const operatorUserId = await getRequestOperatorUserId(pool, req)
+  const nextInterview = {
+    scheduledAt: existing.interviewScheduledAt,
+    durationMinutes: existing.interviewDurationMinutes || DEFAULT_INTERVIEW_DURATION_MINUTES,
+    interviewerUserId: existing.interviewerUserId || null,
+    location: existing.interviewLocation || '',
+    status: nextInterviewStatus,
+  }
+  await syncJobPostApplicationStatusHistory(
+    pool,
+    applicationId,
+    {
+      applicationStatus: existing.applicationStatus,
+      firstInterviewArrangement: existing.firstInterviewArrangement,
+      interview: nextInterview,
+      remark: existing.remark,
+    },
+    { append: false, operatorUserId }
+  )
+  await syncApplicationFromLatestStatusHistory(pool, applicationId)
+
+  sendJson(res, 200, {
+    message: 'Interview status updated',
+    applicationId,
+    interview: buildInterviewPayload({
+      interviewScheduledAt: existing.interviewScheduledAt,
+      interviewDurationMinutes: existing.interviewDurationMinutes,
+      interviewerUserId: existing.interviewerUserId,
+      interviewLocation: existing.interviewLocation,
+      interviewStatus: nextInterviewStatus,
+    }),
+  })
+}
+
 const getInterviewerAvailability = async (pool, req, res, url) => {
   const user = await getAuthedUser(pool, req)
   if (!user) {
@@ -5577,6 +5707,7 @@ const start = async () => {
       if (url.pathname === '/api/schedule/interviewer-availability' && req.method === 'GET') {
         return getInterviewerAvailability(pool, req, res, url)
       }
+      if (url.pathname === '/api/interviews/arranged' && req.method === 'GET') return listArrangedInterviews(pool, req, res)
       if (url.pathname === '/api/job-dictionary' && req.method === 'GET') return getJobDictionaryHandler(pool, req, res)
       if (url.pathname === '/api/job-dictionary' && req.method === 'PUT') return updateJobDictionaryHandler(pool, req, res)
       if (url.pathname === '/api/job-dictionary/rubric-suggestions' && req.method === 'POST') {
@@ -5684,6 +5815,11 @@ const start = async () => {
       const applicationStatusMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)\/status$/)
       if (applicationStatusMatch && req.method === 'PATCH') {
         return updateJobPostApplicationStatus(pool, req, res, Number(applicationStatusMatch[1]))
+      }
+
+      const applicationInterviewStatusMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)\/interview-status$/)
+      if (applicationInterviewStatusMatch && req.method === 'PATCH') {
+        return updateJobPostApplicationInterviewStatus(pool, req, res, Number(applicationInterviewStatusMatch[1]))
       }
 
       const applicationStatusHistoryMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)\/status-history$/)

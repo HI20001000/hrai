@@ -221,6 +221,9 @@ const getStatusToneClass = (status) => {
   return `status-tone-${normalized}`
 }
 
+const isInterviewApplicationStatus = (status) =>
+  ['hr_interview', 'department_interview'].includes(normalizeCandidateApplicationStatus(status, ''))
+
 const getInterviewUserName = (interview) => {
   const user = interview?.interviewerUser || null
   return String(user?.username || user?.email || user?.mail || '').trim()
@@ -797,10 +800,21 @@ const updateApplicationStatus = async (row, nextStatus) => {
 
   savingStatusIds.value = [...savingStatusIds.value, applicationId]
   try {
+    const payload = { applicationStatus: normalizedStatus }
+    if (!isInterviewApplicationStatus(normalizedStatus)) {
+      payload.firstInterviewArrangement = ''
+      payload.interview = {
+        scheduledAt: '',
+        durationMinutes: 30,
+        interviewerUserId: '',
+        location: '',
+        status: 'in_progress',
+      }
+    }
     const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
       method: 'PATCH',
       headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ applicationStatus: normalizedStatus }),
+      body: JSON.stringify(payload),
     })
     const data = await response.json()
     if (!response.ok) {
@@ -810,6 +824,12 @@ const updateApplicationStatus = async (row, nextStatus) => {
     statusOverrides.value = {
       ...statusOverrides.value,
       [applicationId]: normalizedStatus,
+    }
+    if (!isInterviewApplicationStatus(normalizedStatus)) {
+      firstInterviewOverrides.value = {
+        ...firstInterviewOverrides.value,
+        [applicationId]: '',
+      }
     }
     emit('rows-updated')
     emit('notify', {
@@ -831,7 +851,8 @@ const updateApplicationStatus = async (row, nextStatus) => {
   }
 }
 
-const canEditFirstInterviewArrangement = () => props.editableStatus
+const canEditFirstInterviewArrangement = (row) =>
+  props.editableStatus && isInterviewApplicationStatus(row?.applicationStatus)
 
 const updateFirstInterviewArrangement = async (row, nextValue) => {
   const applicationId = Number(row?.applicationId)
@@ -1171,7 +1192,9 @@ onBeforeUnmount(() => {
                   @update:model-value="updateFirstInterviewArrangement(row, $event)"
                 />
               </div>
-              <span v-else class="first-interview-text">{{ getInterviewSummaryText(row) }}</span>
+              <span v-else class="first-interview-text">
+                {{ isInterviewApplicationStatus(row.applicationStatus) ? getInterviewSummaryText(row) : '--' }}
+              </span>
             </td>
             <td class="remark-col">
               <textarea
@@ -1214,10 +1237,17 @@ onBeforeUnmount(() => {
               <button
                 v-if="canPreviewCv(row)"
                 type="button"
-                class="link-btn file-link"
+                class="file-icon-btn"
+                :title="`預覽 CV 檔案：${row.cvFileName}`"
+                :aria-label="`預覽 CV 檔案：${row.cvFileName}`"
                 @click="openPreview(row, 'cv')"
               >
-                {{ row.cvFileName }}
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M8 3.5h6.2L19 8.3v10.2a2 2 0 0 1-2 2H8a3 3 0 0 1-3-3v-11a3 3 0 0 1 3-3Z" />
+                  <path d="M14 3.8V8h4.2" />
+                  <path d="M8.5 12h7M8.5 15.2h7M8.5 18.4H13" />
+                </svg>
+                <span class="sr-only">預覽 CV 檔案</span>
               </button>
               <span v-else class="file-link-text">--</span>
             </td>
@@ -1225,10 +1255,17 @@ onBeforeUnmount(() => {
               <button
                 v-if="canPreviewExtracted(row)"
                 type="button"
-                class="link-btn file-link"
+                class="file-icon-btn"
+                :title="`預覽 AI 分析檔案：${row.extractedFileName}`"
+                :aria-label="`預覽 AI 分析檔案：${row.extractedFileName}`"
                 @click="openPreview(row, 'extracted')"
               >
-                {{ row.extractedFileName }}
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M7.5 3.5h9A2.5 2.5 0 0 1 19 6v12a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 18V6a2.5 2.5 0 0 1 2.5-2.5Z" />
+                  <path d="M8.5 16.5v-3M12 16.5V10M15.5 16.5v-5" />
+                  <path d="M8.5 7.5h7" />
+                </svg>
+                <span class="sr-only">預覽 AI 分析檔案</span>
               </button>
               <span v-else class="file-link-text">--</span>
             </td>
@@ -1800,7 +1837,8 @@ th.status-col {
 }
 
 .file-col {
-  min-width: 220px;
+  min-width: 82px;
+  text-align: center;
 }
 
 .remark-col {
@@ -1818,16 +1856,53 @@ th.status-col {
 
 .file-column {
   min-width: 0;
-  max-width: 220px;
+  max-width: 92px;
 }
 
-.file-link,
 .file-link-text {
   display: block;
   width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.file-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid rgba(47, 111, 237, 0.16);
+  border-radius: 10px;
+  background: rgba(47, 111, 237, 0.08);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.file-icon-btn:hover {
+  border-color: rgba(47, 111, 237, 0.3);
+  background: rgba(47, 111, 237, 0.14);
+}
+
+.file-icon-btn svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .remark-input {

@@ -5,7 +5,6 @@ import { handleUnauthorizedResponse, requireAuthToken, withAuthHeaders } from '.
 import CandidateApplicationsTable from '../components/candidate/CandidateApplicationsTable.vue'
 import {
   getInterviewLocationLabel,
-  getInterviewDurationLabel,
   getInterviewStatusLabel,
 } from '../scripts/candidateApplicationStatus.js'
 
@@ -31,18 +30,19 @@ const monthKey = computed(() => `${currentMonth.value.getFullYear()}-${pad(curre
 
 const monthTitle = computed(() => `${currentMonth.value.getFullYear()}年 ${currentMonth.value.getMonth() + 1}月`)
 
-const formatDateTime = (value) => {
-  if (!value) return '--'
-  const date = new Date(String(value).replace(' ', 'T'))
-  if (Number.isNaN(date.getTime())) return String(value)
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
 const formatTime = (value) => {
   if (!value) return '--'
   const date = new Date(String(value).replace(' ', 'T'))
   if (Number.isNaN(date.getTime())) return String(value).slice(11, 16) || '--'
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const formatTimeRange = (interview) => {
+  const start = new Date(String(interview?.scheduledAt || '').replace(' ', 'T'))
+  if (Number.isNaN(start.getTime())) return '--'
+  const minutes = Number(interview?.durationMinutes || 30) || 30
+  const end = new Date(start.getTime() + minutes * 60000)
+  return `${pad(start.getHours())}:${pad(start.getMinutes())}-${pad(end.getHours())}:${pad(end.getMinutes())}`
 }
 
 const getUserName = (user) => String(user?.username || user?.email || user?.mail || '').trim() || '--'
@@ -236,12 +236,12 @@ onMounted(loadSchedule)
               <h4>{{ task.fullName || '候選人' }}｜{{ task.jobPostTitle || '--' }}</h4>
               <p>
                 面試官：{{ getUserName(getInterview(task).interviewerUser) }}
-                ｜時長：{{ getInterviewDurationLabel(getInterview(task).durationMinutes) }}
                 ｜地點：{{ getInterviewLocationLabel(getInterview(task).location) || '--' }}
                 ｜狀態：{{ getInterviewStatusLabel(getInterview(task).status) }}
+                ｜招聘來源：{{ task.source || '--' }}
               </p>
               <p class="task-meta">
-                對接人：{{ getUserName(task.ownerUser) }}｜時間：{{ formatDateTime(getInterview(task).scheduledAt) }}
+                對接人：{{ getUserName(task.ownerUser) }}｜時間：{{ formatTimeRange(getInterview(task)) }}
               </p>
             </div>
             <span class="task-status" :class="getTaskStatusClass(getInterview(task).status)">

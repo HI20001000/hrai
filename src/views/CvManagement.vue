@@ -249,13 +249,16 @@ const currentInterviewPreviewItem = computed(() => {
 })
 
 const availabilityTimelineItems = computed(() => {
+  const previewItem = currentInterviewPreviewItem.value
   const freeSlots = Array.isArray(interviewerAvailability.value?.freeSlots)
     ? interviewerAvailability.value.freeSlots.map((slot) => ({ ...slot, type: 'free' }))
     : []
   const booked = Array.isArray(interviewerAvailability.value?.booked)
-    ? interviewerAvailability.value.booked.map((slot) => ({ ...slot, type: 'booked' }))
+    ? interviewerAvailability.value.booked
+        .filter((slot) => Number(slot.applicationId || 0) !== Number(previewItem?.applicationId || 0))
+        .map((slot) => ({ ...slot, type: 'booked' }))
     : []
-  const preview = currentInterviewPreviewItem.value ? [currentInterviewPreviewItem.value] : []
+  const preview = previewItem ? [previewItem] : []
   return [...freeSlots, ...booked, ...preview].sort((a, b) => {
     const aTime = parseLocalDateTime(a.start)?.getTime() || 0
     const bTime = parseLocalDateTime(b.start)?.getTime() || 0
@@ -431,20 +434,27 @@ const resetDetailDrafts = (application = activeApplication.value) => {
 
 const startNewStatusHistoryDraft = () => {
   editingStatusHistoryId.value = null
-  statusDraft.value = normalizeCandidateApplicationStatus(activeApplication.value?.applicationStatus)
-  firstInterviewDraft.value = normalizeFirstInterviewArrangement(activeApplication.value?.firstInterviewArrangement)
-  const interview = activeApplication.value?.interview || {}
-  interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt)
-  applyInterviewDurationDraft(interview.durationMinutes || 30)
-  interviewerUserIdDraft.value = String(interview.interviewerUser?.id || '')
-  interviewLocationDraft.value = normalizeInterviewLocation(interview.location, '')
-  interviewStatusDraft.value = normalizeInterviewStatus(interview.status)
+  statusDraft.value = 'screening'
+  firstInterviewDraft.value = ''
+  interviewScheduledAtDraft.value = ''
+  applyInterviewDurationDraft(30)
+  interviewerUserIdDraft.value = ''
+  interviewLocationDraft.value = ''
+  interviewStatusDraft.value = 'in_progress'
   remarkDraft.value = ''
+  interviewerAvailability.value = null
+  interviewerAvailabilityStatus.value = ''
+  interviewerAvailabilityMessage.value = ''
+  clearAvailabilityLoadTimer()
 }
 
 const editStatusHistoryDraft = (history) => {
   const historyId = Number(history?.id || 0)
   if (!historyId || isStatusModalBusy.value) return
+  if (Number(editingStatusHistoryId.value || 0) === historyId) {
+    startNewStatusHistoryDraft()
+    return
+  }
   editingStatusHistoryId.value = historyId
   statusDraft.value = normalizeCandidateApplicationStatus(history?.applicationStatus)
   firstInterviewDraft.value = normalizeFirstInterviewArrangement(history?.firstInterviewArrangement)
@@ -1584,6 +1594,25 @@ onUnmounted(() => {
               <h4>{{ statusModalEditorTitle }}</h4>
               <p class="subtle">點選下方記錄可修改；未選記錄時會新增一筆狀態記錄。</p>
             </div>
+            <div class="status-editor-actions">
+              <button
+                v-if="isEditingStatusHistory && selectedStatusHistory"
+                type="button"
+                class="danger-btn compact-btn"
+                :disabled="isStatusModalBusy || isStatusHistoryDeleting(editingStatusHistoryId)"
+                @click="deleteStatusHistory(selectedStatusHistory)"
+              >
+                {{ isStatusHistoryDeleting(editingStatusHistoryId) ? '刪除中...' : '刪除狀態記錄' }}
+              </button>
+              <button
+                type="button"
+                class="primary-btn compact-btn"
+                :disabled="isStatusModalBusy || !activeApplication"
+                @click="saveStatusModalChanges"
+              >
+                {{ isSavingStatusModal ? '保存中...' : (isEditingStatusHistory ? '更新狀態記錄' : '新增狀態記錄') }}
+              </button>
+            </div>
           </div>
 
           <div class="status-modal-body" :class="{ 'without-availability': !shouldShowInterviewFields }">
@@ -1689,7 +1718,7 @@ onUnmounted(() => {
                 </label>
               </div>
 
-              <section class="status-history-section">
+              <section class="status-history-section" @click="startNewStatusHistoryDraft">
             <h4>狀態記錄</h4>
             <div class="status-timeline">
               <div
@@ -1703,9 +1732,9 @@ onUnmounted(() => {
                 }"
                 role="button"
                 tabindex="0"
-                @click="editStatusHistoryDraft(history)"
-                @keydown.enter.prevent="editStatusHistoryDraft(history)"
-                @keydown.space.prevent="editStatusHistoryDraft(history)"
+                @click.stop="editStatusHistoryDraft(history)"
+                @keydown.enter.prevent.stop="editStatusHistoryDraft(history)"
+                @keydown.space.prevent.stop="editStatusHistoryDraft(history)"
               >
                 <div class="timeline-label">
                   <span class="timeline-dot" aria-hidden="true"></span>
@@ -1780,34 +1809,6 @@ onUnmounted(() => {
           </div>
         </template>
 
-        <div class="modal-actions">
-          <button
-            v-if="isEditingStatusHistory"
-            type="button"
-            class="secondary-btn"
-            :disabled="isStatusModalBusy"
-            @click="startNewStatusHistoryDraft"
-          >
-            改為新增
-          </button>
-          <button
-            v-if="isEditingStatusHistory && selectedStatusHistory"
-            type="button"
-            class="danger-btn"
-            :disabled="isStatusModalBusy || isStatusHistoryDeleting(editingStatusHistoryId)"
-            @click="deleteStatusHistory(selectedStatusHistory)"
-          >
-            {{ isStatusHistoryDeleting(editingStatusHistoryId) ? '刪除中...' : '刪除狀態記錄' }}
-          </button>
-          <button
-            type="button"
-            class="primary-btn"
-            :disabled="isStatusModalBusy || !activeApplication"
-            @click="saveStatusModalChanges"
-          >
-            {{ isSavingStatusModal ? '保存中...' : (isEditingStatusHistory ? '更新狀態記錄' : '新增狀態記錄') }}
-          </button>
-        </div>
       </div>
     </div>
 
@@ -2092,6 +2093,14 @@ onUnmounted(() => {
   margin-top: 0.28rem;
 }
 
+.status-editor-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
 .status-modal-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
@@ -2238,6 +2247,12 @@ onUnmounted(() => {
   opacity: 0.72;
 }
 
+.availability-slot.free {
+  border-color: rgba(22, 163, 74, 0.22);
+  background: #f0fdf4;
+  color: #166534;
+}
+
 .availability-slot.preview {
   border-color: rgba(37, 99, 235, 0.34);
   background: #dbeafe;
@@ -2249,10 +2264,14 @@ onUnmounted(() => {
   color: #1e40af;
 }
 
-.availability-slot.free.can-insert:hover {
+.availability-slot.free.can-insert {
   border-color: rgba(22, 163, 74, 0.42);
   background: #dcfce7;
   color: #166534;
+}
+
+.availability-slot.free.can-insert:hover {
+  background: #bbf7d0;
 }
 
 .availability-slot.free.needs-adjustment:hover {
@@ -2418,6 +2437,7 @@ onUnmounted(() => {
   .header-main,
   .detail-header,
   .status-header,
+  .status-editor-header,
   .modal-header,
   .modal-actions {
     flex-direction: column;
@@ -2427,6 +2447,7 @@ onUnmounted(() => {
   .blacklist-editor,
   .status-controls,
   .inline-editor,
+  .status-editor-actions,
   .first-interview-editor {
     justify-content: flex-start;
   }

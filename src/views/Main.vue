@@ -5,6 +5,7 @@ import JobPostsView from './JobPosts.vue'
 import CvManagement from './CvManagement.vue'
 import JobApplyView from './JobApply.vue'
 import ScheduleView from './Schedule.vue'
+import ArrangedInterviewsView from './ArrangedInterviews.vue'
 import OnboardedPersonnelManagement from './OnboardedPersonnelManagement.vue'
 import BlacklistManagement from './BlacklistManagement.vue'
 import ProjectManagement from './ProjectManagement.vue'
@@ -82,6 +83,7 @@ onUnmounted(() => {
           <CvManagement v-else-if="activePage === 'cv'" />
           <JobApplyView v-else-if="activePage === 'files'" />
           <ScheduleView v-else-if="activePage === 'schedule'" />
+          <ArrangedInterviewsView v-else-if="activePage === 'interviews'" :current-user="currentUser" />
           <OnboardedPersonnelManagement v-else-if="activePage === 'personnel'" />
           <BlacklistManagement v-else-if="activePage === 'blacklist'" />
           <ProjectManagement v-else-if="activePage === 'projects'" />

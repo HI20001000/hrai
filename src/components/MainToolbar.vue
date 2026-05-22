@@ -24,6 +24,7 @@ const pageItems = [
   { key: 'cv', label: '候選人管理', description: '查看候選人資料', icon: 'document' },
   { key: 'files', label: '上傳候選人 CV', description: '上傳履歷與應徵', icon: 'tray' },
   { key: 'schedule', label: '時間表', description: '面試日程與任務', icon: 'calendar' },
+  { key: 'interviews', label: '安排面試', description: '面試安排與結果', icon: 'checklist' },
   { key: 'personnel', label: '已入職名單', description: '人員與項目安排', icon: 'users' },
   { key: 'blacklist', label: '黑名單', description: '候選人風險名單', icon: 'document' },
   { key: 'projects', label: '項目管理', description: '項目組與調動', icon: 'project' },
@@ -145,6 +146,11 @@ onBeforeUnmount(() => {
               <path d="M6.8 4v3M17.2 4v3" />
               <path d="M4.5 7.2h15A1.5 1.5 0 0 1 21 8.7v10A2.3 2.3 0 0 1 18.7 21H5.3A2.3 2.3 0 0 1 3 18.7v-10a1.5 1.5 0 0 1 1.5-1.5Z" />
               <path d="M3 11h18M7.2 14.5h2.2M12 14.5h2.2M16.8 14.5H19M7.2 17.6h2.2M12 17.6h2.2" />
+            </svg>
+            <svg v-else-if="item.icon === 'checklist'" viewBox="0 0 24 24" fill="none">
+              <path d="M8.2 3.5h7.6A2.2 2.2 0 0 1 18 5.7v12.6a2.2 2.2 0 0 1-2.2 2.2H8.2A2.2 2.2 0 0 1 6 18.3V5.7a2.2 2.2 0 0 1 2.2-2.2Z" />
+              <path d="M9 8.2l1.2 1.2 2.1-2.1M9 13.1l1.2 1.2 2.1-2.1" />
+              <path d="M14.3 9h2M14.3 13.9h2" />
             </svg>
             <svg v-else viewBox="0 0 24 24" fill="none">
               <path d="M4.5 7.5h15A1.5 1.5 0 0 1 21 9v8.2a2.3 2.3 0 0 1-2.3 2.3H5.3A2.3 2.3 0 0 1 3 17.2V9a1.5 1.5 0 0 1 1.5-1.5Z" />
