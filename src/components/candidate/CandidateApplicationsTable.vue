@@ -7,6 +7,7 @@ import {
   FIRST_INTERVIEW_ARRANGEMENT_OPTIONS,
   getCandidateApplicationStatusLabel,
   getFirstInterviewArrangementLabel,
+  getInterviewDurationLabel,
   getInterviewLocationLabel,
   getInterviewStatusLabel,
   normalizeCandidateApplicationStatus,
@@ -234,6 +235,7 @@ const getInterviewSummaryParts = (row) => {
     String(interview.status || '').trim() === 'failed'
   const parts = []
   if (interview.scheduledAt) parts.push(formatDateTime(interview.scheduledAt))
+  if (hasInterviewInfo && interview.durationMinutes) parts.push(getInterviewDurationLabel(interview.durationMinutes))
   if (interview.location) parts.push(getInterviewLocationLabel(interview.location))
   if (interviewerName) parts.push(`面試官：${interviewerName}`)
   if (hasInterviewInfo && interview.status) parts.push(getInterviewStatusLabel(interview.status))
@@ -327,6 +329,12 @@ const scheduleStatusPopoverClose = () => {
 }
 
 const isStatusPopoverActive = (row) => activeStatusPopoverKey.value === getStatusPopoverKey(row)
+
+const openStatusEditor = (row) => {
+  clearStatusPopoverTimer()
+  closeStatusPopover()
+  emit('edit-status', row)
+}
 
 const getBlacklistMatchedByLabel = (value) => {
   const normalized = String(value || '').trim().toLowerCase()
@@ -1138,7 +1146,7 @@ onBeforeUnmount(() => {
                   type="button"
                   class="status-chip status-action-chip"
                   :class="getStatusToneClass(row.applicationStatus)"
-                  @click.stop="emit('edit-status', row)"
+                  @click.stop="openStatusEditor(row)"
                 >
                   {{ getCandidateApplicationStatusLabel(row.applicationStatus) }}
                 </button>

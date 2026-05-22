@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import AppSelect from '../components/AppSelect.vue'
 import MatchDimensionBreakdown from '../components/MatchDimensionBreakdown.vue'
@@ -8,14 +8,17 @@ import CandidateCvUploadModal from '../components/candidate/CandidateCvUploadMod
 import {
   CANDIDATE_APPLICATION_STATUS_OPTIONS,
   FIRST_INTERVIEW_ARRANGEMENT_OPTIONS,
+  INTERVIEW_DURATION_PRESET_OPTIONS,
   INTERVIEW_LOCATION_OPTIONS,
   INTERVIEW_STATUS_OPTIONS,
   getCandidateApplicationStatusLabel,
   getFirstInterviewArrangementLabel,
+  getInterviewDurationLabel,
   getInterviewLocationLabel,
   getInterviewStatusLabel,
   normalizeCandidateApplicationStatus,
   normalizeFirstInterviewArrangement,
+  normalizeInterviewDurationMinutes,
   normalizeInterviewLocation,
   normalizeInterviewStatus,
 } from '../scripts/candidateApplicationStatus.js'
@@ -42,6 +45,7 @@ const projectRows = ref([])
 const projectTransferCandidate = ref(null)
 const projectTransferForm = ref(createEmptyProjectTransferForm())
 let tableLoadStatusTimer = null
+let availabilityLoadTimer = null
 
 const pageMode = ref('list')
 const activeApplicationId = ref(null)
@@ -54,10 +58,15 @@ const statusDraft = ref('')
 const remarkDraft = ref('')
 const firstInterviewDraft = ref('')
 const interviewScheduledAtDraft = ref('')
+const interviewDurationModeDraft = ref('30')
+const interviewDurationMinutesDraft = ref('30')
 const interviewerUserIdDraft = ref('')
 const interviewLocationDraft = ref('')
 const interviewStatusDraft = ref('in_progress')
 const userOptions = ref([])
+const interviewerAvailability = ref(null)
+const interviewerAvailabilityStatus = ref('')
+const interviewerAvailabilityMessage = ref('')
 const blacklistReasonDraft = ref('')
 const isSavingStatus = ref(false)
 const isSavingRemark = ref(false)
@@ -89,6 +98,39 @@ const toDateTimeLocalValue = (value) => {
   if (Number.isNaN(date.getTime())) return normalized.slice(0, 16)
   const pad = (n) => String(n).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const getDateKeyFromDateTimeLocal = (value) => String(value || '').slice(0, 10)
+
+const parseLocalDateTime = (value) => {
+  if (!value) return null
+  const date = new Date(String(value).replace(' ', 'T'))
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const minutesBetween = (startValue, endValue) => {
+  const start = parseLocalDateTime(startValue)
+  const end = parseLocalDateTime(endValue)
+  if (!start || !end) return 0
+  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000))
+}
+
+const toDateTimeLocalFromSql = (value) => {
+  const date = value instanceof Date ? value : parseLocalDateTime(value)
+  if (!date) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const getDurationMode = (minutes) => {
+  const normalized = normalizeInterviewDurationMinutes(minutes)
+  return ['10', '30', '60'].includes(String(normalized)) ? String(normalized) : 'custom'
+}
+
+const applyInterviewDurationDraft = (minutes) => {
+  const normalized = normalizeInterviewDurationMinutes(minutes)
+  interviewDurationMinutesDraft.value = String(normalized)
+  interviewDurationModeDraft.value = getDurationMode(normalized)
 }
 
 const parseJsonSafe = (value) => {
@@ -142,6 +184,7 @@ const getInterviewSummaryParts = (interview) => {
     String(interview?.status || '').trim() === 'failed'
   const parts = []
   if (interview?.scheduledAt) parts.push(formatDateTime(interview.scheduledAt))
+  if (hasInterviewInfo && interview?.durationMinutes) parts.push(getInterviewDurationLabel(interview.durationMinutes))
   if (interview?.location) parts.push(getInterviewLocationLabel(interview.location))
   if (interviewerName) parts.push(`面試官：${interviewerName}`)
   if (hasInterviewInfo && interview?.status) parts.push(getInterviewStatusLabel(interview.status))
@@ -157,6 +200,35 @@ const interviewerOptions = computed(() => [
     label: user.username || user.email || `用戶 #${user.id}`,
   })),
 ])
+
+const selectedInterviewDurationMinutes = computed(() =>
+  normalizeInterviewDurationMinutes(interviewDurationMinutesDraft.value)
+)
+
+const availabilityDateLabel = computed(() => {
+  const dateKey = getDateKeyFromDateTimeLocal(interviewScheduledAtDraft.value)
+  if (!dateKey) return ''
+  const date = new Date(`${dateKey}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return dateKey
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+})
+
+const availabilityTimelineItems = computed(() => {
+  const freeSlots = Array.isArray(interviewerAvailability.value?.freeSlots)
+    ? interviewerAvailability.value.freeSlots.map((slot) => ({ ...slot, type: 'free' }))
+    : []
+  const booked = Array.isArray(interviewerAvailability.value?.booked)
+    ? interviewerAvailability.value.booked.map((slot) => ({ ...slot, type: 'booked' }))
+    : []
+  return [...freeSlots, ...booked].sort((a, b) => String(a.start).localeCompare(String(b.start)))
+})
+
+const selectedInterviewEndTime = computed(() => {
+  const start = parseLocalDateTime(interviewScheduledAtDraft.value)
+  if (!start) return ''
+  const end = new Date(start.getTime() + selectedInterviewDurationMinutes.value * 60000)
+  return toDateTimeLocalFromSql(end)
+})
 
 const hasBlacklistIdentity = (row) =>
   Boolean(String(row?.phone || '').trim() || String(row?.email || '').trim())
@@ -238,6 +310,7 @@ const activeStatusHistory = computed(() => {
   if (history.length) return history
 
   if (!activeApplication.value) return []
+  if (isStatusModalOpen.value) return []
   return [
     {
       id: 0,
@@ -309,6 +382,7 @@ const resetDetailDrafts = (application = activeApplication.value) => {
   firstInterviewDraft.value = normalizeFirstInterviewArrangement(application?.firstInterviewArrangement)
   const interview = application?.interview || {}
   interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt)
+  applyInterviewDurationDraft(interview.durationMinutes || 30)
   interviewerUserIdDraft.value = String(interview.interviewerUser?.id || '')
   interviewLocationDraft.value = normalizeInterviewLocation(interview.location, '')
   interviewStatusDraft.value = normalizeInterviewStatus(interview.status)
@@ -324,6 +398,7 @@ const startNewStatusHistoryDraft = () => {
   firstInterviewDraft.value = normalizeFirstInterviewArrangement(activeApplication.value?.firstInterviewArrangement)
   const interview = activeApplication.value?.interview || {}
   interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt)
+  applyInterviewDurationDraft(interview.durationMinutes || 30)
   interviewerUserIdDraft.value = String(interview.interviewerUser?.id || '')
   interviewLocationDraft.value = normalizeInterviewLocation(interview.location, '')
   interviewStatusDraft.value = normalizeInterviewStatus(interview.status)
@@ -338,6 +413,7 @@ const editStatusHistoryDraft = (history) => {
   firstInterviewDraft.value = normalizeFirstInterviewArrangement(history?.firstInterviewArrangement)
   const interview = history?.interview || {}
   interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt)
+  applyInterviewDurationDraft(interview.durationMinutes || 30)
   interviewerUserIdDraft.value = String(interview.interviewerUser?.id || '')
   interviewLocationDraft.value = normalizeInterviewLocation(interview.location, '')
   interviewStatusDraft.value = normalizeInterviewStatus(interview.status)
@@ -430,6 +506,10 @@ const closeApplicationStatusModal = () => {
   activeApplication.value = null
   editingStatusHistoryId.value = null
   detailError.value = ''
+  interviewerAvailability.value = null
+  interviewerAvailabilityStatus.value = ''
+  interviewerAvailabilityMessage.value = ''
+  clearAvailabilityLoadTimer()
   resetDetailDrafts(null)
 }
 
@@ -448,6 +528,7 @@ const saveStatusModalChanges = async () => {
     firstInterviewArrangement: nextFirstInterview,
     interview: {
       scheduledAt: interviewScheduledAtDraft.value || '',
+      durationMinutes: selectedInterviewDurationMinutes.value,
       interviewerUserId: interviewerUserIdDraft.value || '',
       location: interviewLocationDraft.value || '',
       status: normalizeInterviewStatus(interviewStatusDraft.value),
@@ -513,6 +594,88 @@ const deleteStatusHistory = async (history) => {
   } finally {
     deletingStatusHistoryIds.value = deletingStatusHistoryIds.value.filter((id) => id !== historyId)
   }
+}
+
+const clearAvailabilityLoadTimer = () => {
+  if (availabilityLoadTimer) {
+    window.clearTimeout(availabilityLoadTimer)
+    availabilityLoadTimer = null
+  }
+}
+
+const loadInterviewerAvailability = async () => {
+  const interviewerUserId = Number(interviewerUserIdDraft.value || 0)
+  const dateKey = getDateKeyFromDateTimeLocal(interviewScheduledAtDraft.value)
+  if (!isStatusModalOpen.value || !interviewerUserId || !dateKey) {
+    interviewerAvailability.value = null
+    interviewerAvailabilityStatus.value = ''
+    interviewerAvailabilityMessage.value = interviewerUserId ? '請先選擇面試時間' : '請先選擇面試官'
+    return
+  }
+
+  interviewerAvailabilityStatus.value = 'loading'
+  interviewerAvailabilityMessage.value = '正在讀取面試官空閒時段'
+  try {
+    const params = new URLSearchParams({
+      interviewerUserId: String(interviewerUserId),
+      date: dateKey,
+      durationMinutes: String(selectedInterviewDurationMinutes.value),
+      applicationId: String(activeApplication.value?.applicationId || activeApplicationId.value || 0),
+    })
+    const data = await fetchJson(`${apiBaseUrl}/api/schedule/interviewer-availability?${params.toString()}`)
+    interviewerAvailability.value = data
+    interviewerAvailabilityStatus.value = 'success'
+    interviewerAvailabilityMessage.value = ''
+  } catch (error) {
+    interviewerAvailability.value = null
+    interviewerAvailabilityStatus.value = 'error'
+    interviewerAvailabilityMessage.value = error?.message || '讀取面試官空閒時段失敗'
+  }
+}
+
+const scheduleAvailabilityLoad = () => {
+  clearAvailabilityLoadTimer()
+  availabilityLoadTimer = window.setTimeout(loadInterviewerAvailability, 260)
+}
+
+const handleDurationModeChange = (value) => {
+  const mode = String(value || '').trim()
+  interviewDurationModeDraft.value = mode
+  if (mode !== 'custom') {
+    interviewDurationMinutesDraft.value = String(normalizeInterviewDurationMinutes(mode))
+  }
+}
+
+const getAvailabilityTimeRange = (item) =>
+  `${String(item?.start || '').slice(11, 16)}-${String(item?.end || '').slice(11, 16)}`
+
+const doesSlotFitDuration = (slot) =>
+  Number(slot?.durationMinutes || 0) >= selectedInterviewDurationMinutes.value
+
+const doesSelectedInterviewFitSlot = (slot) => {
+  if (!doesSlotFitDuration(slot)) return false
+  const selectedStart = parseLocalDateTime(interviewScheduledAtDraft.value)
+  const selectedEnd = parseLocalDateTime(selectedInterviewEndTime.value)
+  const slotStart = parseLocalDateTime(slot?.start)
+  const slotEnd = parseLocalDateTime(slot?.end)
+  if (!selectedStart || !selectedEnd || !slotStart || !slotEnd) return true
+  return selectedStart >= slotStart && selectedEnd <= slotEnd
+}
+
+const getAvailabilityItemClass = (item) => {
+  if (item?.type === 'booked') return 'booked'
+  return doesSelectedInterviewFitSlot(item) ? 'free can-insert' : 'free needs-adjustment'
+}
+
+const applyAvailabilitySlot = (slot) => {
+  if (!slot || slot.type === 'booked' || !doesSlotFitDuration(slot)) return
+  const fittedBeforeClick = doesSelectedInterviewFitSlot(slot)
+  if (!fittedBeforeClick) {
+    interviewScheduledAtDraft.value = toDateTimeLocalFromSql(slot.start)
+  }
+  interviewerAvailabilityMessage.value = fittedBeforeClick
+    ? '所選面試時間可插入此空閒時段'
+    : '已將面試時間調整到該空閒時段起始時間'
 }
 
 const returnToList = async () => {
@@ -961,6 +1124,14 @@ const removeActiveFromBlacklist = async () => {
   }
 }
 
+watch(
+  [interviewerUserIdDraft, interviewScheduledAtDraft, selectedInterviewDurationMinutes, isStatusModalOpen],
+  () => {
+    if (!isStatusModalOpen.value) return
+    scheduleAvailabilityLoad()
+  }
+)
+
 onMounted(async () => {
   window.addEventListener('hrai-applications-updated', handleApplicationsUpdated)
   window.addEventListener('focus', handleApplicationsUpdated)
@@ -970,6 +1141,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearTableLoadStatusTimer()
+  clearAvailabilityLoadTimer()
   window.removeEventListener('hrai-applications-updated', handleApplicationsUpdated)
   window.removeEventListener('focus', handleApplicationsUpdated)
 })
@@ -1325,8 +1497,10 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="status-modal-editor">
-            <label class="field">
+          <div class="status-modal-body">
+            <div class="status-modal-main">
+              <div class="status-modal-editor">
+                <label class="field">
               <span>候選人狀態</span>
               <AppSelect
                 :model-value="statusDraft"
@@ -1335,9 +1509,9 @@ onUnmounted(() => {
                 :disabled="isSavingStatusModal"
                 @update:model-value="statusDraft = $event"
               />
-            </label>
+                </label>
 
-            <label class="field">
+                <label class="field">
               <span>是否安排面試</span>
               <AppSelect
                 :model-value="firstInterviewDraft"
@@ -1346,9 +1520,9 @@ onUnmounted(() => {
                 :disabled="isSavingStatusModal"
                 @update:model-value="firstInterviewDraft = $event"
               />
-            </label>
+                </label>
 
-            <label class="field">
+                <label class="field">
               <span>面試時間</span>
               <input
                 v-model="interviewScheduledAtDraft"
@@ -1356,9 +1530,31 @@ onUnmounted(() => {
                 autocomplete="off"
                 :disabled="isSavingStatusModal"
               />
-            </label>
+                </label>
 
-            <label class="field">
+                <label class="field duration-field">
+                  <span>面試時長</span>
+                  <AppSelect
+                    :model-value="interviewDurationModeDraft"
+                    :options="INTERVIEW_DURATION_PRESET_OPTIONS"
+                    placeholder="請選擇時長"
+                    :disabled="isSavingStatusModal"
+                    @update:model-value="handleDurationModeChange"
+                  />
+                  <input
+                    v-if="interviewDurationModeDraft === 'custom'"
+                    v-model="interviewDurationMinutesDraft"
+                    type="number"
+                    min="1"
+                    max="480"
+                    step="1"
+                    autocomplete="off"
+                    :disabled="isSavingStatusModal"
+                    placeholder="分鐘"
+                  />
+                </label>
+
+                <label class="field">
               <span>面試官</span>
               <AppSelect
                 :model-value="interviewerUserIdDraft"
@@ -1367,9 +1563,9 @@ onUnmounted(() => {
                 :disabled="isSavingStatusModal"
                 @update:model-value="interviewerUserIdDraft = $event"
               />
-            </label>
+                </label>
 
-            <label class="field">
+                <label class="field">
               <span>面試地點</span>
               <AppSelect
                 :model-value="interviewLocationDraft"
@@ -1378,9 +1574,9 @@ onUnmounted(() => {
                 :disabled="isSavingStatusModal"
                 @update:model-value="interviewLocationDraft = $event"
               />
-            </label>
+                </label>
 
-            <label class="field">
+                <label class="field">
               <span>面試狀態</span>
               <AppSelect
                 :model-value="interviewStatusDraft"
@@ -1389,9 +1585,9 @@ onUnmounted(() => {
                 :disabled="isSavingStatusModal"
                 @update:model-value="interviewStatusDraft = $event"
               />
-            </label>
+                </label>
 
-            <label class="field full-span">
+                <label class="field full-span">
               <span>備註</span>
               <textarea
                 v-model.trim="remarkDraft"
@@ -1399,10 +1595,10 @@ onUnmounted(() => {
                 :disabled="isSavingStatusModal"
                 placeholder="輸入原因或跟進記錄"
               ></textarea>
-            </label>
-          </div>
+                </label>
+              </div>
 
-          <section class="status-history-section">
+              <section class="status-history-section">
             <h4>狀態記錄</h4>
             <div class="status-timeline">
               <div
@@ -1457,7 +1653,49 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
-          </section>
+              </section>
+            </div>
+
+            <aside class="availability-panel">
+              <div class="availability-header">
+                <div>
+                  <h4>面試官空閒時間</h4>
+                  <p>
+                    <template v-if="availabilityDateLabel">{{ availabilityDateLabel }}</template>
+                    <template v-else>請先選擇面試官與面試時間</template>
+                  </p>
+                </div>
+                <span>{{ getInterviewDurationLabel(selectedInterviewDurationMinutes) }}</span>
+              </div>
+
+              <p v-if="interviewerAvailabilityStatus === 'loading'" class="hint">讀取空閒時段中...</p>
+              <p v-else-if="interviewerAvailabilityMessage" class="hint">{{ interviewerAvailabilityMessage }}</p>
+
+              <div v-if="availabilityTimelineItems.length" class="availability-timeline">
+                <button
+                  v-for="item in availabilityTimelineItems"
+                  :key="`${item.type}-${item.start}-${item.end}`"
+                  type="button"
+                  class="availability-slot"
+                  :class="getAvailabilityItemClass(item)"
+                  :disabled="item.type === 'booked' || !doesSlotFitDuration(item)"
+                  @click="applyAvailabilitySlot(item)"
+                >
+                  <span class="availability-time">{{ getAvailabilityTimeRange(item) }}</span>
+                  <span class="availability-copy">
+                    <strong>{{ item.type === 'booked' ? '已安排' : '空閒' }}</strong>
+                    <em v-if="item.type === 'booked'">{{ item.fullName || '候選人' }}｜{{ item.jobPostTitle || '--' }}</em>
+                    <em v-else-if="doesSelectedInterviewFitSlot(item)">可插入當前面試時間</em>
+                    <em v-else-if="doesSlotFitDuration(item)">可點擊調整到此時段</em>
+                    <em v-else>時長不足</em>
+                  </span>
+                </button>
+              </div>
+              <p v-else-if="interviewerUserIdDraft && interviewScheduledAtDraft && interviewerAvailabilityStatus !== 'loading'" class="hint">
+                當天沒有可顯示的空閒時段。
+              </p>
+            </aside>
+          </div>
         </template>
 
         <div class="modal-actions">
@@ -1705,7 +1943,7 @@ onUnmounted(() => {
 }
 
 .status-modal {
-  width: min(920px, calc(100vw - 2rem));
+  width: min(1180px, calc(100vw - 2rem));
 }
 
 .bulk-blacklist-modal,
@@ -1763,10 +2001,27 @@ onUnmounted(() => {
   margin-top: 0.28rem;
 }
 
+.status-modal-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 1rem;
+  align-items: start;
+}
+
+.status-modal-main {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
 .status-modal-editor {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.9rem;
+}
+
+.duration-field {
+  gap: 0.5rem;
 }
 
 .status-modal-editor textarea,
@@ -1789,6 +2044,136 @@ onUnmounted(() => {
 
 .status-modal .modal-actions {
   justify-content: flex-end;
+}
+
+.availability-panel {
+  position: sticky;
+  top: 0;
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+  padding: 0.95rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 18px;
+  background: #f8fafc;
+}
+
+.availability-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.availability-header h4,
+.availability-header p {
+  margin: 0;
+}
+
+.availability-header h4 {
+  color: var(--text-strong);
+  font-size: 0.98rem;
+}
+
+.availability-header p,
+.availability-copy em {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-style: normal;
+}
+
+.availability-header > span {
+  flex: 0 0 auto;
+  padding: 0.24rem 0.55rem;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.availability-timeline {
+  position: relative;
+  display: grid;
+  gap: 0.55rem;
+  padding-left: 0.7rem;
+}
+
+.availability-timeline::before {
+  content: '';
+  position: absolute;
+  top: 0.2rem;
+  bottom: 0.2rem;
+  left: 0.18rem;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.38);
+}
+
+.availability-slot {
+  position: relative;
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: start;
+  width: 100%;
+  padding: 0.62rem 0.72rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text-base);
+  text-align: left;
+  cursor: pointer;
+}
+
+.availability-slot::before {
+  content: '';
+  position: absolute;
+  top: 0.9rem;
+  left: -0.73rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.availability-slot.booked {
+  color: #64748b;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.availability-slot.free.can-insert:hover {
+  border-color: rgba(22, 163, 74, 0.42);
+  background: #dcfce7;
+  color: #166534;
+}
+
+.availability-slot.free.needs-adjustment:hover {
+  border-color: rgba(217, 119, 6, 0.42);
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.availability-slot:disabled {
+  cursor: not-allowed;
+}
+
+.availability-time {
+  color: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.availability-copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.availability-copy strong {
+  color: var(--text-strong);
+  font-size: 0.86rem;
 }
 
 .status-history-section {
@@ -1957,6 +2342,14 @@ onUnmounted(() => {
 
   .transfer-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .status-modal-body {
+    grid-template-columns: 1fr;
+  }
+
+  .availability-panel {
+    position: static;
   }
 
   .status-modal-editor {

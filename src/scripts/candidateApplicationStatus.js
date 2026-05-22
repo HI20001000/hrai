@@ -33,6 +33,13 @@ export const INTERVIEW_STATUS_OPTIONS = [
   { value: 'failed', label: '不通過' },
 ]
 
+export const INTERVIEW_DURATION_PRESET_OPTIONS = [
+  { value: '10', label: '10分鐘' },
+  { value: '30', label: '30分鐘' },
+  { value: '60', label: '60分鐘' },
+  { value: 'custom', label: '自填' },
+]
+
 const STATUS_LABEL_MAP = Object.fromEntries(
   CANDIDATE_APPLICATION_STATUS_OPTIONS.map((item) => [item.value, item.label])
 )
@@ -87,3 +94,12 @@ export const normalizeInterviewStatus = (value, fallback = 'in_progress') => {
 
 export const getInterviewStatusLabel = (value) =>
   INTERVIEW_STATUS_LABEL_MAP[normalizeInterviewStatus(value)] || INTERVIEW_STATUS_LABEL_MAP.in_progress
+
+export const normalizeInterviewDurationMinutes = (value, fallback = 30) => {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return fallback
+  const minutes = Math.round(number)
+  return minutes >= 1 && minutes <= 480 ? minutes : fallback
+}
+
+export const getInterviewDurationLabel = (value) => `${normalizeInterviewDurationMinutes(value)}分鐘`

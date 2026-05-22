@@ -191,6 +191,7 @@ export const ensureCvTables = async (pool) => {
       application_status VARCHAR(40) NOT NULL DEFAULT 'screening',
       first_interview_arrangement VARCHAR(40) NULL,
       interview_scheduled_at DATETIME NULL,
+      interview_duration_minutes INT NULL,
       interviewer_user_id BIGINT NULL,
       interview_location VARCHAR(20) NULL,
       interview_status VARCHAR(20) NOT NULL DEFAULT 'in_progress',
@@ -232,7 +233,8 @@ export const ensureCvTables = async (pool) => {
 
   await ensureColumn('ALTER TABLE candidate_cvs ADD COLUMN source VARCHAR(20) NULL AFTER sha256')
   await ensureColumn('ALTER TABLE job_post_applications ADD COLUMN interview_scheduled_at DATETIME NULL AFTER first_interview_arrangement')
-  await ensureColumn('ALTER TABLE job_post_applications ADD COLUMN interviewer_user_id BIGINT NULL AFTER interview_scheduled_at')
+  await ensureColumn('ALTER TABLE job_post_applications ADD COLUMN interview_duration_minutes INT NULL AFTER interview_scheduled_at')
+  await ensureColumn('ALTER TABLE job_post_applications ADD COLUMN interviewer_user_id BIGINT NULL AFTER interview_duration_minutes')
   await ensureColumn('ALTER TABLE job_post_applications ADD COLUMN interview_location VARCHAR(20) NULL AFTER interviewer_user_id')
   await ensureColumn("ALTER TABLE job_post_applications ADD COLUMN interview_status VARCHAR(20) NOT NULL DEFAULT 'in_progress' AFTER interview_location")
   await ensureColumn('ALTER TABLE job_post_applications ADD COLUMN owner_user_id BIGINT NULL AFTER remark')
@@ -253,6 +255,7 @@ export const ensureCvTables = async (pool) => {
       application_status VARCHAR(40) NOT NULL DEFAULT 'screening',
       first_interview_arrangement VARCHAR(40) NULL,
       interview_scheduled_at DATETIME NULL,
+      interview_duration_minutes INT NULL,
       interviewer_user_id BIGINT NULL,
       interview_location VARCHAR(20) NULL,
       interview_status VARCHAR(20) NOT NULL DEFAULT 'in_progress',
@@ -274,7 +277,10 @@ export const ensureCvTables = async (pool) => {
     'ALTER TABLE job_post_application_status_history ADD COLUMN interview_scheduled_at DATETIME NULL AFTER first_interview_arrangement'
   )
   await ensureColumn(
-    'ALTER TABLE job_post_application_status_history ADD COLUMN interviewer_user_id BIGINT NULL AFTER interview_scheduled_at'
+    'ALTER TABLE job_post_application_status_history ADD COLUMN interview_duration_minutes INT NULL AFTER interview_scheduled_at'
+  )
+  await ensureColumn(
+    'ALTER TABLE job_post_application_status_history ADD COLUMN interviewer_user_id BIGINT NULL AFTER interview_duration_minutes'
   )
   await ensureColumn(
     'ALTER TABLE job_post_application_status_history ADD COLUMN interview_location VARCHAR(20) NULL AFTER interviewer_user_id'
@@ -288,12 +294,13 @@ export const ensureCvTables = async (pool) => {
 
   await pool.query(`
     INSERT INTO job_post_application_status_history
-      (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interviewer_user_id, interview_location, interview_status, remark, created_at, updated_at)
+      (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interview_duration_minutes, interviewer_user_id, interview_location, interview_status, remark, created_at, updated_at)
     SELECT
       app.id,
       app.application_status,
       app.first_interview_arrangement,
       app.interview_scheduled_at,
+      app.interview_duration_minutes,
       app.interviewer_user_id,
       app.interview_location,
       app.interview_status,

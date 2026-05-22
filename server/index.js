@@ -1142,6 +1142,7 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
         app.application_status AS applicationStatus,
         app.first_interview_arrangement AS firstInterviewArrangement,
         app.interview_scheduled_at AS interviewScheduledAt,
+        app.interview_duration_minutes AS interviewDurationMinutes,
         app.interviewer_user_id AS interviewerUserId,
         interviewer_user.email AS interviewerEmail,
         interviewer_user.username AS interviewerUsername,
@@ -1239,6 +1240,7 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
         app.application_status AS applicationStatus,
         app.first_interview_arrangement AS firstInterviewArrangement,
         app.interview_scheduled_at AS interviewScheduledAt,
+        app.interview_duration_minutes AS interviewDurationMinutes,
         app.interviewer_user_id AS interviewerUserId,
         interviewer_user.email AS interviewerEmail,
         interviewer_user.username AS interviewerUsername,
@@ -1355,6 +1357,7 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
         application_status AS applicationStatus,
         first_interview_arrangement AS firstInterviewArrangement,
         interview_scheduled_at AS interviewScheduledAt,
+        interview_duration_minutes AS interviewDurationMinutes,
         interviewer_user_id AS interviewerUserId,
         interview_location AS interviewLocation,
         interview_status AS interviewStatus,
@@ -1417,6 +1420,7 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
       SET application_status = ?,
           first_interview_arrangement = ?,
           interview_scheduled_at = ?,
+          interview_duration_minutes = ?,
           interviewer_user_id = ?,
           interview_location = ?,
           interview_status = ?,
@@ -1428,6 +1432,7 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
       nextStatus,
       arrangementResult.value || null,
       interviewResult.value.scheduledAt,
+      interviewResult.value.durationMinutes,
       interviewResult.value.interviewerUserId,
       interviewResult.value.location,
       interviewResult.value.status,
@@ -1492,13 +1497,14 @@ const createJobPostApplicationStatusHistory = async (pool, req, res, application
   const operatorUserId = await getRequestOperatorUserId(pool, req)
   const [result] = await pool.query(
     `INSERT INTO job_post_application_status_history
-      (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interviewer_user_id, interview_location, interview_status, remark, operator_user_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interview_duration_minutes, interviewer_user_id, interview_location, interview_status, remark, operator_user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       applicationId,
       nextStatus,
       arrangementResult.value || null,
       interviewResult.value.scheduledAt,
+      interviewResult.value.durationMinutes,
       interviewResult.value.interviewerUserId,
       interviewResult.value.location,
       interviewResult.value.status,
@@ -1525,6 +1531,7 @@ const updateJobPostApplicationStatusHistory = async (pool, req, res, application
         application_status AS applicationStatus,
         first_interview_arrangement AS firstInterviewArrangement,
         interview_scheduled_at AS interviewScheduledAt,
+        interview_duration_minutes AS interviewDurationMinutes,
         interviewer_user_id AS interviewerUserId,
         interview_location AS interviewLocation,
         interview_status AS interviewStatus,
@@ -1583,7 +1590,7 @@ const updateJobPostApplicationStatusHistory = async (pool, req, res, application
   await pool.query(
     `UPDATE job_post_application_status_history
       SET application_status = ?, first_interview_arrangement = ?,
-          interview_scheduled_at = ?, interviewer_user_id = ?, interview_location = ?, interview_status = ?,
+          interview_scheduled_at = ?, interview_duration_minutes = ?, interviewer_user_id = ?, interview_location = ?, interview_status = ?,
           remark = ?,
           operator_user_id = COALESCE(?, operator_user_id),
           updated_at = CURRENT_TIMESTAMP
@@ -1592,6 +1599,7 @@ const updateJobPostApplicationStatusHistory = async (pool, req, res, application
       nextStatus,
       arrangementResult.value || null,
       interviewResult.value.scheduledAt,
+      interviewResult.value.durationMinutes,
       interviewResult.value.interviewerUserId,
       interviewResult.value.location,
       interviewResult.value.status,
@@ -2211,6 +2219,9 @@ const APPLICATION_STATUS_VALUES = new Set([
 const FIRST_INTERVIEW_ARRANGEMENT_VALUES = new Set(['can_invite', 'unsuitable'])
 const INTERVIEW_LOCATION_VALUES = new Set(['zhuhai', 'macau'])
 const INTERVIEW_STATUS_VALUES = new Set(['passed', 'in_progress', 'failed'])
+const DEFAULT_INTERVIEW_DURATION_MINUTES = 30
+const MIN_INTERVIEW_DURATION_MINUTES = 1
+const MAX_INTERVIEW_DURATION_MINUTES = 480
 
 const normalizeApplicationStatus = (value, fallback = 'screening') => {
   const normalized = normalizeText(value).toLowerCase()
@@ -2270,6 +2281,7 @@ const listJobPostApplicationStatusHistory = async (pool, applicationId) => {
         history.application_status AS applicationStatus,
         history.first_interview_arrangement AS firstInterviewArrangement,
         history.interview_scheduled_at AS interviewScheduledAt,
+        history.interview_duration_minutes AS interviewDurationMinutes,
         history.interviewer_user_id AS interviewerUserId,
         interviewer_user.email AS interviewerEmail,
         interviewer_user.username AS interviewerUsername,
@@ -2307,6 +2319,7 @@ const listJobPostApplicationStatusHistories = async (pool, applicationIds = []) 
         history.application_status AS applicationStatus,
         history.first_interview_arrangement AS firstInterviewArrangement,
         history.interview_scheduled_at AS interviewScheduledAt,
+        history.interview_duration_minutes AS interviewDurationMinutes,
         history.interviewer_user_id AS interviewerUserId,
         interviewer_user.email AS interviewerEmail,
         interviewer_user.username AS interviewerUsername,
@@ -2360,6 +2373,14 @@ const normalizeInterviewScheduledAt = (value, fallback = null) => {
   return `${normalized}:00`
 }
 
+const normalizeInterviewDurationMinutes = (value, fallback = DEFAULT_INTERVIEW_DURATION_MINUTES) => {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return fallback
+  const minutes = Math.round(number)
+  if (minutes < MIN_INTERVIEW_DURATION_MINUTES || minutes > MAX_INTERVIEW_DURATION_MINUTES) return fallback
+  return minutes
+}
+
 const formatDateTimeForPayload = (value) => {
   if (!value) return null
   const date = value instanceof Date ? value : new Date(value)
@@ -2382,12 +2403,16 @@ const resolveInterviewInput = (value = {}, fallback = {}) => {
   const interviewerUserId = Object.prototype.hasOwnProperty.call(source, 'interviewerUserId')
     ? Number(source.interviewerUserId || 0) || null
     : Number(fallback.interviewerUserId || 0) || null
+  const durationMinutes = Object.prototype.hasOwnProperty.call(source, 'durationMinutes')
+    ? normalizeInterviewDurationMinutes(source.durationMinutes, undefined)
+    : normalizeInterviewDurationMinutes(fallback.durationMinutes, DEFAULT_INTERVIEW_DURATION_MINUTES)
 
   return {
-    valid: scheduledAt !== undefined && location !== undefined && status !== undefined,
+    valid: scheduledAt !== undefined && location !== undefined && status !== undefined && durationMinutes !== undefined,
     value: {
       scheduledAt: scheduledAt || null,
       interviewerUserId,
+      durationMinutes,
       location: location || null,
       status: status || 'in_progress',
     },
@@ -2396,6 +2421,7 @@ const resolveInterviewInput = (value = {}, fallback = {}) => {
 
 const buildInterviewPayload = (row = {}) => ({
   scheduledAt: formatDateTimeForPayload(row.interviewScheduledAt),
+  durationMinutes: normalizeInterviewDurationMinutes(row.interviewDurationMinutes, DEFAULT_INTERVIEW_DURATION_MINUTES),
   interviewerUser: row.interviewerUserId
     ? buildUserPayload({
         id: row.interviewerUserId,
@@ -2412,6 +2438,7 @@ const buildInterviewPayload = (row = {}) => ({
 const buildInterviewFallback = (row = {}) => ({
   scheduledAt: row.interviewScheduledAt || null,
   interviewerUserId: row.interviewerUserId || null,
+  durationMinutes: row.interviewDurationMinutes || DEFAULT_INTERVIEW_DURATION_MINUTES,
   location: row.interviewLocation || '',
   status: row.interviewStatus || 'in_progress',
 })
@@ -2431,6 +2458,7 @@ const getLatestJobPostApplicationStatusHistory = async (pool, applicationId) => 
         history.application_status AS applicationStatus,
         history.first_interview_arrangement AS firstInterviewArrangement,
         history.interview_scheduled_at AS interviewScheduledAt,
+        history.interview_duration_minutes AS interviewDurationMinutes,
         history.interviewer_user_id AS interviewerUserId,
         interviewer_user.email AS interviewerEmail,
         interviewer_user.username AS interviewerUsername,
@@ -2468,6 +2496,7 @@ const syncApplicationFromLatestStatusHistory = async (pool, applicationId) => {
       SET application_status = ?,
           first_interview_arrangement = ?,
           interview_scheduled_at = ?,
+          interview_duration_minutes = ?,
           interviewer_user_id = ?,
           interview_location = ?,
           interview_status = ?,
@@ -2479,6 +2508,7 @@ const syncApplicationFromLatestStatusHistory = async (pool, applicationId) => {
       latest.applicationStatus,
       latest.firstInterviewArrangement || null,
       latest.interview.scheduledAt || null,
+      latest.interview.durationMinutes || DEFAULT_INTERVIEW_DURATION_MINUTES,
       latest.interview.interviewerUser?.id || null,
       latest.interview.location || null,
       latest.interview.status || 'in_progress',
@@ -2506,13 +2536,14 @@ const syncJobPostApplicationStatusHistory = async (
   if (append) {
     await pool.query(
       `INSERT INTO job_post_application_status_history
-        (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interviewer_user_id, interview_location, interview_status, remark, operator_user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interview_duration_minutes, interviewer_user_id, interview_location, interview_status, remark, operator_user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         applicationId,
         nextStatus,
         nextFirstInterviewArrangement || null,
         nextInterview.scheduledAt,
+        nextInterview.durationMinutes,
         nextInterview.interviewerUserId,
         nextInterview.location,
         nextInterview.status,
@@ -2535,13 +2566,14 @@ const syncJobPostApplicationStatusHistory = async (
   if (!rows[0]) {
     await pool.query(
       `INSERT INTO job_post_application_status_history
-        (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interviewer_user_id, interview_location, interview_status, remark, operator_user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interview_duration_minutes, interviewer_user_id, interview_location, interview_status, remark, operator_user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         applicationId,
         nextStatus,
         nextFirstInterviewArrangement || null,
         nextInterview.scheduledAt,
+        nextInterview.durationMinutes,
         nextInterview.interviewerUserId,
         nextInterview.location,
         nextInterview.status,
@@ -2555,7 +2587,7 @@ const syncJobPostApplicationStatusHistory = async (
   await pool.query(
     `UPDATE job_post_application_status_history
       SET application_status = ?, first_interview_arrangement = ?,
-          interview_scheduled_at = ?, interviewer_user_id = ?, interview_location = ?, interview_status = ?,
+          interview_scheduled_at = ?, interview_duration_minutes = ?, interviewer_user_id = ?, interview_location = ?, interview_status = ?,
           remark = ?,
           operator_user_id = COALESCE(?, operator_user_id),
           updated_at = CURRENT_TIMESTAMP
@@ -2564,6 +2596,7 @@ const syncJobPostApplicationStatusHistory = async (
       nextStatus,
       nextFirstInterviewArrangement || null,
       nextInterview.scheduledAt,
+      nextInterview.durationMinutes,
       nextInterview.interviewerUserId,
       nextInterview.location,
       nextInterview.status,
@@ -4135,6 +4168,7 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
         app.application_status AS applicationStatus,
         app.first_interview_arrangement AS firstInterviewArrangement,
         app.interview_scheduled_at AS interviewScheduledAt,
+        app.interview_duration_minutes AS interviewDurationMinutes,
         app.interviewer_user_id AS interviewerUserId,
         interviewer_user.email AS interviewerEmail,
         interviewer_user.username AS interviewerUsername,
@@ -4250,6 +4284,36 @@ const getInterviewDateKey = (value) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
+const parseScheduleDate = (value) => {
+  const text = normalizeText(value)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return ''
+  const date = new Date(`${text}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return ''
+  return text
+}
+
+const parseSqlDateTime = (value) => {
+  if (!value) return null
+  const date = value instanceof Date ? value : new Date(String(value).replace(' ', 'T'))
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const addMinutes = (date, minutes) => new Date(date.getTime() + minutes * 60 * 1000)
+
+const toSqlDateTime = (date) => {
+  const pad = (number) => String(number).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:00`
+}
+
+const minutesBetween = (start, end) => Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000))
+
+const buildAvailabilityIntervalPayload = (start, end, extra = {}) => ({
+  start: toSqlDateTime(start),
+  end: toSqlDateTime(end),
+  durationMinutes: minutesBetween(start, end),
+  ...extra,
+})
+
 const buildScheduleApplicationPayload = (row = {}) => ({
   applicationId: Number(row.applicationId),
   applicationStatus: normalizeApplicationStatus(row.applicationStatus),
@@ -4284,6 +4348,7 @@ const listScheduleInterviews = async (pool, req, res, url) => {
         app.application_status AS applicationStatus,
         app.first_interview_arrangement AS firstInterviewArrangement,
         app.interview_scheduled_at AS interviewScheduledAt,
+        app.interview_duration_minutes AS interviewDurationMinutes,
         app.interviewer_user_id AS interviewerUserId,
         interviewer_user.email AS interviewerEmail,
         interviewer_user.username AS interviewerUsername,
@@ -4349,6 +4414,105 @@ const listScheduleInterviews = async (pool, req, res, url) => {
     relatedApplications,
     events: monthlyEvents,
     tasksByDate,
+  })
+}
+
+const getInterviewerAvailability = async (pool, req, res, url) => {
+  const user = await getAuthedUser(pool, req)
+  if (!user) {
+    sendJson(res, 401, { message: 'Unauthorized' })
+    return
+  }
+
+  const interviewerUserId = Number(url.searchParams.get('interviewerUserId') || 0)
+  const dateKey = parseScheduleDate(url.searchParams.get('date'))
+  const durationMinutes = normalizeInterviewDurationMinutes(
+    url.searchParams.get('durationMinutes'),
+    DEFAULT_INTERVIEW_DURATION_MINUTES
+  )
+  const excludeApplicationId = Number(url.searchParams.get('applicationId') || 0) || 0
+
+  if (!interviewerUserId || !dateKey) {
+    sendJson(res, 400, { message: 'interviewerUserId and date are required' })
+    return
+  }
+
+  const [userRows] = await pool.query('SELECT id, email, username, avatar_text AS avatarText, avatar_bg_color AS avatarBgColor FROM users WHERE id = ? LIMIT 1', [
+    interviewerUserId,
+  ])
+  if (!userRows.length) {
+    sendJson(res, 404, { message: 'Interviewer not found' })
+    return
+  }
+
+  const dayStart = `${dateKey} 00:00:00`
+  const nextDay = new Date(`${dateKey}T00:00:00`)
+  nextDay.setDate(nextDay.getDate() + 1)
+  const dayEnd = toSqlDateTime(nextDay)
+  const [rows] = await pool.query(
+    `SELECT
+        app.id AS applicationId,
+        app.interview_scheduled_at AS interviewScheduledAt,
+        app.interview_duration_minutes AS interviewDurationMinutes,
+        jp.title AS jobPostTitle,
+        c.full_name AS fullName
+      FROM job_post_applications app
+      INNER JOIN job_posts jp ON jp.id = app.job_post_id
+      INNER JOIN candidates c ON c.id = app.candidate_id
+      WHERE app.interviewer_user_id = ?
+        AND app.interview_scheduled_at IS NOT NULL
+        AND app.interview_scheduled_at >= ?
+        AND app.interview_scheduled_at < ?
+        AND (? = 0 OR app.id <> ?)
+      ORDER BY app.interview_scheduled_at ASC, app.id ASC`,
+    [interviewerUserId, dayStart, dayEnd, excludeApplicationId, excludeApplicationId]
+  )
+
+  const workdayStart = new Date(`${dateKey}T09:00:00`)
+  const workdayEnd = new Date(`${dateKey}T18:00:00`)
+  const booked = rows
+    .map((row) => {
+      const start = parseSqlDateTime(row.interviewScheduledAt)
+      if (!start) return null
+      const minutes = normalizeInterviewDurationMinutes(row.interviewDurationMinutes, DEFAULT_INTERVIEW_DURATION_MINUTES)
+      return {
+        start,
+        end: addMinutes(start, minutes),
+        payload: {
+          applicationId: Number(row.applicationId),
+          fullName: normalizeText(row.fullName),
+          jobPostTitle: normalizeText(row.jobPostTitle),
+        },
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.start.getTime() - b.start.getTime())
+
+  const freeSlots = []
+  let cursor = new Date(workdayStart)
+  for (const item of booked) {
+    const start = item.start < workdayStart ? workdayStart : item.start
+    const end = item.end > workdayEnd ? workdayEnd : item.end
+    if (start > cursor) {
+      freeSlots.push(buildAvailabilityIntervalPayload(cursor, start, {
+        canFitDuration: minutesBetween(cursor, start) >= durationMinutes,
+      }))
+    }
+    if (end > cursor) cursor = new Date(end)
+  }
+  if (cursor < workdayEnd) {
+    freeSlots.push(buildAvailabilityIntervalPayload(cursor, workdayEnd, {
+      canFitDuration: minutesBetween(cursor, workdayEnd) >= durationMinutes,
+    }))
+  }
+
+  sendJson(res, 200, {
+    date: dateKey,
+    interviewerUser: buildUserPayload(userRows[0]),
+    durationMinutes,
+    workday: buildAvailabilityIntervalPayload(workdayStart, workdayEnd),
+    booked: booked.map((item) => buildAvailabilityIntervalPayload(item.start, item.end, item.payload)),
+    freeSlots,
   })
 }
 
@@ -5410,6 +5574,9 @@ const start = async () => {
       if (url.pathname === '/api/users' && req.method === 'GET') return listUsersForManagement(pool, req, res)
       if (url.pathname === '/api/users/options' && req.method === 'GET') return listUserOptions(pool, req, res)
       if (url.pathname === '/api/schedule/interviews' && req.method === 'GET') return listScheduleInterviews(pool, req, res, url)
+      if (url.pathname === '/api/schedule/interviewer-availability' && req.method === 'GET') {
+        return getInterviewerAvailability(pool, req, res, url)
+      }
       if (url.pathname === '/api/job-dictionary' && req.method === 'GET') return getJobDictionaryHandler(pool, req, res)
       if (url.pathname === '/api/job-dictionary' && req.method === 'PUT') return updateJobDictionaryHandler(pool, req, res)
       if (url.pathname === '/api/job-dictionary/rubric-suggestions' && req.method === 'POST') {

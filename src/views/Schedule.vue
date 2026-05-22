@@ -5,6 +5,7 @@ import { handleUnauthorizedResponse, requireAuthToken, withAuthHeaders } from '.
 import CandidateApplicationsTable from '../components/candidate/CandidateApplicationsTable.vue'
 import {
   getInterviewLocationLabel,
+  getInterviewDurationLabel,
   getInterviewStatusLabel,
 } from '../scripts/candidateApplicationStatus.js'
 
@@ -20,6 +21,7 @@ const message = ref('')
 const currentMonth = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1))
 const selectedDateKey = ref('')
 const isRelatedModalOpen = ref(false)
+const activeRelatedFilter = ref('total')
 
 const pad = (number) => String(number).padStart(2, '0')
 
@@ -121,6 +123,35 @@ const statusCards = computed(() => [
   },
 ])
 
+const activeStatusCard = computed(
+  () => statusCards.value.find((card) => card.key === activeRelatedFilter.value) || statusCards.value[0]
+)
+
+const filteredRelatedApplications = computed(() => {
+  const rows = Array.isArray(scheduleData.value.relatedApplications)
+    ? scheduleData.value.relatedApplications
+    : []
+
+  return rows.filter((row) => {
+    const interview = getInterview(row)
+    const hasScheduledTime = Boolean(interview.scheduledAt)
+    const status = String(interview.status || 'in_progress').trim()
+
+    if (activeRelatedFilter.value === 'total') return true
+    if (activeRelatedFilter.value === 'unscheduled') return !hasScheduledTime
+    if (!hasScheduledTime) return false
+    if (activeRelatedFilter.value === 'passed') return status === 'passed'
+    if (activeRelatedFilter.value === 'inProgress') return status === 'in_progress'
+    if (activeRelatedFilter.value === 'failed') return status === 'failed'
+    return true
+  })
+})
+
+const openRelatedModal = (card) => {
+  activeRelatedFilter.value = card?.key || 'total'
+  isRelatedModalOpen.value = true
+}
+
 const loadSchedule = async () => {
   isLoading.value = true
   message.value = ''
@@ -181,7 +212,7 @@ onMounted(loadSchedule)
         type="button"
         class="status-card"
         :class="`tone-${card.tone}`"
-        @click="isRelatedModalOpen = true"
+        @click="openRelatedModal(card)"
       >
         <span>{{ card.label }}</span>
         <strong>{{ card.value }}</strong>
@@ -205,6 +236,7 @@ onMounted(loadSchedule)
               <h4>{{ task.fullName || '候選人' }}｜{{ task.jobPostTitle || '--' }}</h4>
               <p>
                 面試官：{{ getUserName(getInterview(task).interviewerUser) }}
+                ｜時長：{{ getInterviewDurationLabel(getInterview(task).durationMinutes) }}
                 ｜地點：{{ getInterviewLocationLabel(getInterview(task).location) || '--' }}
                 ｜狀態：{{ getInterviewStatusLabel(getInterview(task).status) }}
               </p>
@@ -254,14 +286,17 @@ onMounted(loadSchedule)
       <div class="modal-panel related-modal">
         <header class="modal-header">
           <div>
-            <h3>與我相關候選人</h3>
-            <p class="subtle">包含對接人為我，或面試官為我的所有候選人。</p>
+            <h3>{{ activeStatusCard.label }}候選人</h3>
+            <p class="subtle">
+              {{ activeStatusCard.key === 'total' ? '包含對接人為我，或面試官為我的所有候選人。' : activeStatusCard.hint }}
+              目前顯示 {{ filteredRelatedApplications.length }} 筆。
+            </p>
           </div>
           <button type="button" class="ghost-btn" @click="isRelatedModalOpen = false">關閉</button>
         </header>
         <CandidateApplicationsTable
-          title="候選人清單"
-          :rows="scheduleData.relatedApplications"
+          :title="`${activeStatusCard.label}候選人清單`"
+          :rows="filteredRelatedApplications"
           :loading="isLoading"
           :show-job-column="true"
           :show-target-position-column="false"
@@ -272,7 +307,7 @@ onMounted(loadSchedule)
           :paginated="true"
           :page-size="12"
           table-max-height="52vh"
-          empty-text="暫無與你相關的候選人"
+          :empty-text="`暫無${activeStatusCard.label}候選人`"
           search-placeholder="搜尋候選人 / 職位 / 對接人 / 面試官 / 面試時間 / 面試狀態"
         />
       </div>
