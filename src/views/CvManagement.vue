@@ -212,12 +212,40 @@ const selectedInterviewDurationMinutes = computed(() =>
 
 const isInterviewStatusDraft = computed(() => isInterviewApplicationStatus(statusDraft.value))
 
+const isInterviewArrangementDraft = computed(
+  () => normalizeFirstInterviewArrangement(firstInterviewDraft.value, '') === 'can_invite'
+)
+
+const shouldShowInterviewFields = computed(
+  () => isInterviewStatusDraft.value && isInterviewArrangementDraft.value
+)
+
 const availabilityDateLabel = computed(() => {
   const dateKey = getDateKeyFromDateTimeLocal(interviewScheduledAtDraft.value)
   if (!dateKey) return ''
   const date = new Date(`${dateKey}T00:00:00`)
   if (Number.isNaN(date.getTime())) return dateKey
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+})
+
+const selectedInterviewEndTime = computed(() => {
+  const start = parseLocalDateTime(interviewScheduledAtDraft.value)
+  if (!start) return ''
+  const end = new Date(start.getTime() + selectedInterviewDurationMinutes.value * 60000)
+  return toDateTimeLocalFromSql(end)
+})
+
+const currentInterviewPreviewItem = computed(() => {
+  if (!shouldShowInterviewFields.value || !interviewScheduledAtDraft.value || !selectedInterviewEndTime.value) return null
+  return {
+    type: 'preview',
+    applicationId: activeApplication.value?.applicationId || 'current',
+    start: interviewScheduledAtDraft.value.replace('T', ' '),
+    end: selectedInterviewEndTime.value.replace('T', ' '),
+    durationMinutes: selectedInterviewDurationMinutes.value,
+    fullName: activeApplication.value?.fullName || '當前候選人',
+    jobPostTitle: activeApplication.value?.jobPostTitle || '',
+  }
 })
 
 const availabilityTimelineItems = computed(() => {
@@ -227,14 +255,12 @@ const availabilityTimelineItems = computed(() => {
   const booked = Array.isArray(interviewerAvailability.value?.booked)
     ? interviewerAvailability.value.booked.map((slot) => ({ ...slot, type: 'booked' }))
     : []
-  return [...freeSlots, ...booked].sort((a, b) => String(a.start).localeCompare(String(b.start)))
-})
-
-const selectedInterviewEndTime = computed(() => {
-  const start = parseLocalDateTime(interviewScheduledAtDraft.value)
-  if (!start) return ''
-  const end = new Date(start.getTime() + selectedInterviewDurationMinutes.value * 60000)
-  return toDateTimeLocalFromSql(end)
+  const preview = currentInterviewPreviewItem.value ? [currentInterviewPreviewItem.value] : []
+  return [...freeSlots, ...booked, ...preview].sort((a, b) => {
+    const aTime = parseLocalDateTime(a.start)?.getTime() || 0
+    const bTime = parseLocalDateTime(b.start)?.getTime() || 0
+    return aTime - bTime
+  })
 })
 
 const hasBlacklistIdentity = (row) =>
@@ -533,15 +559,19 @@ const saveStatusModalChanges = async () => {
   }
 
   const historyId = Number(editingStatusHistoryId.value || 0)
-  const nextFirstInterview = normalizeFirstInterviewArrangement(firstInterviewDraft.value, '')
-  if (isInterviewApplicationStatus(nextStatus)) {
+  const isInterviewStatus = isInterviewApplicationStatus(nextStatus)
+  const nextFirstInterview = isInterviewStatus
+    ? normalizeFirstInterviewArrangement(firstInterviewDraft.value, '')
+    : ''
+  const shouldSaveInterview = isInterviewStatus && nextFirstInterview === 'can_invite'
+  if (shouldSaveInterview) {
     if (!interviewScheduledAtDraft.value || !interviewerUserIdDraft.value || !interviewLocationDraft.value) {
       message.value = '請補充面試時間、面試官與面試地點'
       return
     }
   }
 
-  const interviewPayload = isInterviewApplicationStatus(nextStatus)
+  const interviewPayload = shouldSaveInterview
     ? {
         scheduledAt: interviewScheduledAtDraft.value || '',
         durationMinutes: selectedInterviewDurationMinutes.value,
@@ -633,10 +663,10 @@ const clearAvailabilityLoadTimer = () => {
 const loadInterviewerAvailability = async () => {
   const interviewerUserId = Number(interviewerUserIdDraft.value || 0)
   const dateKey = getDateKeyFromDateTimeLocal(interviewScheduledAtDraft.value)
-  if (!isStatusModalOpen.value || !isInterviewStatusDraft.value || !interviewerUserId || !dateKey) {
+  if (!isStatusModalOpen.value || !shouldShowInterviewFields.value || !interviewerUserId || !dateKey) {
     interviewerAvailability.value = null
     interviewerAvailabilityStatus.value = ''
-    interviewerAvailabilityMessage.value = !isInterviewStatusDraft.value
+    interviewerAvailabilityMessage.value = !shouldShowInterviewFields.value
       ? ''
       : interviewerUserId
         ? '請先選擇面試時間'
@@ -697,12 +727,13 @@ const doesSelectedInterviewFitSlot = (slot) => {
 }
 
 const getAvailabilityItemClass = (item) => {
+  if (item?.type === 'preview') return 'preview'
   if (item?.type === 'booked') return 'booked'
   return doesSelectedInterviewFitSlot(item) ? 'free can-insert' : 'free needs-adjustment'
 }
 
 const applyAvailabilitySlot = (slot) => {
-  if (!slot || slot.type === 'booked' || !doesSlotFitDuration(slot)) return
+  if (!slot || slot.type !== 'free' || !doesSlotFitDuration(slot)) return
   const fittedBeforeClick = doesSelectedInterviewFitSlot(slot)
   if (!fittedBeforeClick) {
     interviewScheduledAtDraft.value = toDateTimeLocalFromSql(slot.start)
@@ -1000,10 +1031,21 @@ const saveNewStatus = async () => {
 
   isSavingStatus.value = true
   try {
+    const payload = { applicationStatus: nextStatus }
+    if (!isInterviewApplicationStatus(nextStatus)) {
+      payload.firstInterviewArrangement = ''
+      payload.interview = {
+        scheduledAt: '',
+        durationMinutes: selectedInterviewDurationMinutes.value,
+        interviewerUserId: '',
+        location: '',
+        status: 'in_progress',
+      }
+    }
     await fetchJson(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ applicationStatus: nextStatus }),
+      body: JSON.stringify(payload),
     })
     message.value = `已更新狀態為「${getCandidateApplicationStatusLabel(nextStatus)}」`
     await refreshActiveApplication()
@@ -1159,10 +1201,17 @@ const removeActiveFromBlacklist = async () => {
 }
 
 watch(
-  [interviewerUserIdDraft, interviewScheduledAtDraft, selectedInterviewDurationMinutes, statusDraft, isStatusModalOpen],
+  [
+    interviewerUserIdDraft,
+    interviewScheduledAtDraft,
+    selectedInterviewDurationMinutes,
+    statusDraft,
+    firstInterviewDraft,
+    isStatusModalOpen,
+  ],
   () => {
     if (!isStatusModalOpen.value) return
-    if (!isInterviewStatusDraft.value) {
+    if (!shouldShowInterviewFields.value) {
       clearAvailabilityLoadTimer()
       interviewerAvailability.value = null
       interviewerAvailabilityStatus.value = ''
@@ -1383,7 +1432,7 @@ onUnmounted(() => {
                 </button>
               </div>
 
-              <div class="first-interview-editor">
+              <div v-if="isInterviewStatusDraft" class="first-interview-editor">
                 <span>是否安排面試</span>
                 <AppSelect
                   class="compact-select"
@@ -1537,7 +1586,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="status-modal-body" :class="{ 'without-availability': !isInterviewStatusDraft }">
+          <div class="status-modal-body" :class="{ 'without-availability': !shouldShowInterviewFields }">
             <div class="status-modal-main">
               <div class="status-modal-editor">
                 <label class="field">
@@ -1551,7 +1600,7 @@ onUnmounted(() => {
               />
                 </label>
 
-                <label class="field">
+                <label v-if="isInterviewStatusDraft" class="field">
               <span>是否安排面試</span>
               <AppSelect
                 :model-value="firstInterviewDraft"
@@ -1562,7 +1611,7 @@ onUnmounted(() => {
               />
                 </label>
 
-                <template v-if="isInterviewStatusDraft">
+                <template v-if="shouldShowInterviewFields">
                   <label class="field">
                 <span>面試時間</span>
                 <input
@@ -1688,7 +1737,7 @@ onUnmounted(() => {
               </section>
             </div>
 
-            <aside v-if="isInterviewStatusDraft" class="availability-panel">
+            <aside v-if="shouldShowInterviewFields" class="availability-panel">
               <div class="availability-header">
                 <div>
                   <h4>面試官空閒時間</h4>
@@ -1710,13 +1759,14 @@ onUnmounted(() => {
                   type="button"
                   class="availability-slot"
                   :class="getAvailabilityItemClass(item)"
-                  :disabled="item.type === 'booked' || !doesSlotFitDuration(item)"
+                  :disabled="item.type !== 'free' || !doesSlotFitDuration(item)"
                   @click="applyAvailabilitySlot(item)"
                 >
                   <span class="availability-time">{{ getAvailabilityTimeRange(item) }}</span>
                   <span class="availability-copy">
-                    <strong>{{ item.type === 'booked' ? '已安排' : '空閒' }}</strong>
-                    <em v-if="item.type === 'booked'">{{ item.fullName || '候選人' }}｜{{ item.jobPostTitle || '--' }}</em>
+                    <strong>{{ item.type === 'preview' ? '當前安排' : item.type === 'booked' ? '已安排' : '空閒' }}</strong>
+                    <em v-if="item.type === 'preview'">{{ item.fullName || '當前候選人' }}｜{{ item.jobPostTitle || '--' }}</em>
+                    <em v-else-if="item.type === 'booked'">{{ item.fullName || '候選人' }}｜{{ item.jobPostTitle || '--' }}</em>
                     <em v-else-if="doesSelectedInterviewFitSlot(item)">可插入當前面試時間</em>
                     <em v-else-if="doesSlotFitDuration(item)">可點擊調整到此時段</em>
                     <em v-else>時長不足</em>
@@ -2188,6 +2238,17 @@ onUnmounted(() => {
   opacity: 0.72;
 }
 
+.availability-slot.preview {
+  border-color: rgba(37, 99, 235, 0.34);
+  background: #dbeafe;
+  color: #1d4ed8;
+  cursor: default;
+}
+
+.availability-slot.preview .availability-copy strong {
+  color: #1e40af;
+}
+
 .availability-slot.free.can-insert:hover {
   border-color: rgba(22, 163, 74, 0.42);
   background: #dcfce7;
@@ -2202,6 +2263,10 @@ onUnmounted(() => {
 
 .availability-slot:disabled {
   cursor: not-allowed;
+}
+
+.availability-slot.preview:disabled {
+  cursor: default;
 }
 
 .availability-time {
