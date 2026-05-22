@@ -4,14 +4,11 @@ import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
 import AppSelect from '../AppSelect.vue'
 import {
   CANDIDATE_APPLICATION_STATUS_OPTIONS,
-  FIRST_INTERVIEW_ARRANGEMENT_OPTIONS,
   getCandidateApplicationStatusLabel,
-  getFirstInterviewArrangementLabel,
   getInterviewDurationLabel,
   getInterviewLocationLabel,
   getInterviewStatusLabel,
   normalizeCandidateApplicationStatus,
-  normalizeFirstInterviewArrangement,
 } from '../../scripts/candidateApplicationStatus.js'
 import { normalizeSearchText } from '../../scripts/searchNormalize.js'
 import CandidateTextPreviewModal from './CandidateTextPreviewModal.vue'
@@ -151,7 +148,7 @@ const props = defineProps({
   },
   searchPlaceholder: {
     type: String,
-    default: '搜尋候選人 / 來源 / 對接人 / 狀態 / 面試安排 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案',
+    default: '搜尋候選人 / 來源 / 對接人 / 狀態 / 面試資訊 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案',
   },
 })
 
@@ -176,8 +173,6 @@ const ownerFilter = ref('')
 const currentPage = ref(1)
 const statusOverrides = ref({})
 const savingStatusIds = ref([])
-const firstInterviewOverrides = ref({})
-const savingFirstInterviewIds = ref([])
 const remarkDrafts = ref({})
 const savingRemarkIds = ref([])
 const addingBlacklistIds = ref([])
@@ -248,7 +243,7 @@ const getInterviewSummaryParts = (row) => {
 const getInterviewSummaryText = (row) => {
   const parts = getInterviewSummaryParts(row)
   if (parts.length) return parts.join('｜')
-  return getFirstInterviewArrangementLabel(row?.firstInterviewArrangement) || '--'
+  return '--'
 }
 
 const getRowStatusHistory = (row) => {
@@ -259,7 +254,6 @@ const getRowStatusHistory = (row) => {
     {
       id: 0,
       applicationStatus: row?.applicationStatus,
-      firstInterviewArrangement: row?.firstInterviewArrangement,
       interview: row?.interview,
       remark: row?.remark,
       createdAt: row?.createdAt,
@@ -418,7 +412,6 @@ const getRemarkDraft = (row) => {
 const getRemarkTooltip = (row) => String(getRemarkDraft(row) || '').trim() || undefined
 
 const isStatusSaving = (applicationId) => savingStatusIds.value.includes(Number(applicationId))
-const isFirstInterviewSaving = (applicationId) => savingFirstInterviewIds.value.includes(Number(applicationId))
 const isBlacklistSaving = (applicationId) => addingBlacklistIds.value.includes(Number(applicationId))
 
 const displayRows = computed(() =>
@@ -427,9 +420,6 @@ const displayRows = computed(() =>
     applicationStatus:
       statusOverrides.value[Number(row.applicationId)] ??
       normalizeCandidateApplicationStatus(row.applicationStatus),
-    firstInterviewArrangement:
-      firstInterviewOverrides.value[Number(row.applicationId)] ??
-      normalizeFirstInterviewArrangement(row.firstInterviewArrangement),
   }))
 )
 
@@ -499,7 +489,6 @@ const filteredRows = computed(() => {
       row.source,
       getOwnerUserName(row),
       getCandidateApplicationStatusLabel(row.applicationStatus),
-      getFirstInterviewArrangementLabel(row.firstInterviewArrangement),
       getInterviewSummaryText(row),
       props.showTargetPositionColumn ? row.targetPosition : '',
       row.matchedPosition,
@@ -606,7 +595,7 @@ const bulkBlacklistActionLabel = computed(() => {
 })
 
 const tableColumnCount = computed(() => {
-  let count = 10
+  let count = 9
   if (props.showJobColumn) count += 1
   if (props.showTargetPositionColumn) count += 1
   if (props.showPhoneColumn) count += 1
@@ -800,9 +789,8 @@ const updateApplicationStatus = async (row, nextStatus) => {
 
   savingStatusIds.value = [...savingStatusIds.value, applicationId]
   try {
-    const payload = { applicationStatus: normalizedStatus }
+    const payload = { applicationStatus: normalizedStatus, firstInterviewArrangement: '' }
     if (!isInterviewApplicationStatus(normalizedStatus)) {
-      payload.firstInterviewArrangement = ''
       payload.interview = {
         scheduledAt: '',
         durationMinutes: 30,
@@ -825,12 +813,6 @@ const updateApplicationStatus = async (row, nextStatus) => {
       ...statusOverrides.value,
       [applicationId]: normalizedStatus,
     }
-    if (!isInterviewApplicationStatus(normalizedStatus)) {
-      firstInterviewOverrides.value = {
-        ...firstInterviewOverrides.value,
-        [applicationId]: '',
-      }
-    }
     emit('rows-updated')
     emit('notify', {
       type: 'success',
@@ -848,58 +830,6 @@ const updateApplicationStatus = async (row, nextStatus) => {
     })
   } finally {
     savingStatusIds.value = savingStatusIds.value.filter((id) => id !== applicationId)
-  }
-}
-
-const canEditFirstInterviewArrangement = (row) =>
-  props.editableStatus && isInterviewApplicationStatus(row?.applicationStatus)
-
-const updateFirstInterviewArrangement = async (row, nextValue) => {
-  const applicationId = Number(row?.applicationId)
-  const previousValue = normalizeFirstInterviewArrangement(row?.firstInterviewArrangement)
-  const normalizedValue = normalizeFirstInterviewArrangement(nextValue, '')
-
-  if (!applicationId || normalizedValue === previousValue) {
-    firstInterviewOverrides.value = {
-      ...firstInterviewOverrides.value,
-      [applicationId]: previousValue,
-    }
-    return
-  }
-
-  savingFirstInterviewIds.value = [...savingFirstInterviewIds.value, applicationId]
-  try {
-    const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
-      method: 'PATCH',
-      headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ firstInterviewArrangement: normalizedValue }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      throw new Error(data.message || '更新面試安排失敗')
-    }
-
-    firstInterviewOverrides.value = {
-      ...firstInterviewOverrides.value,
-      [applicationId]: normalizeFirstInterviewArrangement(data?.application?.firstInterviewArrangement),
-    }
-    emit('rows-updated')
-    emit('notify', {
-      type: 'success',
-      message: `已更新 ${row?.fullName || '候選人'} 的面試安排為「${getFirstInterviewArrangementLabel(normalizedValue)}」`,
-    })
-    window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
-  } catch (error) {
-    firstInterviewOverrides.value = {
-      ...firstInterviewOverrides.value,
-      [applicationId]: previousValue,
-    }
-    emit('notify', {
-      type: 'error',
-      message: error?.message || '更新面試安排失敗',
-    })
-  } finally {
-    savingFirstInterviewIds.value = savingFirstInterviewIds.value.filter((id) => id !== applicationId)
   }
 }
 
@@ -1071,7 +1001,6 @@ onBeforeUnmount(() => {
             <th v-if="showJobColumn" class="job-col">職位</th>
             <th class="name-col">候選人名稱</th>
             <th class="status-col">候選人狀態</th>
-            <th class="first-interview-col">是否安排面試</th>
             <th class="remark-col">備註</th>
             <th v-if="showTargetPositionColumn" class="position-col">期望職位</th>
             <th class="position-col">匹配職位</th>
@@ -1176,25 +1105,6 @@ onBeforeUnmount(() => {
                 </span>
 
               </div>
-            </td>
-            <td class="first-interview-col">
-              <div
-                v-if="canEditFirstInterviewArrangement(row)"
-                class="first-interview-select-wrap"
-                :class="{ saving: isFirstInterviewSaving(row.applicationId) }"
-              >
-                <AppSelect
-                  class="first-interview-select"
-                  :model-value="row.firstInterviewArrangement"
-                  :options="FIRST_INTERVIEW_ARRANGEMENT_OPTIONS"
-                  placeholder="請選擇"
-                  :disabled="isFirstInterviewSaving(row.applicationId)"
-                  @update:model-value="updateFirstInterviewArrangement(row, $event)"
-                />
-              </div>
-              <span v-else class="first-interview-text">
-                {{ isInterviewApplicationStatus(row.applicationStatus) ? getInterviewSummaryText(row) : '--' }}
-              </span>
             </td>
             <td class="remark-col">
               <textarea
@@ -1338,9 +1248,6 @@ onBeforeUnmount(() => {
             <span class="history-dot" aria-hidden="true"></span>
             <span class="history-main">
               <strong>{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</strong>
-              <em v-if="history.firstInterviewArrangement">
-                面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
-              </em>
               <em v-if="getInterviewSummaryParts(history).length">
                 面試資訊：{{ getInterviewSummaryText(history) }}
               </em>
@@ -1797,10 +1704,6 @@ th.status-col {
   z-index: 70;
 }
 
-.first-interview-col {
-  min-width: 180px;
-}
-
 .position-col {
   min-width: 160px;
 }
@@ -2001,40 +1904,6 @@ th.status-col {
     border-color 180ms ease,
     box-shadow 180ms ease,
     transform 180ms ease;
-}
-
-.first-interview-select-wrap {
-  min-width: 156px;
-  max-width: 188px;
-}
-
-.first-interview-select-wrap.saving {
-  opacity: 0.68;
-}
-
-.first-interview-select {
-  width: 100%;
-}
-
-.first-interview-select-wrap :deep(.app-select-trigger) {
-  min-height: 36px;
-  padding: 0.4rem 0.9rem;
-  border-radius: 999px;
-}
-
-.first-interview-select-wrap :deep(.app-select-menu) {
-  min-width: 100%;
-  width: max-content;
-}
-
-.first-interview-select-wrap :deep(.app-select-value),
-.first-interview-select-wrap :deep(.app-select-option-label) {
-  font-size: 0.82rem;
-}
-
-.first-interview-text {
-  color: var(--text-base);
-  font-weight: 600;
 }
 
 .status-select-wrap:hover {

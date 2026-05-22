@@ -7,17 +7,14 @@ import CandidateApplicationsTable from '../components/candidate/CandidateApplica
 import CandidateCvUploadModal from '../components/candidate/CandidateCvUploadModal.vue'
 import {
   CANDIDATE_APPLICATION_STATUS_OPTIONS,
-  FIRST_INTERVIEW_ARRANGEMENT_OPTIONS,
   INTERVIEW_DURATION_PRESET_OPTIONS,
   INTERVIEW_LOCATION_OPTIONS,
   INTERVIEW_STATUS_OPTIONS,
   getCandidateApplicationStatusLabel,
-  getFirstInterviewArrangementLabel,
   getInterviewDurationLabel,
   getInterviewLocationLabel,
   getInterviewStatusLabel,
   normalizeCandidateApplicationStatus,
-  normalizeFirstInterviewArrangement,
   normalizeInterviewDurationMinutes,
   normalizeInterviewLocation,
   normalizeInterviewStatus,
@@ -56,7 +53,6 @@ const isRemarkEditorOpen = ref(false)
 const isBlacklistEditorOpen = ref(false)
 const statusDraft = ref('')
 const remarkDraft = ref('')
-const firstInterviewDraft = ref('')
 const interviewScheduledAtDraft = ref('')
 const interviewDurationModeDraft = ref('30')
 const interviewDurationMinutesDraft = ref('30')
@@ -70,7 +66,6 @@ const interviewerAvailabilityMessage = ref('')
 const blacklistReasonDraft = ref('')
 const isSavingStatus = ref(false)
 const isSavingRemark = ref(false)
-const isSavingFirstInterview = ref(false)
 const isSavingBlacklist = ref(false)
 
 function createEmptyProjectTransferForm() {
@@ -212,13 +207,7 @@ const selectedInterviewDurationMinutes = computed(() =>
 
 const isInterviewStatusDraft = computed(() => isInterviewApplicationStatus(statusDraft.value))
 
-const isInterviewArrangementDraft = computed(
-  () => normalizeFirstInterviewArrangement(firstInterviewDraft.value, '') === 'can_invite'
-)
-
-const shouldShowInterviewFields = computed(
-  () => isInterviewStatusDraft.value && isInterviewArrangementDraft.value
-)
+const shouldShowInterviewFields = computed(() => isInterviewStatusDraft.value)
 
 const availabilityDateLabel = computed(() => {
   const dateKey = getDateKeyFromDateTimeLocal(interviewScheduledAtDraft.value)
@@ -335,7 +324,7 @@ const pageTitle = computed(() => {
 
 const pageDescription = computed(() => {
   if (pageMode.value === 'detail') return '查看候選人投遞資料、Blacklist 命中結果與狀態歷史。'
-  if (pageMode.value === 'edit') return '集中更新候選人狀態、備註、面試安排與 Blacklist 原因。'
+  if (pageMode.value === 'edit') return '集中更新候選人狀態、備註、面試資訊與 Blacklist 原因。'
   return '這裡集中查看所有職位下的候選人投遞與匹配結果；狀態與備註請進入修改頁處理。'
 })
 
@@ -351,7 +340,6 @@ const activeStatusHistory = computed(() => {
     {
       id: 0,
       applicationStatus: activeApplication.value.applicationStatus,
-      firstInterviewArrangement: activeApplication.value.firstInterviewArrangement,
       interview: activeApplication.value.interview,
       remark: activeApplication.value.remark,
       createdAt: activeApplication.value.createdAt,
@@ -419,7 +407,6 @@ const setTableLoadStatus = (status, nextMessage = '') => {
 
 const resetDetailDrafts = (application = activeApplication.value) => {
   statusDraft.value = normalizeCandidateApplicationStatus(application?.applicationStatus)
-  firstInterviewDraft.value = normalizeFirstInterviewArrangement(application?.firstInterviewArrangement)
   const interview = application?.interview || {}
   interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt)
   applyInterviewDurationDraft(interview.durationMinutes || 30)
@@ -435,7 +422,6 @@ const resetDetailDrafts = (application = activeApplication.value) => {
 const startNewStatusHistoryDraft = () => {
   editingStatusHistoryId.value = null
   statusDraft.value = 'screening'
-  firstInterviewDraft.value = ''
   interviewScheduledAtDraft.value = ''
   applyInterviewDurationDraft(30)
   interviewerUserIdDraft.value = ''
@@ -457,7 +443,6 @@ const editStatusHistoryDraft = (history) => {
   }
   editingStatusHistoryId.value = historyId
   statusDraft.value = normalizeCandidateApplicationStatus(history?.applicationStatus)
-  firstInterviewDraft.value = normalizeFirstInterviewArrangement(history?.firstInterviewArrangement)
   const interview = history?.interview || {}
   interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt)
   applyInterviewDurationDraft(interview.durationMinutes || 30)
@@ -570,18 +555,14 @@ const saveStatusModalChanges = async () => {
 
   const historyId = Number(editingStatusHistoryId.value || 0)
   const isInterviewStatus = isInterviewApplicationStatus(nextStatus)
-  const nextFirstInterview = isInterviewStatus
-    ? normalizeFirstInterviewArrangement(firstInterviewDraft.value, '')
-    : ''
-  const shouldSaveInterview = isInterviewStatus && nextFirstInterview === 'can_invite'
-  if (shouldSaveInterview) {
+  if (isInterviewStatus) {
     if (!interviewScheduledAtDraft.value || !interviewerUserIdDraft.value || !interviewLocationDraft.value) {
       message.value = '請補充面試時間、面試官與面試地點'
       return
     }
   }
 
-  const interviewPayload = shouldSaveInterview
+  const interviewPayload = isInterviewStatus
     ? {
         scheduledAt: interviewScheduledAtDraft.value || '',
         durationMinutes: selectedInterviewDurationMinutes.value,
@@ -595,10 +576,10 @@ const saveStatusModalChanges = async () => {
         interviewerUserId: '',
         location: '',
         status: 'in_progress',
-      }
+  }
   const payload = {
     applicationStatus: nextStatus,
-    firstInterviewArrangement: nextFirstInterview,
+    firstInterviewArrangement: '',
     interview: interviewPayload,
     remark: String(remarkDraft.value || '').trim(),
   }
@@ -1041,9 +1022,8 @@ const saveNewStatus = async () => {
 
   isSavingStatus.value = true
   try {
-    const payload = { applicationStatus: nextStatus }
+    const payload = { applicationStatus: nextStatus, firstInterviewArrangement: '' }
     if (!isInterviewApplicationStatus(nextStatus)) {
-      payload.firstInterviewArrangement = ''
       payload.interview = {
         scheduledAt: '',
         durationMinutes: selectedInterviewDurationMinutes.value,
@@ -1095,37 +1075,6 @@ const saveApplicationRemark = async () => {
     message.value = error?.message || '更新備註失敗'
   } finally {
     isSavingRemark.value = false
-  }
-}
-
-const updateFirstInterviewArrangement = async (nextValue) => {
-  const applicationId = Number(activeApplication.value?.applicationId || 0)
-  const normalizedValue = normalizeFirstInterviewArrangement(nextValue, '')
-  const previousValue = normalizeFirstInterviewArrangement(activeApplication.value?.firstInterviewArrangement)
-  if (!applicationId) {
-    firstInterviewDraft.value = previousValue
-    return
-  }
-  if (normalizedValue === previousValue) {
-    firstInterviewDraft.value = previousValue
-    return
-  }
-
-  firstInterviewDraft.value = normalizedValue
-  isSavingFirstInterview.value = true
-  try {
-    await fetchJson(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ firstInterviewArrangement: normalizedValue }),
-    })
-    message.value = `已更新面試安排為「${getFirstInterviewArrangementLabel(normalizedValue)}」`
-    await refreshActiveApplication()
-  } catch (error) {
-    firstInterviewDraft.value = previousValue
-    message.value = error?.message || '更新面試安排失敗'
-  } finally {
-    isSavingFirstInterview.value = false
   }
 }
 
@@ -1216,7 +1165,6 @@ watch(
     interviewScheduledAtDraft,
     selectedInterviewDurationMinutes,
     statusDraft,
-    firstInterviewDraft,
     isStatusModalOpen,
   ],
   () => {
@@ -1289,7 +1237,7 @@ onUnmounted(() => {
       :deleting="isBulkDeleting"
       title="候選人清單"
       empty-text="尚無候選人資料"
-      search-placeholder="搜尋職位 / 候選人 / 來源 / 對接人 / 狀態 / 面試安排 / 匹配職位 / 備註 / 檔案"
+      search-placeholder="搜尋職位 / 候選人 / 來源 / 對接人 / 狀態 / 面試資訊 / 匹配職位 / 備註 / 檔案"
       @selection-change="selectedApplicationIds = $event"
       @delete-selected="deleteSelectedApplications"
       @bulk-blacklist-selected="openBulkBlacklistModal"
@@ -1442,18 +1390,6 @@ onUnmounted(() => {
                 </button>
               </div>
 
-              <div v-if="isInterviewStatusDraft" class="first-interview-editor">
-                <span>是否安排面試</span>
-                <AppSelect
-                  class="compact-select"
-                  :model-value="firstInterviewDraft"
-                  :options="FIRST_INTERVIEW_ARRANGEMENT_OPTIONS"
-                  placeholder="請選擇"
-                  :disabled="isSavingFirstInterview"
-                  @update:model-value="updateFirstInterviewArrangement"
-                />
-              </div>
-
               <button
                 v-if="!isRemarkEditorOpen"
                 type="button"
@@ -1493,9 +1429,6 @@ onUnmounted(() => {
               </div>
               <div class="timeline-content">
                 <p v-if="String(history.remark || '').trim()" class="timeline-remark">{{ history.remark }}</p>
-                <p v-if="history.firstInterviewArrangement" class="timeline-extra">
-                  面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
-                </p>
                 <p v-if="getInterviewSummaryText(history.interview)" class="timeline-extra">
                   面試資訊：{{ getInterviewSummaryText(history.interview) }}
                 </p>
@@ -1615,8 +1548,8 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="status-modal-body" :class="{ 'without-availability': !shouldShowInterviewFields }">
-            <div class="status-modal-main">
+          <div class="status-modal-body">
+            <section class="status-form-panel">
               <div class="status-modal-editor">
                 <label class="field">
               <span>候選人狀態</span>
@@ -1626,17 +1559,6 @@ onUnmounted(() => {
                 placeholder="請選擇狀態"
                 :disabled="isSavingStatusModal"
                 @update:model-value="statusDraft = $event"
-              />
-                </label>
-
-                <label v-if="isInterviewStatusDraft" class="field">
-              <span>是否安排面試</span>
-              <AppSelect
-                :model-value="firstInterviewDraft"
-                :options="FIRST_INTERVIEW_ARRANGEMENT_OPTIONS"
-                placeholder="請選擇"
-                :disabled="isSavingStatusModal"
-                @update:model-value="firstInterviewDraft = $event"
               />
                 </label>
 
@@ -1717,7 +1639,9 @@ onUnmounted(() => {
               ></textarea>
                 </label>
               </div>
+            </section>
 
+            <section class="status-lower-panel" :class="{ 'without-availability': !shouldShowInterviewFields }">
               <section class="status-history-section" @click="startNewStatusHistoryDraft">
             <h4>狀態記錄</h4>
             <div class="status-timeline">
@@ -1742,9 +1666,6 @@ onUnmounted(() => {
                 </div>
                 <div class="timeline-content">
                   <p v-if="String(history.remark || '').trim()" class="timeline-remark">{{ history.remark }}</p>
-                  <p v-if="history.firstInterviewArrangement" class="timeline-extra">
-                    面試安排：{{ getFirstInterviewArrangementLabel(history.firstInterviewArrangement) }}
-                  </p>
                   <p v-if="getInterviewSummaryText(history.interview)" class="timeline-extra">
                     面試資訊：{{ getInterviewSummaryText(history.interview) }}
                   </p>
@@ -1764,9 +1685,8 @@ onUnmounted(() => {
               </div>
             </div>
               </section>
-            </div>
 
-            <aside v-if="shouldShowInterviewFields" class="availability-panel">
+              <aside v-if="shouldShowInterviewFields" class="availability-panel">
               <div class="availability-header">
                 <div>
                   <h4>面試官空閒時間</h4>
@@ -1805,7 +1725,8 @@ onUnmounted(() => {
               <p v-else-if="interviewerUserIdDraft && interviewScheduledAtDraft && interviewerAvailabilityStatus !== 'loading'" class="hint">
                 當天沒有可顯示的空閒時段。
               </p>
-            </aside>
+              </aside>
+            </section>
           </div>
         </template>
 
@@ -1990,18 +1911,11 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-.inline-editor,
-.first-interview-editor {
+.inline-editor {
   display: flex;
   align-items: center;
   gap: 0.65rem;
   flex-wrap: wrap;
-}
-
-.first-interview-editor > span {
-  color: var(--text-base);
-  font-size: 0.84rem;
-  font-weight: 700;
 }
 
 .compact-select {
@@ -2103,19 +2017,29 @@ onUnmounted(() => {
 
 .status-modal-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: 1rem;
   align-items: start;
 }
 
-.status-modal-body.without-availability {
-  grid-template-columns: minmax(0, 1fr);
+.status-form-panel,
+.status-history-section {
+  min-width: 0;
+  padding: 0.95rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 18px;
+  background: #f8fafc;
 }
 
-.status-modal-main {
+.status-lower-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: 1rem;
+  align-items: start;
   min-width: 0;
+}
+
+.status-lower-panel.without-availability {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .status-modal-editor {
@@ -2308,7 +2232,6 @@ onUnmounted(() => {
 .status-history-section {
   display: grid;
   gap: 0.85rem;
-  padding-top: 0.2rem;
 }
 
 .status-history-section h4 {
@@ -2447,8 +2370,7 @@ onUnmounted(() => {
   .blacklist-editor,
   .status-controls,
   .inline-editor,
-  .status-editor-actions,
-  .first-interview-editor {
+  .status-editor-actions {
     justify-content: flex-start;
   }
 
@@ -2460,7 +2382,8 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
   }
 
-  .status-modal-body {
+  .status-modal-body,
+  .status-lower-panel {
     grid-template-columns: 1fr;
   }
 
