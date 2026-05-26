@@ -18,6 +18,7 @@ const emit = defineEmits(['change-page'])
 const isMobileMenuOpen = ref(false)
 const isSettingsMenuOpen = ref(false)
 const currentTimeText = ref('')
+const currentDateText = ref('')
 let settingsMenuCloseTimer = null
 let clockTimer = null
 
@@ -77,9 +78,11 @@ const displayAvatarBgColor = computed(() => {
 const updateCurrentTime = () => {
   const date = new Date()
   const pad = (value) => String(value).padStart(2, '0')
-  currentTimeText.value =
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
-    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  const hours24 = date.getHours()
+  const period = hours24 >= 12 ? 'PM' : 'AM'
+  const hours12 = hours24 % 12 || 12
+  currentTimeText.value = `${pad(hours12)}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${period}`
+  currentDateText.value = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
 const selectPage = (key) => {
@@ -127,13 +130,18 @@ onBeforeUnmount(() => {
           <span class="brand-title">HR 系統</span>
         </div>
         <div class="toolbar-user-card">
-          <div class="toolbar-user-line">
+          <div class="toolbar-user-avatar-wrap">
             <span class="toolbar-user-avatar" :style="{ background: displayAvatarBgColor }">
               {{ displayAvatarText }}
             </span>
-            <strong>{{ displayUserName }}</strong>
           </div>
-          <time>{{ currentTimeText }}</time>
+          <div class="toolbar-user-main">
+            <strong>{{ displayUserName }}</strong>
+            <div class="toolbar-user-time">
+              <time>{{ currentTimeText }}</time>
+              <time>{{ currentDateText }}</time>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -301,7 +309,6 @@ onBeforeUnmount(() => {
 }
 
 .brand-heading,
-.toolbar-user-line,
 .nav-button,
 .mobile-header,
 .mobile-actions {
@@ -322,32 +329,50 @@ onBeforeUnmount(() => {
 
 .toolbar-user-card {
   display: grid;
-  gap: 0.34rem;
-  padding: 0.72rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.72rem;
+  align-items: center;
+  padding: 0.9rem;
   border: 1px solid rgba(16, 24, 40, 0.06);
-  border-radius: 18px;
+  border-radius: 20px;
   background: rgba(255, 255, 255, 0.62);
 }
 
-.toolbar-user-line {
-  gap: 0.52rem;
+.toolbar-user-avatar-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toolbar-user-main {
+  display: grid;
+  gap: 0.34rem;
   min-width: 0;
 }
 
-.toolbar-user-line strong {
+.toolbar-user-main strong {
   min-width: 0;
   overflow: hidden;
   color: var(--text-strong);
-  font-size: 0.9rem;
+  font-size: 1.35rem;
   font-weight: 800;
+  line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.toolbar-user-card time {
+.toolbar-user-time {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.toolbar-user-time time {
   color: var(--text-muted);
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.14;
+  white-space: nowrap;
 }
 
 .nav-copy {
@@ -396,12 +421,12 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.8rem;
-  height: 1.8rem;
+  width: 3.2rem;
+  height: 3.2rem;
   flex: 0 0 auto;
   border-radius: 999px;
   color: #ffffff;
-  font-size: 0.82rem;
+  font-size: 1.32rem;
   font-weight: 800;
   line-height: 1;
 }

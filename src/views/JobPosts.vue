@@ -144,10 +144,9 @@ const beginCreateJobPost = () => {
   selectedJobPost.value = null
   applications.value = []
   selectedApplicationIds.value = []
-  const firstJobTitle = sortedDictionaryEntries.value[0] || ''
   jobPostForm.value = {
-    title: firstJobTitle,
-    jobKey: firstJobTitle,
+    title: '',
+    jobKey: '',
     status: 'open',
   }
   message.value = ''
@@ -312,12 +311,6 @@ const deleteSelectedApplications = async () => {
 
 const handleDictionaryUpdated = async (dictionary) => {
   jobDictionary.value = dictionary && typeof dictionary === 'object' ? dictionary : {}
-  if (isCreatingJobPost.value) {
-    const nextTitle = jobDictionary.value[jobPostForm.value.jobKey]
-      ? jobPostForm.value.jobKey
-      : sortedDictionaryEntries.value[0] || ''
-    syncCreateFormFromDictionary(nextTitle)
-  }
   await loadJobPosts()
 }
 
