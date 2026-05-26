@@ -2104,7 +2104,8 @@ onUnmounted(() => {
 
 .interview-arrangement-table-wrap {
   min-width: 0;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: visible;
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.74);

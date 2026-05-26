@@ -4346,7 +4346,7 @@ const buildAvailabilityIntervalPayload = (start, end, extra = {}) => ({
   ...extra,
 })
 
-const buildScheduleApplicationPayload = (row = {}) => ({
+const buildScheduleApplicationPayload = (row = {}, statusHistory = []) => ({
   applicationId: Number(row.applicationId),
   applicationStatus: normalizeApplicationStatus(row.applicationStatus),
   firstInterviewArrangement: normalizeFirstInterviewArrangement(row.firstInterviewArrangement),
@@ -4363,6 +4363,7 @@ const buildScheduleApplicationPayload = (row = {}) => ({
   targetPosition: normalizeText(row.targetPosition),
   matchedPosition: normalizeText(row.matchedPosition),
   source: normalizeCvSource(row.source),
+  statusHistory: Array.isArray(statusHistory) ? statusHistory : [],
 })
 
 const listScheduleInterviews = async (pool, req, res, url) => {
@@ -4416,7 +4417,13 @@ const listScheduleInterviews = async (pool, req, res, url) => {
     [currentUserId, currentUserId]
   )
 
-  const relatedApplications = rows.map((row) => buildScheduleApplicationPayload(row))
+  const statusHistories = await listJobPostApplicationStatusHistories(
+    pool,
+    rows.map((row) => row.applicationId)
+  )
+  const relatedApplications = rows.map((row) =>
+    buildScheduleApplicationPayload(row, statusHistories.get(Number(row.applicationId)) || [])
+  )
   const monthlyEvents = relatedApplications.filter((item) => {
     const scheduledAt = item.interview.scheduledAt
     return scheduledAt && scheduledAt >= month.startSql && scheduledAt < month.endSql
@@ -4497,8 +4504,15 @@ const listArrangedInterviews = async (pool, req, res) => {
       ORDER BY app.interview_scheduled_at ASC, app.id ASC`
   )
 
+  const statusHistories = await listJobPostApplicationStatusHistories(
+    pool,
+    rows.map((row) => row.applicationId)
+  )
+
   sendJson(res, 200, {
-    interviews: rows.map((row) => buildScheduleApplicationPayload(row)),
+    interviews: rows.map((row) =>
+      buildScheduleApplicationPayload(row, statusHistories.get(Number(row.applicationId)) || [])
+    ),
   })
 }
 
@@ -4535,13 +4549,16 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
     sendJson(res, 400, { message: 'Invalid interview status' })
     return
   }
+  const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
+  const nextRemark = hasRemark ? normalizeApplicationRemark(body.remark) : normalizeApplicationRemark(existing.remark)
 
   await pool.query(
     `UPDATE job_post_applications
       SET interview_status = ?,
+          remark = ?,
           updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [nextInterviewStatus, applicationId]
+    [nextInterviewStatus, nextRemark, applicationId]
   )
 
   const operatorUserId = await getRequestOperatorUserId(pool, req)
@@ -4559,7 +4576,7 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
       applicationStatus: existing.applicationStatus,
       firstInterviewArrangement: existing.firstInterviewArrangement,
       interview: nextInterview,
-      remark: existing.remark,
+      remark: nextRemark,
     },
     { append: false, operatorUserId }
   )
@@ -4568,6 +4585,7 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
   sendJson(res, 200, {
     message: 'Interview status updated',
     applicationId,
+    remark: nextRemark,
     interview: buildInterviewPayload({
       interviewScheduledAt: existing.interviewScheduledAt,
       interviewDurationMinutes: existing.interviewDurationMinutes,

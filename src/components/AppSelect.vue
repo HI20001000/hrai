@@ -28,9 +28,12 @@ const emit = defineEmits(['update:modelValue'])
 
 const rootRef = ref(null)
 const triggerRef = ref(null)
+const menuRef = ref(null)
 const optionRefs = ref([])
 const isOpen = ref(false)
 const highlightedIndex = ref(-1)
+const menuStyle = ref({})
+const menuId = `app-select-menu-${Math.random().toString(36).slice(2)}`
 
 const normalizedOptions = computed(() =>
   props.options.map((option) => {
@@ -69,24 +72,68 @@ const focusOptionAt = async (index) => {
   await nextTick()
   const target = optionRefs.value[index]
   if (target && typeof target.focus === 'function') {
-    target.focus()
+    target.focus({ preventScroll: true })
   }
+}
+
+const buildMenuStyle = () => {
+  const target = triggerRef.value
+  if (!target || typeof target.getBoundingClientRect !== 'function') return {}
+
+  const rect = target.getBoundingClientRect()
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768
+  const margin = 12
+  const gap = 8
+  const width = Math.min(Math.max(rect.width, 220), Math.max(220, viewportWidth - margin * 2))
+  const left = Math.min(
+    Math.max(rect.left, margin),
+    Math.max(margin, viewportWidth - width - margin)
+  )
+  const spaceBelow = viewportHeight - rect.bottom - gap - margin
+  const spaceAbove = rect.top - gap - margin
+  const openAbove = spaceBelow < 220 && spaceAbove > spaceBelow
+  const maxHeight = Math.max(160, Math.min(320, openAbove ? spaceAbove : spaceBelow))
+
+  return openAbove
+    ? {
+        left: `${left}px`,
+        bottom: `${Math.max(margin, viewportHeight - rect.top + gap)}px`,
+        width: `${width}px`,
+        maxHeight: `${maxHeight}px`,
+      }
+    : {
+        left: `${left}px`,
+        top: `${Math.min(rect.bottom + gap, viewportHeight - margin)}px`,
+        width: `${width}px`,
+        maxHeight: `${maxHeight}px`,
+      }
+}
+
+const updateMenuPosition = () => {
+  if (!isOpen.value) return
+  menuStyle.value = buildMenuStyle()
 }
 
 // 開啟時把焦點移到目前選項，關閉時可還原到 trigger，確保鍵盤使用者不會丟失操作位置。
 const openDropdown = async (index = selectedIndex.value >= 0 ? selectedIndex.value : 0) => {
   if (props.disabled || !normalizedOptions.value.length) return
+  optionRefs.value = []
+  menuStyle.value = buildMenuStyle()
   isOpen.value = true
   highlightedIndex.value = Math.max(0, Math.min(index, normalizedOptions.value.length - 1))
+  await nextTick()
+  updateMenuPosition()
   await focusOptionAt(highlightedIndex.value)
 }
 
 const closeDropdown = async ({ focusTrigger = false } = {}) => {
   isOpen.value = false
   highlightedIndex.value = -1
+  menuStyle.value = {}
   if (focusTrigger) {
     await nextTick()
-    triggerRef.value?.focus()
+    triggerRef.value?.focus?.({ preventScroll: true })
   }
 }
 
@@ -170,7 +217,12 @@ const handleOptionKeydown = async (event, index, value) => {
 const handlePointerDown = async (event) => {
   if (!isOpen.value) return
   if (rootRef.value?.contains(event.target)) return
+  if (menuRef.value?.contains(event.target)) return
   await closeDropdown()
+}
+
+const handleViewportChange = () => {
+  updateMenuPosition()
 }
 
 watch(
@@ -184,10 +236,14 @@ watch(
 
 onMounted(() => {
   document.addEventListener('pointerdown', handlePointerDown)
+  window.addEventListener('resize', handleViewportChange)
+  window.addEventListener('scroll', handleViewportChange, true)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handlePointerDown)
+  window.removeEventListener('resize', handleViewportChange)
+  window.removeEventListener('scroll', handleViewportChange, true)
 })
 </script>
 
@@ -201,6 +257,7 @@ onBeforeUnmount(() => {
       :disabled="disabled"
       aria-haspopup="listbox"
       :aria-expanded="isOpen ? 'true' : 'false'"
+      :aria-controls="isOpen ? menuId : undefined"
       @click="toggleDropdown"
       @keydown="handleTriggerKeydown"
     >
@@ -218,7 +275,15 @@ onBeforeUnmount(() => {
       <span class="app-select-icon" aria-hidden="true"></span>
     </button>
 
-    <div v-if="isOpen" class="app-select-menu" role="listbox">
+    <Teleport to="body">
+    <div
+      v-if="isOpen"
+      :id="menuId"
+      ref="menuRef"
+      class="app-select-menu"
+      :style="menuStyle"
+      role="listbox"
+    >
       <button
         v-for="(option, index) in normalizedOptions"
         :key="option.value"
@@ -253,6 +318,7 @@ onBeforeUnmount(() => {
         {{ emptyText }}
       </div>
     </div>
+    </Teleport>
   </div>
 </template>
 
@@ -365,11 +431,12 @@ onBeforeUnmount(() => {
 }
 
 .app-select-menu {
-  position: absolute;
-  top: calc(100% + 0.5rem);
-  left: 0;
-  right: 0;
-  z-index: 90;
+  position: fixed;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  z-index: 20000;
   display: grid;
   gap: 0.35rem;
   max-height: 290px;

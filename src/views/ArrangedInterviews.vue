@@ -1,15 +1,17 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import { handleUnauthorizedResponse, requireAuthToken, withAuthHeaders } from '../scripts/authState.js'
 import { normalizeSearchText } from '../scripts/searchNormalize.js'
 import AppSelect from '../components/AppSelect.vue'
 import {
+  CANDIDATE_APPLICATION_STATUS_OPTIONS,
   INTERVIEW_STATUS_OPTIONS,
   getCandidateApplicationStatusLabel,
   getInterviewDurationLabel,
   getInterviewLocationLabel,
   getInterviewStatusLabel,
+  normalizeCandidateApplicationStatus,
   normalizeInterviewStatus,
 } from '../scripts/candidateApplicationStatus.js'
 
@@ -26,6 +28,17 @@ const message = ref('')
 const searchKeyword = ref('')
 const statusFilter = ref('')
 const savingIds = ref([])
+const isStatusModalOpen = ref(false)
+const isStatusDetailLoading = ref(false)
+const isSavingStatusModal = ref(false)
+const statusModalError = ref('')
+const activeApplication = ref(null)
+const interviewStatusDraft = ref('in_progress')
+const remarkDraft = ref('')
+const activeStatusPopoverKey = ref('')
+const activeStatusPopoverRow = ref(null)
+const statusPopoverStyle = ref({})
+let statusPopoverCloseTimer = null
 
 const pad = (number) => String(number).padStart(2, '0')
 
@@ -56,6 +69,138 @@ const isSaving = (applicationId) => savingIds.value.includes(Number(applicationI
 const canEditInterviewStatus = computed(() => String(props.currentUser?.role || '').trim() !== 'viewer')
 
 const statusOptions = computed(() => [{ value: '', label: '全部' }, ...INTERVIEW_STATUS_OPTIONS])
+
+const activeStatusHistory = computed(() => {
+  const history = Array.isArray(activeApplication.value?.statusHistory)
+    ? activeApplication.value.statusHistory
+    : []
+  if (history.length) return history
+  if (!activeApplication.value) return []
+  return [buildFallbackStatusHistory(activeApplication.value)]
+})
+
+const getStatusToneClass = (status) =>
+  `status-tone-${normalizeCandidateApplicationStatus(status, 'screening')}`
+
+const getInterviewUserName = (interview) => getUserName(interview?.interviewerUser)
+
+const getInterviewSummaryParts = (item) => {
+  const interview = item?.interview || {}
+  const interviewerName = getInterviewUserName(interview)
+  const hasInterviewInfo =
+    Boolean(interview.scheduledAt || interview.location || interviewerName) ||
+    String(interview.status || '').trim() === 'passed' ||
+    String(interview.status || '').trim() === 'failed'
+  const parts = []
+  if (interview.scheduledAt) parts.push(formatDateTime(interview.scheduledAt))
+  if (hasInterviewInfo && interview.durationMinutes) parts.push(getInterviewDurationLabel(interview.durationMinutes))
+  if (interview.location) parts.push(getInterviewLocationLabel(interview.location))
+  if (interviewerName && interviewerName !== '--') parts.push(`面試官：${interviewerName}`)
+  if (hasInterviewInfo && interview.status) parts.push(getInterviewStatusLabel(interview.status))
+  return parts.filter(Boolean)
+}
+
+const getInterviewSummaryText = (item) => {
+  const parts = getInterviewSummaryParts(item)
+  return parts.length ? parts.join('｜') : '--'
+}
+
+const buildFallbackStatusHistory = (row) => ({
+  id: 0,
+  applicationStatus: row?.applicationStatus,
+  interview: row?.interview,
+  remark: row?.remark,
+  createdAt: row?.createdAt,
+  updatedAt: row?.createdAt,
+})
+
+const getRowStatusHistory = (row) => {
+  const history = Array.isArray(row?.statusHistory) ? row.statusHistory : []
+  return history.length ? history : [buildFallbackStatusHistory(row)]
+}
+
+const getStatusHistoryKey = (history, index) =>
+  history?.id || `${history?.applicationStatus || 'status'}-${history?.createdAt || index}`
+
+const getStatusHistoryOperator = (history) => history?.operatorUser || history?.operator || null
+
+const getStatusHistoryOperatorName = (history) => {
+  const operator = getStatusHistoryOperator(history)
+  return String(operator?.username || operator?.mail || '').trim() || '系統'
+}
+
+const getStatusHistoryOperatorAvatarText = (history) => {
+  const operator = getStatusHistoryOperator(history)
+  const fallback = getStatusHistoryOperatorName(history).slice(0, 1).toUpperCase() || 'U'
+  return String(operator?.avatarText || '').trim() || fallback
+}
+
+const getStatusHistoryOperatorAvatarStyle = (history) => {
+  const operator = getStatusHistoryOperator(history)
+  const color = String(operator?.avatarBgColor || '').trim()
+  return { background: /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#64748b' }
+}
+
+const getStatusPopoverKey = (row) => `status-${Number(row?.applicationId || 0)}`
+
+const clearStatusPopoverTimer = () => {
+  if (statusPopoverCloseTimer) {
+    window.clearTimeout(statusPopoverCloseTimer)
+    statusPopoverCloseTimer = null
+  }
+}
+
+const buildStatusPopoverStyle = (target) => {
+  if (!target || typeof target.getBoundingClientRect !== 'function') return {}
+  const rect = target.getBoundingClientRect()
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768
+  const gap = 8
+  const margin = 16
+  const width = Math.min(520, Math.max(300, viewportWidth - margin * 2))
+  const left = Math.min(Math.max(rect.left, margin), Math.max(margin, viewportWidth - width - margin))
+  const spaceBelow = viewportHeight - rect.bottom - gap - margin
+  const spaceAbove = rect.top - gap - margin
+  const openAbove = spaceBelow < 220 && spaceAbove > spaceBelow
+  const maxHeight = Math.max(180, Math.min(360, openAbove ? spaceAbove : spaceBelow))
+
+  return openAbove
+    ? {
+        left: `${left}px`,
+        bottom: `${Math.max(margin, viewportHeight - rect.top + gap)}px`,
+        width: `${width}px`,
+        maxHeight: `${maxHeight}px`,
+      }
+    : {
+        left: `${left}px`,
+        top: `${Math.min(rect.bottom + gap, viewportHeight - margin)}px`,
+        width: `${width}px`,
+        maxHeight: `${maxHeight}px`,
+      }
+}
+
+const closeStatusPopover = () => {
+  activeStatusPopoverKey.value = ''
+  activeStatusPopoverRow.value = null
+  statusPopoverStyle.value = {}
+}
+
+const openStatusPopover = (row, event = null) => {
+  clearStatusPopoverTimer()
+  activeStatusPopoverKey.value = getStatusPopoverKey(row)
+  activeStatusPopoverRow.value = row
+  statusPopoverStyle.value = buildStatusPopoverStyle(event?.currentTarget)
+}
+
+const scheduleStatusPopoverClose = () => {
+  clearStatusPopoverTimer()
+  statusPopoverCloseTimer = window.setTimeout(() => {
+    closeStatusPopover()
+    statusPopoverCloseTimer = null
+  }, 420)
+}
+
+const isStatusPopoverActive = (row) => activeStatusPopoverKey.value === getStatusPopoverKey(row)
 
 const filteredInterviews = computed(() => {
   const keyword = normalizeSearchText(searchKeyword.value)
@@ -101,6 +246,80 @@ const loadInterviews = async () => {
   }
 }
 
+const openInterviewStatusModal = async (row) => {
+  const applicationId = Number(row?.applicationId || 0)
+  if (!applicationId || isSaving(applicationId)) return
+
+  closeStatusPopover()
+  isStatusModalOpen.value = true
+  isStatusDetailLoading.value = true
+  statusModalError.value = ''
+  activeApplication.value = null
+  interviewStatusDraft.value = normalizeInterviewStatus(row?.interview?.status)
+  remarkDraft.value = String(row?.remark || '')
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}`, {
+      headers: withAuthHeaders(),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (handleUnauthorizedResponse(response)) throw new Error('登入已失效，請重新登入')
+    if (!response.ok) throw new Error(data.message || '讀取候選人狀態失敗')
+    activeApplication.value = data.application || row
+    interviewStatusDraft.value = normalizeInterviewStatus(activeApplication.value?.interview?.status)
+    remarkDraft.value = String(activeApplication.value?.remark || '')
+  } catch (error) {
+    statusModalError.value = error?.message || '讀取候選人狀態失敗'
+    activeApplication.value = row
+  } finally {
+    isStatusDetailLoading.value = false
+  }
+}
+
+const closeInterviewStatusModal = () => {
+  if (isSavingStatusModal.value) return
+  isStatusModalOpen.value = false
+  isStatusDetailLoading.value = false
+  statusModalError.value = ''
+  activeApplication.value = null
+  interviewStatusDraft.value = 'in_progress'
+  remarkDraft.value = ''
+}
+
+const saveInterviewStatusModal = async () => {
+  const applicationId = Number(activeApplication.value?.applicationId || 0)
+  const nextStatus = normalizeInterviewStatus(interviewStatusDraft.value, '')
+  if (!applicationId || !nextStatus || isSaving(applicationId)) return
+
+  savingIds.value = [...savingIds.value, applicationId]
+  isSavingStatusModal.value = true
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}/interview-status`, {
+      method: 'PATCH',
+      headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        status: nextStatus,
+        remark: String(remarkDraft.value || '').trim(),
+      }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (handleUnauthorizedResponse(response)) throw new Error('登入已失效，請重新登入')
+    if (!response.ok) throw new Error(data.message || '更新面試結果失敗')
+
+    await loadInterviews()
+    window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
+    window.dispatchEvent(new CustomEvent('hrai-interviews-updated'))
+    message.value = `已更新 ${activeApplication.value?.fullName || '候選人'} 的面試結果`
+    closeInterviewStatusModal()
+  } catch (error) {
+    statusModalError.value = error?.message || '更新面試結果失敗'
+    message.value = statusModalError.value
+  } finally {
+    isSavingStatusModal.value = false
+    savingIds.value = savingIds.value.filter((id) => id !== applicationId)
+  }
+}
+
 const updateInterviewStatus = async (row, nextValue) => {
   const applicationId = Number(row?.applicationId || 0)
   const nextStatus = normalizeInterviewStatus(nextValue, '')
@@ -134,6 +353,9 @@ const updateInterviewStatus = async (row, nextValue) => {
 }
 
 onMounted(loadInterviews)
+onBeforeUnmount(() => {
+  clearStatusPopoverTimer()
+})
 </script>
 
 <template>
@@ -202,15 +424,33 @@ onMounted(loadInterviews)
               <td>{{ getInterviewLocationLabel(row.interview?.location) || '--' }}</td>
               <td>{{ getUserName(row.ownerUser) }}</td>
               <td>
-                <span class="status-chip">{{ getCandidateApplicationStatusLabel(row.applicationStatus) }}</span>
+                <span
+                  class="status-cell-wrap"
+                  :class="{ 'popover-active': isStatusPopoverActive(row) }"
+                  @mouseenter="openStatusPopover(row, $event)"
+                  @mouseleave="scheduleStatusPopoverClose"
+                  @focusin="openStatusPopover(row, $event)"
+                  @focusout="scheduleStatusPopoverClose"
+                >
+                  <span
+                    class="status-chip"
+                    :class="getStatusToneClass(row.applicationStatus)"
+                    tabindex="0"
+                  >
+                    {{ getCandidateApplicationStatusLabel(row.applicationStatus) }}
+                  </span>
+                </span>
               </td>
               <td class="result-cell">
-                <AppSelect
-                  :model-value="row.interview?.status"
-                  :options="INTERVIEW_STATUS_OPTIONS"
+                <button
+                  type="button"
+                  class="result-chip"
+                  :class="`interview-${normalizeInterviewStatus(row.interview?.status)}`"
                   :disabled="!canEditInterviewStatus || isSaving(row.applicationId)"
-                  @update:model-value="updateInterviewStatus(row, $event)"
-                />
+                  @click="openInterviewStatusModal(row)"
+                >
+                  {{ isSaving(row.applicationId) ? '保存中...' : getInterviewStatusLabel(row.interview?.status) }}
+                </button>
               </td>
             </tr>
           </tbody>
@@ -221,6 +461,155 @@ onMounted(loadInterviews)
         暫無符合條件的安排面試。
       </p>
     </section>
+
+    <Teleport to="body">
+      <div
+        v-if="activeStatusPopoverRow"
+        class="status-history-popover"
+        role="tooltip"
+        :style="statusPopoverStyle"
+        @mouseenter="clearStatusPopoverTimer"
+        @mouseleave="scheduleStatusPopoverClose"
+      >
+        <p class="status-history-title">狀態記錄</p>
+        <ol class="status-history-list">
+          <li
+            v-for="(history, index) in getRowStatusHistory(activeStatusPopoverRow)"
+            :key="getStatusHistoryKey(history, index)"
+            :class="{ current: index === 0 }"
+          >
+            <span class="history-dot" aria-hidden="true"></span>
+            <span class="history-main">
+              <strong>{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</strong>
+              <em v-if="getInterviewSummaryParts(history).length">
+                面試資訊：{{ getInterviewSummaryText(history) }}
+              </em>
+              <span v-if="String(history.remark || '').trim()" class="history-remark">{{ history.remark }}</span>
+              <span class="history-meta-row">
+                <small>{{ formatDateTime(history.updatedAt || history.createdAt) }}</small>
+                <span class="history-operator">
+                  <span
+                    class="history-operator-avatar"
+                    :style="getStatusHistoryOperatorAvatarStyle(history)"
+                  >
+                    {{ getStatusHistoryOperatorAvatarText(history) }}
+                  </span>
+                  <span>{{ getStatusHistoryOperatorName(history) }}</span>
+                </span>
+              </span>
+            </span>
+          </li>
+        </ol>
+      </div>
+    </Teleport>
+
+    <div v-if="isStatusModalOpen" class="modal-backdrop" @click.self="closeInterviewStatusModal">
+      <section class="modal-panel interview-status-modal">
+        <header class="modal-header">
+          <div>
+            <h3>候選人狀態</h3>
+            <p class="subtle">
+              {{ activeApplication?.fullName || '候選人' }}
+              <template v-if="activeApplication?.jobPostTitle">｜{{ activeApplication.jobPostTitle }}</template>
+            </p>
+          </div>
+          <button type="button" class="ghost-btn" :disabled="isSavingStatusModal" @click="closeInterviewStatusModal">關閉</button>
+        </header>
+
+        <p v-if="isStatusDetailLoading" class="hint">讀取中...</p>
+        <p v-if="statusModalError" class="message">{{ statusModalError }}</p>
+
+        <template v-if="activeApplication">
+          <div class="status-modal-grid">
+            <section class="status-form-panel">
+              <div class="status-field-grid">
+                <label class="field">
+                  <span>候選人狀態</span>
+                  <AppSelect
+                    :model-value="activeApplication.applicationStatus"
+                    :options="CANDIDATE_APPLICATION_STATUS_OPTIONS"
+                    disabled
+                  />
+                </label>
+                <label class="field">
+                  <span>面試時間</span>
+                  <input :value="formatDateTime(activeApplication.interview?.scheduledAt)" disabled />
+                </label>
+                <label class="field">
+                  <span>面試時長</span>
+                  <input :value="getInterviewDurationLabel(activeApplication.interview?.durationMinutes)" disabled />
+                </label>
+                <label class="field">
+                  <span>面試官</span>
+                  <input :value="getUserName(activeApplication.interview?.interviewerUser)" disabled />
+                </label>
+                <label class="field">
+                  <span>面試地點</span>
+                  <input :value="getInterviewLocationLabel(activeApplication.interview?.location) || '--'" disabled />
+                </label>
+                <label class="field">
+                  <span>面試結果</span>
+                  <AppSelect
+                    v-model="interviewStatusDraft"
+                    :options="INTERVIEW_STATUS_OPTIONS"
+                    :disabled="isSavingStatusModal"
+                    placeholder="請選擇面試結果"
+                  />
+                </label>
+                <label class="field full-span">
+                  <span>備註</span>
+                  <textarea
+                    v-model.trim="remarkDraft"
+                    rows="4"
+                    :disabled="isSavingStatusModal"
+                    placeholder="輸入面試結果備註或跟進記錄"
+                  ></textarea>
+                </label>
+              </div>
+            </section>
+
+            <section class="status-history-section">
+              <h4>狀態記錄</h4>
+              <ol class="modal-status-history">
+                <li
+                  v-for="(history, index) in activeStatusHistory"
+                  :key="getStatusHistoryKey(history, index)"
+                  :class="{ current: index === 0 }"
+                >
+                  <span class="history-dot" aria-hidden="true"></span>
+                  <span class="history-main">
+                    <strong>{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</strong>
+                    <em v-if="getInterviewSummaryParts(history).length">
+                      面試資訊：{{ getInterviewSummaryText(history) }}
+                    </em>
+                    <span v-if="String(history.remark || '').trim()" class="history-remark">{{ history.remark }}</span>
+                    <span class="history-meta-row">
+                      <small>{{ formatDateTime(history.updatedAt || history.createdAt) }}</small>
+                      <span class="history-operator">
+                        <span
+                          class="history-operator-avatar"
+                          :style="getStatusHistoryOperatorAvatarStyle(history)"
+                        >
+                          {{ getStatusHistoryOperatorAvatarText(history) }}
+                        </span>
+                        <span>{{ getStatusHistoryOperatorName(history) }}</span>
+                      </span>
+                    </span>
+                  </span>
+                </li>
+              </ol>
+            </section>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="secondary-btn" :disabled="isSavingStatusModal" @click="closeInterviewStatusModal">取消</button>
+            <button type="button" class="primary-btn" :disabled="isSavingStatusModal" @click="saveInterviewStatusModal">
+              {{ isSavingStatusModal ? '保存中...' : '更新面試結果' }}
+            </button>
+          </div>
+        </template>
+      </section>
+    </div>
   </section>
 </template>
 
@@ -325,12 +714,334 @@ onMounted(loadInterviews)
 .status-chip {
   display: inline-flex;
   align-items: center;
+  gap: 0.42rem;
   min-height: 26px;
   padding: 0.18rem 0.55rem;
   border-radius: 999px;
   background: rgba(47, 111, 237, 0.12);
   color: #2f6fed;
   font-weight: 800;
+  outline: none;
+}
+
+.status-chip::before {
+  content: '';
+  width: 0.46rem;
+  height: 0.46rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.status-cell-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.status-cell-wrap.popover-active .status-chip,
+.status-chip:hover,
+.status-chip:focus-visible {
+  box-shadow: 0 8px 18px rgba(47, 111, 237, 0.12);
+}
+
+.status-tone-screening,
+.status-tone-screening_hr_approved,
+.status-tone-screening_hr_rejected,
+.status-tone-screening_department_approved,
+.status-tone-screening_department_rejected,
+.status-tone-hr_interview,
+.status-tone-hr_interview_rejected,
+.status-tone-department_interview,
+.status-tone-department_interview_rejected,
+.status-tone-salary_review,
+.status-tone-offer_sent,
+.status-tone-onboarded,
+.status-tone-no_show_or_unreachable,
+.status-tone-offer_rejected,
+.status-tone-hr_withdrew_onboarding,
+.status-tone-transferred {
+  background: rgba(47, 111, 237, 0.12);
+  color: #2f6fed;
+}
+
+.result-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 112px;
+  min-height: 34px;
+  padding: 0.36rem 0.78rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 850;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.result-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.result-chip:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.interview-passed {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.interview-in_progress {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.interview-failed {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.status-history-popover {
+  position: fixed;
+  z-index: 20000;
+  display: block;
+  overflow: auto;
+  padding: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 24px 54px rgba(15, 23, 42, 0.14),
+    0 8px 20px rgba(47, 111, 237, 0.08);
+  white-space: normal;
+}
+
+.status-history-title,
+.status-history-section h4 {
+  margin: 0 0 0.6rem;
+  color: var(--text-strong);
+  font-size: 0.9rem;
+  font-weight: 850;
+}
+
+.status-history-list,
+.modal-status-history {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status-history-list li,
+.modal-status-history li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.5rem;
+  color: var(--text-base);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.status-history-list li.current,
+.modal-status-history li.current {
+  color: var(--accent);
+}
+
+.history-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-top: 0.32rem;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+  opacity: 0.52;
+}
+
+li.current .history-dot {
+  background: currentColor;
+  opacity: 1;
+}
+
+.history-main {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.history-main strong {
+  color: var(--text-strong);
+  line-height: 1.35;
+}
+
+li.current .history-main strong {
+  color: var(--accent);
+}
+
+.history-main small,
+.history-main em,
+.history-operator {
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.history-remark {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--text-base);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.history-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.32rem 0.55rem;
+  min-width: 0;
+  padding-top: 0.18rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  text-align: right;
+}
+
+.history-operator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.history-operator-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.28rem;
+  height: 1.28rem;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.modal-panel {
+  width: min(1040px, 96vw);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 1rem;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: var(--shadow-lg);
+}
+
+.modal-header,
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.modal-header h3 {
+  margin: 0;
+  color: var(--text-strong);
+}
+
+.subtle,
+.hint {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted);
+}
+
+.interview-status-modal {
+  display: grid;
+  gap: 1rem;
+}
+
+.status-modal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.status-form-panel,
+.status-history-section {
+  min-width: 0;
+  padding: 0.95rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 18px;
+  background: #f8fafc;
+}
+
+.status-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.status-field-grid .field {
+  display: grid;
+  gap: 0.42rem;
+  min-width: 0;
+}
+
+.status-field-grid .field span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.status-field-grid input,
+.status-field-grid textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 12px;
+  color: var(--text-base);
+  background: #ffffff;
+  font: inherit;
+}
+
+.status-field-grid input:disabled {
+  color: var(--text-muted);
+  background: rgba(241, 245, 249, 0.86);
+}
+
+.status-field-grid textarea {
+  resize: vertical;
+}
+
+.full-span {
+  grid-column: 1 / -1;
+}
+
+.modal-actions {
+  justify-content: flex-end;
 }
 
 .empty-state {
@@ -349,6 +1060,11 @@ onMounted(loadInterviews)
   .tool-controls input,
   .status-filter {
     width: 100%;
+  }
+
+  .status-modal-grid,
+  .status-field-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
