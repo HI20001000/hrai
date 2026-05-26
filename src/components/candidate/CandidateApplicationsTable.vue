@@ -468,7 +468,12 @@ const ownerFilterOptions = computed(() => {
     const label = getOwnerUserName(row)
     if (!value || !label || seen.has(value)) continue
     seen.add(value)
-    options.push({ value, label })
+    options.push({
+      value,
+      label,
+      avatarText: getOwnerUserAvatarText(row),
+      avatarBgColor: owner?.avatarBgColor || '',
+    })
   }
 
   return [{ value: '', label: '全部' }, ...options]
@@ -516,6 +521,11 @@ const setColumnFilterValue = (key, value) => {
   }
 }
 
+const getColumnFilterOptionAvatarStyle = (option) => {
+  const color = String(option?.avatarBgColor || '').trim()
+  return { background: /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#64748b' }
+}
+
 const closeColumnFilter = () => {
   activeColumnFilter.value = ''
   columnFilterSearchKeyword.value = ''
@@ -536,9 +546,6 @@ const getColumnFilterButtonLabel = (key) => {
 }
 
 const getColumnFilterSearchPlaceholder = (key) => `搜尋${columnFilterLabels[key] || '欄位'}`
-
-const getColumnFilterAllOption = (key) =>
-  getColumnFilterOptions(key).find((option) => option.value === '') || { value: '', label: '全部' }
 
 const getVisibleColumnFilterOptions = (key) => {
   const keyword = normalizeSearchText(columnFilterSearchKeyword.value)
@@ -602,7 +609,15 @@ const toggleColumnFilter = async (key, event = null) => {
 
 const selectColumnFilterOption = (key, value) => {
   setColumnFilterValue(key, value)
+  columnFilterSearchKeyword.value = ''
   closeColumnFilter()
+}
+
+const updateColumnFilterSearchKeyword = (value) => {
+  columnFilterSearchKeyword.value = String(value || '').trim()
+  if (columnFilterSearchKeyword.value && activeColumnFilter.value) {
+    setColumnFilterValue(activeColumnFilter.value, '')
+  }
 }
 
 const handleColumnFilterPointerDown = (event) => {
@@ -1499,29 +1514,13 @@ onBeforeUnmount(() => {
           <span class="sr-only">{{ getColumnFilterSearchPlaceholder(activeColumnFilter) }}</span>
           <input
             ref="columnFilterSearchInput"
-            v-model.trim="columnFilterSearchKeyword"
+            :value="columnFilterSearchKeyword"
             type="search"
             :placeholder="getColumnFilterSearchPlaceholder(activeColumnFilter)"
             autocomplete="off"
+            @input="updateColumnFilterSearchKeyword($event.target.value)"
           />
         </label>
-        <button
-          type="button"
-          class="column-filter-option column-filter-all-option"
-          :class="{ selected: getColumnFilterValue(activeColumnFilter) === '' }"
-          role="option"
-          :aria-selected="getColumnFilterValue(activeColumnFilter) === '' ? 'true' : 'false'"
-          @click="selectColumnFilterOption(activeColumnFilter, '')"
-        >
-          <span>{{ getColumnFilterAllOption(activeColumnFilter).label }}</span>
-          <span
-            v-if="getColumnFilterValue(activeColumnFilter) === ''"
-            class="column-filter-check"
-            aria-hidden="true"
-          >
-            ✓
-          </span>
-        </button>
 
         <div class="column-filter-options">
           <button
@@ -1534,7 +1533,15 @@ onBeforeUnmount(() => {
             :aria-selected="option.value === getColumnFilterValue(activeColumnFilter) ? 'true' : 'false'"
             @click="selectColumnFilterOption(activeColumnFilter, option.value)"
           >
-            <span>{{ option.label }}</span>
+            <span
+              v-if="option.avatarText"
+              class="column-filter-avatar"
+              :style="getColumnFilterOptionAvatarStyle(option)"
+              aria-hidden="true"
+            >
+              {{ option.avatarText }}
+            </span>
+            <span class="column-filter-option-label">{{ option.label }}</span>
             <span
               v-if="option.value === getColumnFilterValue(activeColumnFilter)"
               class="column-filter-check"
@@ -1909,19 +1916,6 @@ onBeforeUnmount(() => {
     color 160ms ease;
 }
 
-.column-filter-all-option {
-  border-color: rgba(47, 111, 237, 0.14);
-  background: rgba(47, 111, 237, 0.08);
-  color: var(--accent);
-}
-
-.column-filter-all-option:hover,
-.column-filter-all-option:focus-visible,
-.column-filter-all-option.selected {
-  border-color: rgba(47, 111, 237, 0.28);
-  background: rgba(47, 111, 237, 0.14);
-}
-
 .column-filter-option:hover,
 .column-filter-option:focus-visible {
   outline: none;
@@ -1936,10 +1930,25 @@ onBeforeUnmount(() => {
   background: rgba(47, 111, 237, 0.12);
 }
 
-.column-filter-option span:first-child {
+.column-filter-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.column-filter-option-label {
   min-width: 0;
   overflow: hidden;
   overflow-wrap: anywhere;
+  margin-right: auto;
 }
 
 .column-filter-check {

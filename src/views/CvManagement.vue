@@ -198,6 +198,8 @@ const interviewerOptions = computed(() => [
   ...userOptions.value.map((user) => ({
     value: String(user.id),
     label: user.username || user.email || `用戶 #${user.id}`,
+    avatarText: user.avatarText || String(user.username || user.email || 'U').slice(0, 1).toUpperCase(),
+    avatarBgColor: user.avatarBgColor || '#64748b',
   })),
 ])
 

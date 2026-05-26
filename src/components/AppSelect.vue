@@ -38,12 +38,16 @@ const normalizedOptions = computed(() =>
       return {
         value: String(option.value ?? ''),
         label: String(option.label ?? option.value ?? ''),
+        avatarText: String(option.avatarText || '').trim(),
+        avatarBgColor: String(option.avatarBgColor || '').trim(),
       }
     }
 
     return {
       value: String(option ?? ''),
       label: String(option ?? ''),
+      avatarText: '',
+      avatarBgColor: '',
     }
   })
 )
@@ -55,6 +59,11 @@ const selectedIndex = computed(() =>
 const selectedOption = computed(() =>
   selectedIndex.value >= 0 ? normalizedOptions.value[selectedIndex.value] : null
 )
+
+const getOptionAvatarStyle = (option) => {
+  const color = String(option?.avatarBgColor || '').trim()
+  return { background: /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#64748b' }
+}
 
 const focusOptionAt = async (index) => {
   await nextTick()
@@ -196,6 +205,14 @@ onBeforeUnmount(() => {
       @keydown="handleTriggerKeydown"
     >
       <span class="app-select-copy">
+        <span
+          v-if="selectedOption?.avatarText"
+          class="app-select-avatar"
+          :style="getOptionAvatarStyle(selectedOption)"
+          aria-hidden="true"
+        >
+          {{ selectedOption.avatarText }}
+        </span>
         <span class="app-select-value">{{ selectedOption?.label || placeholder }}</span>
       </span>
       <span class="app-select-icon" aria-hidden="true"></span>
@@ -219,6 +236,14 @@ onBeforeUnmount(() => {
         @keydown="handleOptionKeydown($event, index, option.value)"
       >
         <span class="app-select-option-copy">
+          <span
+            v-if="option.avatarText"
+            class="app-select-avatar"
+            :style="getOptionAvatarStyle(option)"
+            aria-hidden="true"
+          >
+            {{ option.avatarText }}
+          </span>
           <span class="app-select-option-label">{{ option.label }}</span>
         </span>
         <span v-if="option.value === String(modelValue ?? '')" class="app-select-check" aria-hidden="true">✓</span>
@@ -288,9 +313,24 @@ onBeforeUnmount(() => {
 }
 
 .app-select-copy {
-  display: grid;
-  gap: 0.18rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   min-width: 0;
+}
+
+.app-select-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .app-select-value,
@@ -384,8 +424,9 @@ onBeforeUnmount(() => {
 }
 
 .app-select-option-copy {
-  display: grid;
-  gap: 0.18rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   min-width: 0;
 }
 

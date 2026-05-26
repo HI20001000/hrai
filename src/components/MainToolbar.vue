@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import titleLogoUrl from '../assets/web_icon.png'
 
 const props = defineProps({
@@ -17,7 +17,9 @@ const emit = defineEmits(['change-page'])
 
 const isMobileMenuOpen = ref(false)
 const isSettingsMenuOpen = ref(false)
+const currentTimeText = ref('')
 let settingsMenuCloseTimer = null
+let clockTimer = null
 
 const pageItems = [
   { key: 'reports', label: '職缺管理', description: '管理職缺與投遞', icon: 'briefcase' },
@@ -72,6 +74,14 @@ const displayAvatarBgColor = computed(() => {
   return /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#93a4bf'
 })
 
+const updateCurrentTime = () => {
+  const date = new Date()
+  const pad = (value) => String(value).padStart(2, '0')
+  currentTimeText.value =
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
 const selectPage = (key) => {
   emit('change-page', key === settingsItem.key ? settingsSubItems[0].key : key)
   isMobileMenuOpen.value = false
@@ -97,8 +107,14 @@ const scheduleSettingsMenuClose = () => {
   }, 220)
 }
 
+onMounted(() => {
+  updateCurrentTime()
+  clockTimer = window.setInterval(updateCurrentTime, 1000)
+})
+
 onBeforeUnmount(() => {
   clearSettingsMenuTimer()
+  if (clockTimer) window.clearInterval(clockTimer)
 })
 </script>
 
@@ -106,8 +122,19 @@ onBeforeUnmount(() => {
   <div class="toolbar-shell">
     <aside class="main-toolbar" aria-label="主要導覽">
       <div class="toolbar-brand">
-        <img class="brand-logo" :src="titleLogoUrl" alt="HR 系統標誌" />
-        <span class="brand-title">HR 系統</span>
+        <div class="brand-heading">
+          <img class="brand-logo" :src="titleLogoUrl" alt="HR 系統標誌" />
+          <span class="brand-title">HR 系統</span>
+        </div>
+        <div class="toolbar-user-card">
+          <div class="toolbar-user-line">
+            <span class="toolbar-user-avatar" :style="{ background: displayAvatarBgColor }">
+              {{ displayAvatarText }}
+            </span>
+            <strong>{{ displayUserName }}</strong>
+          </div>
+          <time>{{ currentTimeText }}</time>
+        </div>
       </div>
 
       <nav class="toolbar-nav" aria-label="頁面導覽">
@@ -273,7 +300,8 @@ onBeforeUnmount(() => {
   overflow: visible;
 }
 
-.toolbar-brand,
+.brand-heading,
+.toolbar-user-line,
 .nav-button,
 .mobile-header,
 .mobile-actions {
@@ -282,9 +310,44 @@ onBeforeUnmount(() => {
 }
 
 .toolbar-brand {
-  gap: 0.8rem;
+  display: grid;
+  gap: 0.78rem;
   padding: 0.45rem 0.35rem 1rem;
   border-bottom: 1px solid rgba(16, 24, 40, 0.08);
+}
+
+.brand-heading {
+  gap: 0.8rem;
+}
+
+.toolbar-user-card {
+  display: grid;
+  gap: 0.34rem;
+  padding: 0.72rem;
+  border: 1px solid rgba(16, 24, 40, 0.06);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.toolbar-user-line {
+  gap: 0.52rem;
+  min-width: 0;
+}
+
+.toolbar-user-line strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-user-card time {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .nav-copy {
@@ -327,6 +390,20 @@ onBeforeUnmount(() => {
   color: #ffffff;
   font-size: 0.96rem;
   font-weight: 700;
+}
+
+.toolbar-user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .toolbar-nav {
