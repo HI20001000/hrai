@@ -1580,72 +1580,90 @@ onUnmounted(() => {
               />
                 </label>
 
-                <template v-if="shouldShowInterviewFields">
-                  <label class="field">
-                <span>面試時間<span class="required-mark" aria-hidden="true">*</span></span>
-                <input
-                  v-model="interviewScheduledAtDraft"
-                  type="datetime-local"
-                  autocomplete="off"
-                  :disabled="isSavingStatusModal"
-                />
-                  </label>
-
-                  <label class="field duration-field">
-                    <span>面試時長</span>
-                    <AppSelect
-                      :model-value="interviewDurationModeDraft"
-                      :options="INTERVIEW_DURATION_PRESET_OPTIONS"
-                      placeholder="請選擇時長"
-                      :disabled="isSavingStatusModal"
-                      @update:model-value="handleDurationModeChange"
-                    />
-                    <input
-                      v-if="interviewDurationModeDraft === 'custom'"
-                      v-model="interviewDurationMinutesDraft"
-                      type="number"
-                      min="1"
-                      max="480"
-                      step="1"
-                      autocomplete="off"
-                      :disabled="isSavingStatusModal"
-                      placeholder="分鐘"
-                    />
-                  </label>
-
-                  <label class="field">
-                <span>面試官<span class="required-mark" aria-hidden="true">*</span></span>
-                <AppSelect
-                  :model-value="interviewerUserIdDraft"
-                  :options="interviewerOptions"
-                  placeholder="請選擇面試官"
-                  :disabled="isSavingStatusModal"
-                  @update:model-value="interviewerUserIdDraft = $event"
-                />
-                  </label>
-
-                  <label class="field">
-                <span>面試地點<span class="required-mark" aria-hidden="true">*</span></span>
-                <AppSelect
-                  :model-value="interviewLocationDraft"
-                  :options="[{ value: '', label: '未指定' }, ...INTERVIEW_LOCATION_OPTIONS]"
-                  placeholder="請選擇地點"
-                  :disabled="isSavingStatusModal"
-                  @update:model-value="interviewLocationDraft = $event"
-                />
-                  </label>
-
-                  <label class="field">
-                <span>面試狀態</span>
-                <AppSelect
-                  :model-value="interviewStatusDraft"
-                  :options="INTERVIEW_STATUS_OPTIONS"
-                  placeholder="請選擇面試狀態"
-                  :disabled="isSavingStatusModal"
-                  @update:model-value="interviewStatusDraft = $event"
-                />
-                  </label>
-                </template>
+                <div v-if="shouldShowInterviewFields" class="interview-arrangement-table-wrap full-span">
+                  <table class="application-table interview-arrangement-table">
+                    <thead>
+                      <tr>
+                        <th>安排項目</th>
+                        <th>內容</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <th scope="row">面試時間<span class="required-mark" aria-hidden="true">*</span></th>
+                        <td>
+                          <input
+                            v-model="interviewScheduledAtDraft"
+                            type="datetime-local"
+                            autocomplete="off"
+                            :disabled="isSavingStatusModal"
+                          />
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">面試時長</th>
+                        <td>
+                          <div class="interview-duration-controls">
+                            <AppSelect
+                              :model-value="interviewDurationModeDraft"
+                              :options="INTERVIEW_DURATION_PRESET_OPTIONS"
+                              placeholder="請選擇時長"
+                              :disabled="isSavingStatusModal"
+                              @update:model-value="handleDurationModeChange"
+                            />
+                            <input
+                              v-if="interviewDurationModeDraft === 'custom'"
+                              v-model="interviewDurationMinutesDraft"
+                              type="number"
+                              min="1"
+                              max="480"
+                              step="1"
+                              autocomplete="off"
+                              :disabled="isSavingStatusModal"
+                              placeholder="分鐘"
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">面試官<span class="required-mark" aria-hidden="true">*</span></th>
+                        <td>
+                          <AppSelect
+                            :model-value="interviewerUserIdDraft"
+                            :options="interviewerOptions"
+                            placeholder="請選擇面試官"
+                            :disabled="isSavingStatusModal"
+                            @update:model-value="interviewerUserIdDraft = $event"
+                          />
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">面試地點<span class="required-mark" aria-hidden="true">*</span></th>
+                        <td>
+                          <AppSelect
+                            :model-value="interviewLocationDraft"
+                            :options="[{ value: '', label: '未指定' }, ...INTERVIEW_LOCATION_OPTIONS]"
+                            placeholder="請選擇地點"
+                            :disabled="isSavingStatusModal"
+                            @update:model-value="interviewLocationDraft = $event"
+                          />
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">面試狀態</th>
+                        <td>
+                          <AppSelect
+                            :model-value="interviewStatusDraft"
+                            :options="INTERVIEW_STATUS_OPTIONS"
+                            placeholder="請選擇面試狀態"
+                            :disabled="isSavingStatusModal"
+                            @update:model-value="interviewStatusDraft = $event"
+                          />
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
 
                 <label class="field full-span">
               <span>備註</span>
@@ -2062,14 +2080,56 @@ onUnmounted(() => {
   gap: 0.9rem;
 }
 
-.duration-field {
-  gap: 0.5rem;
-}
-
 .required-mark {
   margin-left: 0.2rem;
   color: var(--danger);
   font-weight: 900;
+}
+
+.interview-arrangement-table-wrap {
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.interview-arrangement-table {
+  min-width: 560px;
+}
+
+.interview-arrangement-table th,
+.interview-arrangement-table td {
+  vertical-align: middle;
+}
+
+.interview-arrangement-table th[scope='row'] {
+  width: 160px;
+  color: var(--text-base);
+  background: rgba(245, 248, 252, 0.96);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.interview-arrangement-table td {
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.interview-arrangement-table input {
+  width: 100%;
+  min-height: 42px;
+}
+
+.interview-arrangement-table :deep(.app-select-trigger) {
+  min-height: 42px;
+  border-radius: 12px;
+}
+
+.interview-duration-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(100px, 140px);
+  gap: 0.6rem;
+  align-items: center;
 }
 
 .status-modal-editor textarea,
@@ -2412,6 +2472,14 @@ onUnmounted(() => {
   }
 
   .status-modal-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .interview-arrangement-table {
+    min-width: 460px;
+  }
+
+  .interview-duration-controls {
     grid-template-columns: 1fr;
   }
 }

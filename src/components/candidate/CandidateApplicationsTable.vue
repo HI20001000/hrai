@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
 import AppSelect from '../AppSelect.vue'
 import {
@@ -187,6 +187,8 @@ const activeStatusPopoverRow = ref(null)
 const statusPopoverStyle = ref({})
 let statusPopoverCloseTimer = null
 const activeColumnFilter = ref('')
+const columnFilterSearchKeyword = ref('')
+const columnFilterSearchInput = ref(null)
 const columnFilterMenuStyle = ref({})
 const columnFilterInstanceId = `candidate-filter-${Math.random().toString(36).slice(2)}`
 
@@ -516,6 +518,7 @@ const setColumnFilterValue = (key, value) => {
 
 const closeColumnFilter = () => {
   activeColumnFilter.value = ''
+  columnFilterSearchKeyword.value = ''
   columnFilterMenuStyle.value = {}
 }
 
@@ -532,6 +535,24 @@ const getColumnFilterButtonLabel = (key) => {
   return `${label}篩選：${selectedOption?.label || value}`
 }
 
+const getColumnFilterSearchPlaceholder = (key) => `搜尋${columnFilterLabels[key] || '欄位'}`
+
+const getColumnFilterAllOption = (key) =>
+  getColumnFilterOptions(key).find((option) => option.value === '') || { value: '', label: '全部' }
+
+const getVisibleColumnFilterOptions = (key) => {
+  const keyword = normalizeSearchText(columnFilterSearchKeyword.value)
+  const options = getColumnFilterOptions(key).filter((option) => option.value !== '')
+  if (!keyword) return options
+
+  return options.filter((option) =>
+    [option.label, option.value]
+      .map((item) => normalizeSearchText(item))
+      .join(' ')
+      .includes(keyword)
+  )
+}
+
 const buildColumnFilterMenuStyle = (target, key) => {
   if (!target || typeof target.getBoundingClientRect !== 'function') return {}
 
@@ -540,7 +561,7 @@ const buildColumnFilterMenuStyle = (target, key) => {
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768
   const margin = 12
   const gap = 8
-  const preferredWidth = key === 'status' ? 270 : 240
+  const preferredWidth = key === 'status' ? 340 : 320
   const width = Math.min(preferredWidth, Math.max(180, viewportWidth - margin * 2))
   const left = Math.min(
     Math.max(rect.right - width, margin),
@@ -548,8 +569,8 @@ const buildColumnFilterMenuStyle = (target, key) => {
   )
   const spaceBelow = viewportHeight - rect.bottom - gap - margin
   const spaceAbove = rect.top - gap - margin
-  const openAbove = spaceBelow < 190 && spaceAbove > spaceBelow
-  const maxHeight = Math.max(160, Math.min(320, openAbove ? spaceAbove : spaceBelow))
+  const openAbove = spaceBelow < 260 && spaceAbove > spaceBelow
+  const maxHeight = Math.max(220, Math.min(460, openAbove ? spaceAbove : spaceBelow))
 
   return openAbove
     ? {
@@ -566,14 +587,17 @@ const buildColumnFilterMenuStyle = (target, key) => {
       }
 }
 
-const toggleColumnFilter = (key, event = null) => {
+const toggleColumnFilter = async (key, event = null) => {
   if (activeColumnFilter.value === key) {
     closeColumnFilter()
     return
   }
 
   activeColumnFilter.value = key
+  columnFilterSearchKeyword.value = ''
   columnFilterMenuStyle.value = buildColumnFilterMenuStyle(event?.currentTarget, key)
+  await nextTick()
+  columnFilterSearchInput.value?.focus?.()
 }
 
 const selectColumnFilterOption = (key, value) => {
@@ -1471,27 +1495,60 @@ onBeforeUnmount(() => {
         role="listbox"
         :aria-label="getColumnFilterButtonLabel(activeColumnFilter)"
       >
+        <label class="column-filter-search">
+          <span class="sr-only">{{ getColumnFilterSearchPlaceholder(activeColumnFilter) }}</span>
+          <input
+            ref="columnFilterSearchInput"
+            v-model.trim="columnFilterSearchKeyword"
+            type="search"
+            :placeholder="getColumnFilterSearchPlaceholder(activeColumnFilter)"
+            autocomplete="off"
+          />
+        </label>
         <button
-          v-for="option in getColumnFilterOptions(activeColumnFilter)"
-          :key="`${activeColumnFilter}-${option.value}`"
           type="button"
-          class="column-filter-option"
-          :class="{ selected: option.value === getColumnFilterValue(activeColumnFilter) }"
+          class="column-filter-option column-filter-all-option"
+          :class="{ selected: getColumnFilterValue(activeColumnFilter) === '' }"
           role="option"
-          :aria-selected="option.value === getColumnFilterValue(activeColumnFilter) ? 'true' : 'false'"
-          @click="selectColumnFilterOption(activeColumnFilter, option.value)"
+          :aria-selected="getColumnFilterValue(activeColumnFilter) === '' ? 'true' : 'false'"
+          @click="selectColumnFilterOption(activeColumnFilter, '')"
         >
-          <span>{{ option.label }}</span>
+          <span>{{ getColumnFilterAllOption(activeColumnFilter).label }}</span>
           <span
-            v-if="option.value === getColumnFilterValue(activeColumnFilter)"
+            v-if="getColumnFilterValue(activeColumnFilter) === ''"
             class="column-filter-check"
             aria-hidden="true"
           >
             ✓
           </span>
         </button>
-        <div v-if="!getColumnFilterOptions(activeColumnFilter).length" class="column-filter-empty">
-          目前沒有可篩選選項
+
+        <div class="column-filter-options">
+          <button
+            v-for="option in getVisibleColumnFilterOptions(activeColumnFilter)"
+            :key="`${activeColumnFilter}-${option.value}`"
+            type="button"
+            class="column-filter-option"
+            :class="{ selected: option.value === getColumnFilterValue(activeColumnFilter) }"
+            role="option"
+            :aria-selected="option.value === getColumnFilterValue(activeColumnFilter) ? 'true' : 'false'"
+            @click="selectColumnFilterOption(activeColumnFilter, option.value)"
+          >
+            <span>{{ option.label }}</span>
+            <span
+              v-if="option.value === getColumnFilterValue(activeColumnFilter)"
+              class="column-filter-check"
+              aria-hidden="true"
+            >
+              ✓
+            </span>
+          </button>
+        </div>
+        <div
+          v-if="!getVisibleColumnFilterOptions(activeColumnFilter).length"
+          class="column-filter-empty"
+        >
+          沒有符合的選項
         </div>
       </div>
     </Teleport>
@@ -1790,8 +1847,8 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 240;
   display: grid;
-  gap: 0.28rem;
-  padding: 0.45rem;
+  gap: 0.4rem;
+  padding: 0.55rem;
   overflow-y: auto;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 12px;
@@ -1800,6 +1857,34 @@ onBeforeUnmount(() => {
     0 24px 54px rgba(15, 23, 42, 0.14),
     0 8px 20px rgba(47, 111, 237, 0.08);
   backdrop-filter: blur(18px);
+}
+
+.column-filter-search {
+  display: block;
+}
+
+.column-filter-search input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0.52rem 0.68rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 9px;
+  background: rgba(248, 250, 252, 0.96);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.column-filter-search input:focus {
+  outline: none;
+  border-color: rgba(47, 111, 237, 0.38);
+  box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.12);
+}
+
+.column-filter-options {
+  display: grid;
+  gap: 0.28rem;
 }
 
 .column-filter-option {
@@ -1822,6 +1907,19 @@ onBeforeUnmount(() => {
     background-color 160ms ease,
     border-color 160ms ease,
     color 160ms ease;
+}
+
+.column-filter-all-option {
+  border-color: rgba(47, 111, 237, 0.14);
+  background: rgba(47, 111, 237, 0.08);
+  color: var(--accent);
+}
+
+.column-filter-all-option:hover,
+.column-filter-all-option:focus-visible,
+.column-filter-all-option.selected {
+  border-color: rgba(47, 111, 237, 0.28);
+  background: rgba(47, 111, 237, 0.14);
 }
 
 .column-filter-option:hover,

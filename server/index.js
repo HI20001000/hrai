@@ -2218,7 +2218,7 @@ const APPLICATION_STATUS_VALUES = new Set([
 ])
 
 const FIRST_INTERVIEW_ARRANGEMENT_VALUES = new Set(['can_invite', 'unsuitable'])
-const INTERVIEW_LOCATION_VALUES = new Set(['zhuhai', 'macau'])
+const INTERVIEW_LOCATION_VALUES = new Set(['zhuhai', 'macau', 'online'])
 const INTERVIEW_STATUS_VALUES = new Set(['passed', 'in_progress', 'failed'])
 const DEFAULT_INTERVIEW_DURATION_MINUTES = 30
 const MIN_INTERVIEW_DURATION_MINUTES = 1

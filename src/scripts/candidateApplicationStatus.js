@@ -36,6 +36,7 @@ export const FIRST_INTERVIEW_ARRANGEMENT_OPTIONS = [
 export const INTERVIEW_LOCATION_OPTIONS = [
   { value: 'zhuhai', label: '珠海' },
   { value: 'macau', label: '澳門' },
+  { value: 'online', label: '線上' },
 ]
 
 export const INTERVIEW_STATUS_OPTIONS = [
