@@ -111,7 +111,13 @@ const loadApplications = async (jobPostId) => {
     const response = await fetch(`${apiBaseUrl}/api/job-posts/${jobPostId}/applications`)
     const data = await response.json()
     if (!response.ok) throw new Error(data.message || '讀取候選人清單失敗')
-    applications.value = Array.isArray(data.applications) ? data.applications : []
+    const jobPostTitle = String(data?.jobPost?.title || selectedJobPost.value?.title || '').trim()
+    applications.value = Array.isArray(data.applications)
+      ? data.applications.map((row) => ({
+          ...row,
+          jobPostTitle: row.jobPostTitle || jobPostTitle,
+        }))
+      : []
     const allowed = new Set(applications.value.map((row) => Number(row.applicationId)))
     selectedApplicationIds.value = selectedApplicationIds.value.filter((id) => allowed.has(Number(id)))
   } finally {
@@ -175,10 +181,14 @@ const saveJobPost = async () => {
     const method = isCreatingJobPost.value ? 'POST' : 'PUT'
     const response = await fetch(endpoint, {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload),
     })
     const data = await response.json()
+    if (handleUnauthorizedResponse(response)) {
+      message.value = '登入已失效，請重新登入'
+      return
+    }
     if (!response.ok) {
       message.value = data.message || '儲存職位失敗'
       return
@@ -218,8 +228,13 @@ const deleteSelectedJobPost = async () => {
     const deletingId = Number(selectedJobPost.value.id)
     const response = await fetch(`${apiBaseUrl}/api/job-posts/${deletingId}`, {
       method: 'DELETE',
+      headers: withAuthHeaders(),
     })
     const data = await response.json()
+    if (handleUnauthorizedResponse(response)) {
+      message.value = '登入已失效，請重新登入'
+      return
+    }
     if (!response.ok) {
       message.value = data.message || '刪除職位失敗'
       return
@@ -269,10 +284,14 @@ const deleteSelectedApplications = async () => {
   try {
     const response = await fetch(`${apiBaseUrl}/api/job-post-applications/batch-delete`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ applicationIds: selectedApplicationIds.value }),
     })
     const data = await response.json()
+    if (handleUnauthorizedResponse(response)) {
+      message.value = '登入已失效，請重新登入'
+      return
+    }
     if (!response.ok) {
       message.value = data.message || '批次刪除失敗'
       return
@@ -461,11 +480,15 @@ onUnmounted(() => {
           :deleting="isBulkDeleting"
           :paginated="true"
           :page-size="30"
+          :show-job-column="true"
+          :show-job-filter="true"
+          :show-status-filter="true"
+          :show-owner-filter="true"
           table-max-height="min(66vh, 760px)"
           title="目前職位候選人清單"
           :subtitle="selectedJobPost?.title || '請先選擇職位'"
           empty-text="尚無候選人資料"
-          search-placeholder="搜尋候選人 / 來源 / 對接人 / 狀態 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案"
+          search-placeholder="搜尋職位 / 候選人 / 來源 / 對接人 / 狀態 / 期望職位 / 匹配職位 / 電話 / 備註 / 檔案"
           @selection-change="selectedApplicationIds = $event"
           @delete-selected="deleteSelectedApplications"
           @rows-updated="handleApplicationsUpdated"

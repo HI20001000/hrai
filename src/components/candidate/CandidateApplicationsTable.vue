@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
 import AppSelect from '../AppSelect.vue'
 import {
@@ -180,6 +180,9 @@ const activeStatusPopoverKey = ref('')
 const activeStatusPopoverRow = ref(null)
 const statusPopoverStyle = ref({})
 let statusPopoverCloseTimer = null
+const activeColumnFilter = ref('')
+const columnFilterMenuStyle = ref({})
+const columnFilterInstanceId = `candidate-filter-${Math.random().toString(36).slice(2)}`
 
 const isPreviewOpen = ref(false)
 const previewTitle = ref('')
@@ -457,6 +460,123 @@ const ownerFilterOptions = computed(() => {
 
   return [{ value: '', label: '全部' }, ...options]
 })
+
+const columnFilterLabels = {
+  job: '職位',
+  status: '候選人狀態',
+  owner: '對接人',
+}
+
+const getColumnFilterOptions = (key) => {
+  if (key === 'job') return jobFilterOptions.value
+  if (key === 'status') return statusFilterOptions.value
+  if (key === 'owner') return ownerFilterOptions.value
+  return []
+}
+
+const getColumnFilterValue = (key) => {
+  if (key === 'job') return jobFilter.value
+  if (key === 'status') return statusFilter.value
+  if (key === 'owner') return ownerFilter.value
+  return ''
+}
+
+const setColumnFilterValue = (key, value) => {
+  const nextValue = String(value ?? '')
+  if (key === 'job') {
+    jobFilter.value = nextValue
+    return
+  }
+  if (key === 'status') {
+    statusFilter.value = nextValue
+    return
+  }
+  if (key === 'owner') {
+    ownerFilter.value = nextValue
+  }
+}
+
+const closeColumnFilter = () => {
+  activeColumnFilter.value = ''
+  columnFilterMenuStyle.value = {}
+}
+
+const isColumnFilterOpen = (key) => activeColumnFilter.value === key
+
+const isColumnFilterActive = (key) => Boolean(getColumnFilterValue(key))
+
+const getColumnFilterButtonLabel = (key) => {
+  const label = columnFilterLabels[key] || '欄位'
+  const value = getColumnFilterValue(key)
+  if (!value) return `篩選${label}`
+
+  const selectedOption = getColumnFilterOptions(key).find((option) => option.value === value)
+  return `${label}篩選：${selectedOption?.label || value}`
+}
+
+const buildColumnFilterMenuStyle = (target, key) => {
+  if (!target || typeof target.getBoundingClientRect !== 'function') return {}
+
+  const rect = target.getBoundingClientRect()
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768
+  const margin = 12
+  const gap = 8
+  const preferredWidth = key === 'status' ? 270 : 240
+  const width = Math.min(preferredWidth, Math.max(180, viewportWidth - margin * 2))
+  const left = Math.min(
+    Math.max(rect.right - width, margin),
+    Math.max(margin, viewportWidth - width - margin)
+  )
+  const spaceBelow = viewportHeight - rect.bottom - gap - margin
+  const spaceAbove = rect.top - gap - margin
+  const openAbove = spaceBelow < 190 && spaceAbove > spaceBelow
+  const maxHeight = Math.max(160, Math.min(320, openAbove ? spaceAbove : spaceBelow))
+
+  return openAbove
+    ? {
+        left: `${left}px`,
+        bottom: `${Math.max(margin, viewportHeight - rect.top + gap)}px`,
+        width: `${width}px`,
+        maxHeight: `${maxHeight}px`,
+      }
+    : {
+        left: `${left}px`,
+        top: `${Math.min(rect.bottom + gap, viewportHeight - margin)}px`,
+        width: `${width}px`,
+        maxHeight: `${maxHeight}px`,
+      }
+}
+
+const toggleColumnFilter = (key, event = null) => {
+  if (activeColumnFilter.value === key) {
+    closeColumnFilter()
+    return
+  }
+
+  activeColumnFilter.value = key
+  columnFilterMenuStyle.value = buildColumnFilterMenuStyle(event?.currentTarget, key)
+}
+
+const selectColumnFilterOption = (key, value) => {
+  setColumnFilterValue(key, value)
+  closeColumnFilter()
+}
+
+const handleColumnFilterPointerDown = (event) => {
+  if (!activeColumnFilter.value) return
+  const ownerNode = event.target?.closest?.('[data-filter-owner]')
+  if (ownerNode?.dataset?.filterOwner === columnFilterInstanceId) return
+  closeColumnFilter()
+}
+
+const handleColumnFilterKeydown = (event) => {
+  if (event.key === 'Escape') closeColumnFilter()
+}
+
+const handleColumnFilterViewportChange = () => {
+  if (activeColumnFilter.value) closeColumnFilter()
+}
 
 // 篩選條件採 AND 關係；關鍵字與 haystack 皆走簡繁 normalize，避免簡繁資料互搜漏命中。
 const filteredRows = computed(() => {
@@ -893,9 +1013,21 @@ const quickAddToBlacklist = async (row) => {
   }
 }
 
+onMounted(() => {
+  document.addEventListener('pointerdown', handleColumnFilterPointerDown)
+  document.addEventListener('keydown', handleColumnFilterKeydown)
+  window.addEventListener('resize', handleColumnFilterViewportChange)
+  window.addEventListener('scroll', handleColumnFilterViewportChange, true)
+})
+
 onBeforeUnmount(() => {
   clearStatusPopoverTimer()
   closeStatusPopover()
+  closeColumnFilter()
+  document.removeEventListener('pointerdown', handleColumnFilterPointerDown)
+  document.removeEventListener('keydown', handleColumnFilterKeydown)
+  window.removeEventListener('resize', handleColumnFilterViewportChange)
+  window.removeEventListener('scroll', handleColumnFilterViewportChange, true)
 })
 </script>
 
@@ -913,37 +1045,6 @@ onBeforeUnmount(() => {
           class="search-input"
           :placeholder="searchPlaceholder"
         />
-      </div>
-      <div v-if="showJobFilter || showStatusFilter || showOwnerFilter" class="table-filters">
-        <label v-if="showJobFilter" class="filter-control job-filter-control">
-          <span>職位篩選</span>
-          <AppSelect
-            v-model="jobFilter"
-            class="filter-select"
-            :options="jobFilterOptions"
-            placeholder="全部"
-            empty-text="目前沒有職位"
-          />
-        </label>
-        <label v-if="showStatusFilter" class="filter-control status-filter-control">
-          <span>候選人狀態篩選</span>
-          <AppSelect
-            v-model="statusFilter"
-            class="filter-select"
-            :options="statusFilterOptions"
-            placeholder="全部"
-          />
-        </label>
-        <label v-if="showOwnerFilter" class="filter-control owner-filter-control">
-          <span>對接人篩選</span>
-          <AppSelect
-            v-model="ownerFilter"
-            class="filter-select"
-            :options="ownerFilterOptions"
-            placeholder="全部"
-            empty-text="目前沒有對接人"
-          />
-        </label>
       </div>
       <div v-if="selectable" class="table-actions">
         <span class="selected-count-chip">已選 {{ selectedCount }}</span>
@@ -998,15 +1099,87 @@ onBeforeUnmount(() => {
       <table class="application-table">
         <thead>
           <tr>
-            <th v-if="showJobColumn" class="job-col">職位</th>
+            <th v-if="showJobColumn" class="job-col">
+              <div class="column-header">
+                <span class="column-title">職位</span>
+                <span
+                  v-if="showJobFilter"
+                  class="column-filter"
+                  :data-filter-owner="columnFilterInstanceId"
+                >
+                  <button
+                    type="button"
+                    class="column-filter-btn"
+                    :class="{ active: isColumnFilterActive('job'), open: isColumnFilterOpen('job') }"
+                    :aria-label="getColumnFilterButtonLabel('job')"
+                    :title="getColumnFilterButtonLabel('job')"
+                    aria-haspopup="listbox"
+                    :aria-expanded="isColumnFilterOpen('job') ? 'true' : 'false'"
+                    @click.stop="toggleColumnFilter('job', $event)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M4 5h16l-6.2 7.1v5.1l-3.6 1.8v-6.9L4 5Z" />
+                    </svg>
+                  </button>
+                </span>
+              </div>
+            </th>
             <th class="name-col">候選人名稱</th>
-            <th class="status-col">候選人狀態</th>
+            <th class="status-col">
+              <div class="column-header">
+                <span class="column-title">候選人狀態</span>
+                <span
+                  v-if="showStatusFilter"
+                  class="column-filter"
+                  :data-filter-owner="columnFilterInstanceId"
+                >
+                  <button
+                    type="button"
+                    class="column-filter-btn"
+                    :class="{ active: isColumnFilterActive('status'), open: isColumnFilterOpen('status') }"
+                    :aria-label="getColumnFilterButtonLabel('status')"
+                    :title="getColumnFilterButtonLabel('status')"
+                    aria-haspopup="listbox"
+                    :aria-expanded="isColumnFilterOpen('status') ? 'true' : 'false'"
+                    @click.stop="toggleColumnFilter('status', $event)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M4 5h16l-6.2 7.1v5.1l-3.6 1.8v-6.9L4 5Z" />
+                    </svg>
+                  </button>
+                </span>
+              </div>
+            </th>
             <th class="remark-col">備註</th>
             <th v-if="showTargetPositionColumn" class="position-col">期望職位</th>
             <th class="position-col">匹配職位</th>
             <th v-if="showPhoneColumn" class="phone-col">電話</th>
             <th class="source-col">CV 來源</th>
-            <th class="owner-col">對接人</th>
+            <th class="owner-col">
+              <div class="column-header">
+                <span class="column-title">對接人</span>
+                <span
+                  v-if="showOwnerFilter"
+                  class="column-filter"
+                  :data-filter-owner="columnFilterInstanceId"
+                >
+                  <button
+                    type="button"
+                    class="column-filter-btn"
+                    :class="{ active: isColumnFilterActive('owner'), open: isColumnFilterOpen('owner') }"
+                    :aria-label="getColumnFilterButtonLabel('owner')"
+                    :title="getColumnFilterButtonLabel('owner')"
+                    aria-haspopup="listbox"
+                    :aria-expanded="isColumnFilterOpen('owner') ? 'true' : 'false'"
+                    @click.stop="toggleColumnFilter('owner', $event)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M4 5h16l-6.2 7.1v5.1l-3.6 1.8v-6.9L4 5Z" />
+                    </svg>
+                  </button>
+                </span>
+              </div>
+            </th>
             <th class="file-col">CV檔案</th>
             <th class="file-col">AI分析檔案</th>
             <th class="time-col">投遞時間</th>
@@ -1231,6 +1404,40 @@ onBeforeUnmount(() => {
 
     <Teleport to="body">
       <div
+        v-if="activeColumnFilter"
+        class="column-filter-menu is-floating"
+        :style="columnFilterMenuStyle"
+        :data-filter-owner="columnFilterInstanceId"
+        role="listbox"
+        :aria-label="getColumnFilterButtonLabel(activeColumnFilter)"
+      >
+        <button
+          v-for="option in getColumnFilterOptions(activeColumnFilter)"
+          :key="`${activeColumnFilter}-${option.value}`"
+          type="button"
+          class="column-filter-option"
+          :class="{ selected: option.value === getColumnFilterValue(activeColumnFilter) }"
+          role="option"
+          :aria-selected="option.value === getColumnFilterValue(activeColumnFilter) ? 'true' : 'false'"
+          @click="selectColumnFilterOption(activeColumnFilter, option.value)"
+        >
+          <span>{{ option.label }}</span>
+          <span
+            v-if="option.value === getColumnFilterValue(activeColumnFilter)"
+            class="column-filter-check"
+            aria-hidden="true"
+          >
+            ✓
+          </span>
+        </button>
+        <div v-if="!getColumnFilterOptions(activeColumnFilter).length" class="column-filter-empty">
+          目前沒有可篩選選項
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
         v-if="statusActionable && activeStatusPopoverRow"
         class="status-history-popover is-floating"
         role="tooltip"
@@ -1312,76 +1519,6 @@ onBeforeUnmount(() => {
 
 .table-search-wrap .search-input {
   width: 100%;
-}
-
-.table-filters {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.85rem;
-  flex: 0 1 auto;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.filter-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  min-width: 0;
-  color: var(--text-base);
-  font-size: 0.84rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.filter-select {
-  width: 176px;
-}
-
-.status-filter-control .filter-select {
-  width: 196px;
-}
-
-.filter-control :deep(.app-select-trigger) {
-  min-height: 42px;
-  padding: 0.48rem 0.95rem 0.48rem 1rem;
-  border-color: rgba(151, 190, 126, 0.2);
-  border-radius: 999px;
-  background: rgba(226, 241, 216, 0.96);
-  box-shadow: none;
-}
-
-.filter-control :deep(.app-select-trigger:hover) {
-  border-color: rgba(116, 166, 86, 0.34);
-  background: rgba(218, 236, 205, 0.98);
-  box-shadow: none;
-}
-
-.filter-control :deep(.app-select-trigger:focus-visible) {
-  border-color: rgba(72, 139, 53, 0.36);
-  box-shadow: 0 0 0 4px rgba(72, 139, 53, 0.12);
-}
-
-.filter-control :deep(.app-select-value),
-.filter-control :deep(.app-select-option-label) {
-  color: var(--text-strong);
-  font-size: 0.84rem;
-  font-weight: 700;
-  line-height: 1.25;
-}
-
-.filter-control :deep(.app-select-icon) {
-  width: 0.48rem;
-  height: 0.48rem;
-  border-color: rgba(78, 153, 55, 0.8);
-}
-
-.filter-control :deep(.app-select-menu) {
-  min-width: 100%;
-  width: max-content;
-  max-width: 320px;
-  z-index: 120;
 }
 
 .table-actions {
@@ -1523,6 +1660,142 @@ onBeforeUnmount(() => {
   position: sticky;
   top: 0;
   z-index: 60;
+}
+
+.column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.column-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.column-filter {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.column-filter-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.column-filter-btn:hover,
+.column-filter-btn.open,
+.column-filter-btn.active {
+  border-color: rgba(47, 111, 237, 0.26);
+  color: var(--accent);
+  background: rgba(47, 111, 237, 0.1);
+}
+
+.column-filter-btn:hover {
+  transform: translateY(-1px);
+}
+
+.column-filter-btn:focus-visible {
+  outline: none;
+  border-color: rgba(47, 111, 237, 0.42);
+  box-shadow: var(--focus-ring);
+}
+
+.column-filter-btn svg {
+  width: 1rem;
+  height: 1rem;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.column-filter-menu {
+  position: fixed;
+  z-index: 240;
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.45rem;
+  overflow-y: auto;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 24px 54px rgba(15, 23, 42, 0.14),
+    0 8px 20px rgba(47, 111, 237, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.column-filter-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 38px;
+  padding: 0.52rem 0.62rem;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--text-base);
+  background: transparent;
+  text-align: left;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.column-filter-option:hover,
+.column-filter-option:focus-visible {
+  outline: none;
+  border-color: rgba(47, 111, 237, 0.14);
+  color: var(--accent);
+  background: rgba(47, 111, 237, 0.08);
+}
+
+.column-filter-option.selected {
+  border-color: rgba(47, 111, 237, 0.18);
+  color: var(--accent);
+  background: rgba(47, 111, 237, 0.12);
+}
+
+.column-filter-option span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.column-filter-check {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.column-filter-empty {
+  padding: 0.75rem 0.62rem;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 0.84rem;
+  font-weight: 700;
 }
 
 .job-col,
@@ -2292,23 +2565,14 @@ th.status-col {
 
 @media (max-width: 720px) {
   .card-header,
-  .table-filters,
   .table-actions {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .table-search-wrap,
-  .filter-select,
-  .status-filter-control .filter-select {
+  .table-search-wrap {
     width: 100%;
     min-width: 0;
-  }
-
-  .filter-control {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 0.35rem;
   }
 
   .table-pagination {
