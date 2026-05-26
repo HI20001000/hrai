@@ -209,6 +209,28 @@ const isInterviewStatusDraft = computed(() => isInterviewApplicationStatus(statu
 
 const shouldShowInterviewFields = computed(() => isInterviewStatusDraft.value)
 
+const missingInterviewRequiredFields = computed(() => {
+  if (!shouldShowInterviewFields.value) return []
+
+  return [
+    { label: '面試時間', missing: !String(interviewScheduledAtDraft.value || '').trim() },
+    { label: '面試官', missing: !String(interviewerUserIdDraft.value || '').trim() },
+    { label: '面試地點', missing: !String(interviewLocationDraft.value || '').trim() },
+  ]
+    .filter((field) => field.missing)
+    .map((field) => field.label)
+})
+
+const showMissingInterviewRequiredFieldsAlert = () => {
+  const labels = missingInterviewRequiredFields.value
+  if (!labels.length) return false
+
+  const missingText = labels.map((label) => `- ${label}`).join('\n')
+  window.alert(`請先填寫以下必填欄位：\n${missingText}`)
+  message.value = `請補充必填欄位：${labels.join('、')}`
+  return true
+}
+
 const availabilityDateLabel = computed(() => {
   const dateKey = getDateKeyFromDateTimeLocal(interviewScheduledAtDraft.value)
   if (!dateKey) return ''
@@ -555,11 +577,8 @@ const saveStatusModalChanges = async () => {
 
   const historyId = Number(editingStatusHistoryId.value || 0)
   const isInterviewStatus = isInterviewApplicationStatus(nextStatus)
-  if (isInterviewStatus) {
-    if (!interviewScheduledAtDraft.value || !interviewerUserIdDraft.value || !interviewLocationDraft.value) {
-      message.value = '請補充面試時間、面試官與面試地點'
-      return
-    }
+  if (isInterviewStatus && showMissingInterviewRequiredFieldsAlert()) {
+    return
   }
 
   const interviewPayload = isInterviewStatus
@@ -1525,7 +1544,6 @@ onUnmounted(() => {
           <div class="status-editor-header">
             <div>
               <h4>{{ statusModalEditorTitle }}</h4>
-              <p class="subtle">點選下方記錄可修改；未選記錄時會新增一筆狀態記錄。</p>
             </div>
             <div class="status-editor-actions">
               <button
@@ -1564,7 +1582,7 @@ onUnmounted(() => {
 
                 <template v-if="shouldShowInterviewFields">
                   <label class="field">
-                <span>面試時間</span>
+                <span>面試時間<span class="required-mark" aria-hidden="true">*</span></span>
                 <input
                   v-model="interviewScheduledAtDraft"
                   type="datetime-local"
@@ -1596,7 +1614,7 @@ onUnmounted(() => {
                   </label>
 
                   <label class="field">
-                <span>面試官</span>
+                <span>面試官<span class="required-mark" aria-hidden="true">*</span></span>
                 <AppSelect
                   :model-value="interviewerUserIdDraft"
                   :options="interviewerOptions"
@@ -1607,7 +1625,7 @@ onUnmounted(() => {
                   </label>
 
                   <label class="field">
-                <span>面試地點</span>
+                <span>面試地點<span class="required-mark" aria-hidden="true">*</span></span>
                 <AppSelect
                   :model-value="interviewLocationDraft"
                   :options="[{ value: '', label: '未指定' }, ...INTERVIEW_LOCATION_OPTIONS]"
@@ -2003,10 +2021,6 @@ onUnmounted(() => {
   font-size: 1rem;
 }
 
-.status-editor-header .subtle {
-  margin-top: 0.28rem;
-}
-
 .status-editor-actions {
   display: inline-flex;
   align-items: center;
@@ -2050,6 +2064,12 @@ onUnmounted(() => {
 
 .duration-field {
   gap: 0.5rem;
+}
+
+.required-mark {
+  margin-left: 0.2rem;
+  color: var(--danger);
+  font-weight: 900;
 }
 
 .status-modal-editor textarea,

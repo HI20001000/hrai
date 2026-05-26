@@ -11,6 +11,7 @@ import {
   normalizeCandidateApplicationStatus,
 } from '../../scripts/candidateApplicationStatus.js'
 import { normalizeSearchText } from '../../scripts/searchNormalize.js'
+import { CV_SOURCE_OPTIONS, normalizeCvSource } from '../../scripts/cvSource.js'
 import CandidateTextPreviewModal from './CandidateTextPreviewModal.vue'
 
 const props = defineProps({
@@ -87,6 +88,10 @@ const props = defineProps({
     default: false,
   },
   showOwnerFilter: {
+    type: Boolean,
+    default: true,
+  },
+  showSourceFilter: {
     type: Boolean,
     default: true,
   },
@@ -170,6 +175,7 @@ const searchKeyword = ref('')
 const statusFilter = ref('')
 const jobFilter = ref('')
 const ownerFilter = ref('')
+const sourceFilter = ref('')
 const currentPage = ref(1)
 const statusOverrides = ref({})
 const savingStatusIds = ref([])
@@ -431,6 +437,11 @@ const statusFilterOptions = computed(() => [
   ...CANDIDATE_APPLICATION_STATUS_OPTIONS,
 ])
 
+const sourceFilterOptions = computed(() => [
+  { value: '', label: '全部' },
+  ...CV_SOURCE_OPTIONS,
+])
+
 const jobFilterOptions = computed(() => {
   const seen = new Set()
   const options = []
@@ -465,12 +476,14 @@ const columnFilterLabels = {
   job: '職位',
   status: '候選人狀態',
   owner: '對接人',
+  source: 'CV 來源',
 }
 
 const getColumnFilterOptions = (key) => {
   if (key === 'job') return jobFilterOptions.value
   if (key === 'status') return statusFilterOptions.value
   if (key === 'owner') return ownerFilterOptions.value
+  if (key === 'source') return sourceFilterOptions.value
   return []
 }
 
@@ -478,6 +491,7 @@ const getColumnFilterValue = (key) => {
   if (key === 'job') return jobFilter.value
   if (key === 'status') return statusFilter.value
   if (key === 'owner') return ownerFilter.value
+  if (key === 'source') return sourceFilter.value
   return ''
 }
 
@@ -493,6 +507,10 @@ const setColumnFilterValue = (key, value) => {
   }
   if (key === 'owner') {
     ownerFilter.value = nextValue
+    return
+  }
+  if (key === 'source') {
+    sourceFilter.value = nextValue
   }
 }
 
@@ -567,6 +585,21 @@ const handleColumnFilterPointerDown = (event) => {
   if (!activeColumnFilter.value) return
   const ownerNode = event.target?.closest?.('[data-filter-owner]')
   if (ownerNode?.dataset?.filterOwner === columnFilterInstanceId) return
+
+  const menuNode = document.querySelector(
+    `.column-filter-menu[data-filter-owner="${columnFilterInstanceId}"]`
+  )
+  const rect = menuNode?.getBoundingClientRect?.()
+  if (
+    rect &&
+    event.clientX >= rect.left &&
+    event.clientX <= rect.right &&
+    event.clientY >= rect.top &&
+    event.clientY <= rect.bottom
+  ) {
+    return
+  }
+
   closeColumnFilter()
 }
 
@@ -584,6 +617,7 @@ const filteredRows = computed(() => {
   const selectedStatus = normalizeCandidateApplicationStatus(statusFilter.value, '')
   const selectedJob = normalizeFilterText(jobFilter.value)
   const selectedOwner = normalizeFilterText(ownerFilter.value)
+  const selectedSource = normalizeCvSource(sourceFilter.value)
 
   return displayRows.value.filter((row) => {
     if (
@@ -598,6 +632,10 @@ const filteredRows = computed(() => {
     }
 
     if (selectedOwner && String(row.ownerUser?.id || '') !== selectedOwner) {
+      return false
+    }
+
+    if (selectedSource && normalizeCvSource(row.source) !== selectedSource) {
       return false
     }
 
@@ -727,7 +765,7 @@ const goToPage = (page) => {
   currentPage.value = Math.max(1, Math.min(Number(page) || 1, totalPages.value))
 }
 
-watch([searchKeyword, statusFilter, jobFilter, ownerFilter], () => {
+watch([searchKeyword, statusFilter, jobFilter, ownerFilter, sourceFilter], () => {
   currentPage.value = 1
 })
 
@@ -1017,7 +1055,6 @@ onMounted(() => {
   document.addEventListener('pointerdown', handleColumnFilterPointerDown)
   document.addEventListener('keydown', handleColumnFilterKeydown)
   window.addEventListener('resize', handleColumnFilterViewportChange)
-  window.addEventListener('scroll', handleColumnFilterViewportChange, true)
 })
 
 onBeforeUnmount(() => {
@@ -1027,7 +1064,6 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handleColumnFilterPointerDown)
   document.removeEventListener('keydown', handleColumnFilterKeydown)
   window.removeEventListener('resize', handleColumnFilterViewportChange)
-  window.removeEventListener('scroll', handleColumnFilterViewportChange, true)
 })
 </script>
 
@@ -1154,7 +1190,31 @@ onBeforeUnmount(() => {
             <th v-if="showTargetPositionColumn" class="position-col">期望職位</th>
             <th class="position-col">匹配職位</th>
             <th v-if="showPhoneColumn" class="phone-col">電話</th>
-            <th class="source-col">CV 來源</th>
+            <th class="source-col">
+              <div class="column-header">
+                <span class="column-title">CV 來源</span>
+                <span
+                  v-if="showSourceFilter"
+                  class="column-filter"
+                  :data-filter-owner="columnFilterInstanceId"
+                >
+                  <button
+                    type="button"
+                    class="column-filter-btn"
+                    :class="{ active: isColumnFilterActive('source'), open: isColumnFilterOpen('source') }"
+                    :aria-label="getColumnFilterButtonLabel('source')"
+                    :title="getColumnFilterButtonLabel('source')"
+                    aria-haspopup="listbox"
+                    :aria-expanded="isColumnFilterOpen('source') ? 'true' : 'false'"
+                    @click.stop="toggleColumnFilter('source', $event)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M4 5h16l-6.2 7.1v5.1l-3.6 1.8v-6.9L4 5Z" />
+                    </svg>
+                  </button>
+                </span>
+              </div>
+            </th>
             <th class="owner-col">
               <div class="column-header">
                 <span class="column-title">對接人</span>
@@ -1986,7 +2046,7 @@ th.status-col {
 }
 
 .source-col {
-  min-width: 100px;
+  min-width: 132px;
 }
 
 .owner-col {

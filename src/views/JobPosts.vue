@@ -437,8 +437,7 @@ onUnmounted(() => {
             <input
               v-model.trim="jobPostForm.title"
               type="text"
-              :readonly="isCreatingJobPost"
-              :placeholder="isCreatingJobPost ? '建立時會跟隨職位字典自動同步' : '例如：澳門零售銀行客戶經理'"
+              placeholder="例如：澳門零售銀行客戶經理"
             />
           </label>
 
