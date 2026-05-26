@@ -17,6 +17,7 @@ const looksLikeJobEntry = (value) => {
     'certifications',
     'minWorkYears',
     'workYears',
+    'employmentGapLimitMonths',
     'candidatePreference',
     'salaryRange',
     'weights',

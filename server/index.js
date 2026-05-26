@@ -20,7 +20,12 @@ import {
   normalizeProjectExperiences,
 } from './scripts/llm/project-experiences.js'
 import { extractTextFromBuffer } from './scripts/llm/text-extractors.js'
-import { getJobDictionary, loadJobDictionary, saveJobDictionary } from './scripts/jobs/dictionary.js'
+import {
+  getJobDictionary,
+  loadJobDictionary,
+  normalizeEmploymentGapLimitMonths,
+  saveJobDictionary,
+} from './scripts/jobs/dictionary.js'
 import { matchCandidateToJobPost, matchCandidateToJobs } from './scripts/llm/job-matcher.js'
 import { suggestJobDictionaryDefinition } from './scripts/llm/job-dictionary-suggester.js'
 import { suggestJobScoringRubrics } from './scripts/llm/rubric-suggester.js'
@@ -2627,6 +2632,7 @@ const buildJobSnapshot = (jobKey, dictionaryJob = {}) => ({
   certifications: normalizeList(dictionaryJob?.certifications, 20),
   minWorkYears: Number(dictionaryJob?.minWorkYears ?? dictionaryJob?.workYears ?? 0),
   workYears: Number(dictionaryJob?.workYears ?? dictionaryJob?.minWorkYears ?? 0),
+  employmentGapLimitMonths: normalizeEmploymentGapLimitMonths(dictionaryJob?.employmentGapLimitMonths),
   candidatePreference: normalizeList(dictionaryJob?.candidatePreference, 20),
   salaryRange: {
     min: Number(dictionaryJob?.salaryRange?.min || 0),
@@ -3442,6 +3448,26 @@ const normalizeMatchDimensionEvaluations = (value) => {
     .filter((item) => item.dimensionKey)
 }
 
+const normalizeEmploymentGapReport = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const status = normalizeText(value.status)
+  const summary = normalizeText(value.summary)
+  const limitMonths = normalizeEmploymentGapLimitMonths(value.limitMonths)
+  const monthsValue = Number(value.months)
+  const months = Number.isFinite(monthsValue) ? Math.max(0, Math.round(monthsValue)) : null
+  const normalized = {
+    status: ['exceeded', 'within_limit', 'unknown'].includes(status) ? status : '',
+    exceeded: Boolean(value.exceeded),
+    months,
+    limitMonths,
+    latestEmploymentEnd: normalizeText(value.latestEmploymentEnd),
+    currentSystemMonth: normalizeText(value.currentSystemMonth),
+    durationLabel: normalizeText(value.durationLabel),
+    summary,
+  }
+  return normalized.summary || normalized.status || normalized.months !== null ? normalized : null
+}
+
 const listCandidateCvJobMatches = async (pool, candidateCvId) => {
   const [rows] = await pool.query(
     `SELECT
@@ -3461,18 +3487,22 @@ const listCandidateCvJobMatches = async (pool, candidateCvId) => {
     [candidateCvId]
   )
 
-  return rows.map((row) => ({
-    jobKey: normalizeText(row.jobKey),
-    jobTitle: normalizeText(row.jobTitle),
-    rankNo: Number(row.rankNo || 0),
-    matchScore: Number(row.matchScore || 0),
-    matchLevel: normalizeText(row.matchLevel) || 'medium',
-    reasonSummary: normalizeText(row.reasonSummary),
-    strengths: normalizeList(parseJsonObject(row.strengthsJson), 10),
-    gaps: normalizeList(parseJsonObject(row.gapsJson), 10),
-    dimensionEvaluations: normalizeMatchDimensionEvaluations(parseJsonObject(row.rawLlmJson)?.dimensionEvaluations),
-    createdAt: row.createdAt,
-  }))
+  return rows.map((row) => {
+    const rawLlm = parseJsonObject(row.rawLlmJson) || {}
+    return {
+      jobKey: normalizeText(row.jobKey),
+      jobTitle: normalizeText(row.jobTitle),
+      rankNo: Number(row.rankNo || 0),
+      matchScore: Number(row.matchScore || 0),
+      matchLevel: normalizeText(row.matchLevel) || 'medium',
+      reasonSummary: normalizeText(row.reasonSummary),
+      strengths: normalizeList(parseJsonObject(row.strengthsJson), 10),
+      gaps: normalizeList(parseJsonObject(row.gapsJson), 10),
+      employmentGap: normalizeEmploymentGapReport(rawLlm.employmentGap),
+      dimensionEvaluations: normalizeMatchDimensionEvaluations(rawLlm.dimensionEvaluations),
+      createdAt: row.createdAt,
+    }
+  })
 }
 
 const buildEmbeddedMatchReport = (match = null) => {
@@ -3498,6 +3528,7 @@ const buildEmbeddedMatchReport = (match = null) => {
     reasonSummary,
     strengths: normalizeList(match.strengths, 10),
     gaps: normalizeList(match.gaps, 10),
+    employmentGap: normalizeEmploymentGapReport(match.employmentGap),
     dimensionEvaluations: normalizeMatchDimensionEvaluations(match.dimensionEvaluations),
   }
 }

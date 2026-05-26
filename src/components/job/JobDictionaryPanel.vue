@@ -31,6 +31,7 @@ const isSuggestingRubrics = ref(false)
 
 const WEIGHT_FIELDS = SCORING_DIMENSIONS
 const LEVEL_FIELDS = SCORING_LEVELS
+const DEFAULT_EMPLOYMENT_GAP_LIMIT_MONTHS = 5
 
 const parseJsonSafe = (value) => {
   try {
@@ -41,6 +42,12 @@ const parseJsonSafe = (value) => {
 }
 
 const normalizeText = (value) => String(value ?? '').trim()
+
+const normalizeEmploymentGapLimitMonths = (value) => {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue) || numericValue < 0) return DEFAULT_EMPLOYMENT_GAP_LIMIT_MONTHS
+  return Math.round(numericValue)
+}
 
 const normalizeListText = (value) =>
   String(value ?? '')
@@ -61,6 +68,7 @@ const createEmptyJob = (title = '') => ({
   certifications: [],
   minWorkYears: 1,
   workYears: 1,
+  employmentGapLimitMonths: DEFAULT_EMPLOYMENT_GAP_LIMIT_MONTHS,
   candidatePreference: [],
   salaryRange: { min: 0, max: 0 },
   weights: Object.fromEntries(WEIGHT_FIELDS.map((field) => [field.key, field.defaultWeight])),
@@ -100,6 +108,7 @@ const buildJobDraft = (jobTitle, job) => {
     preferredSkillsText: (source.preferredSkills || []).join(', '),
     certificationsText: (source.certifications || []).join(', '),
     minWorkYears: String(workYears),
+    employmentGapLimitMonths: String(normalizeEmploymentGapLimitMonths(source.employmentGapLimitMonths)),
     candidatePreferenceText: (source.candidatePreference || []).join(', '),
     salaryMin: String(source?.salaryRange?.min ?? 0),
     salaryMax: String(source?.salaryRange?.max ?? 0),
@@ -124,6 +133,7 @@ const draftToJob = (draft) => {
     certifications: normalizeListText(draft?.certificationsText),
     minWorkYears: workYears,
     workYears,
+    employmentGapLimitMonths: normalizeEmploymentGapLimitMonths(draft?.employmentGapLimitMonths),
     candidatePreference: normalizeListText(draft?.candidatePreferenceText),
     salaryRange: {
       min: Number(draft?.salaryMin || 0),
@@ -209,6 +219,7 @@ const validateJobDraft = (jobTitle, nextJob, { validateRubrics = true } = {}) =>
   if (!nextJob.coreResponsibilities.length) throw new Error('核心職責至少需填 1 項')
   if (!nextJob.requiredSkills.length) throw new Error('必備技能至少需填 1 項')
   if (!Number.isFinite(nextJob.minWorkYears)) throw new Error('最低工作年資必須是數字')
+  if (!Number.isFinite(nextJob.employmentGapLimitMonths)) throw new Error('空窗期上限必須是數字')
   if (!Number.isFinite(nextJob.salaryRange.min) || !Number.isFinite(nextJob.salaryRange.max)) {
     throw new Error('薪資範圍必須是數字')
   }
@@ -634,6 +645,11 @@ onMounted(() => {
             <label class="field">
               <span>最低工作年資</span>
               <input v-model="jobDraft.minWorkYears" type="number" min="0" step="1" />
+            </label>
+
+            <label class="field">
+              <span>空窗期上限（月）</span>
+              <input v-model="jobDraft.employmentGapLimitMonths" type="number" min="0" step="1" />
             </label>
 
             <label class="field">

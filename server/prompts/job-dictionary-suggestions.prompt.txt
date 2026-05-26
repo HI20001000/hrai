@@ -17,6 +17,7 @@
     "certifications": ["string"],
     "minWorkYears": 0,
     "workYears": 0,
+    "employmentGapLimitMonths": 5,
     "candidatePreference": ["string"],
     "salaryRange": { "min": 0, "max": 0 },
     "weights": { "dimensionKeyFromInput": 0 },
@@ -35,4 +36,5 @@
 - 陣列欄位每項保持短句，避免空泛。
 - weights 必須使用 Input JSON dimensions 內的每個 key，值為 0 到 1 的小數，總和必須等於 1。
 - scoringRubrics 必須使用 Input JSON dimensions 內的每個 key；每個維度都必須包含 high、medium、low，criteria 必須可直接用於候選人匹配評分。
+- employmentGapLimitMonths 表示候選人最近一份正式工作離職後可接受的空窗期上限，單位為月；若無特別要求，輸出 5。
 - 若草稿已有明確資訊，優先保留並補齊缺失欄位。

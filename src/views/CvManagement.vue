@@ -1377,6 +1377,14 @@ onUnmounted(() => {
           </div>
 
           <section
+            v-if="activeApplication.match?.employmentGap?.summary"
+            class="match-breakdown-section"
+          >
+            <h3>空窗期</h3>
+            <p class="match-gap-summary">{{ activeApplication.match.employmentGap.summary }}</p>
+          </section>
+
+          <section
             v-if="activeApplication.dimensionEvaluations?.length || activeApplication.match?.dimensionEvaluations?.length"
             class="match-breakdown-section"
           >
@@ -1876,6 +1884,12 @@ onUnmounted(() => {
 
 .match-breakdown-section h3 {
   margin: 0;
+}
+
+.match-gap-summary {
+  margin: 0;
+  color: var(--text-base);
+  line-height: 1.6;
 }
 
 .detail-remark-cell {

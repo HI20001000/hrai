@@ -67,6 +67,7 @@ const readEmbeddedJobMatches = () => {
       reasonSummary: String(rawMatch.reasonSummary || '').trim(),
       strengths: Array.isArray(rawMatch.strengths) ? rawMatch.strengths : [],
       gaps: Array.isArray(rawMatch.gaps) ? rawMatch.gaps : [],
+      employmentGap: rawMatch.employmentGap && typeof rawMatch.employmentGap === 'object' ? rawMatch.employmentGap : null,
       dimensionEvaluations: Array.isArray(rawMatch.dimensionEvaluations) ? rawMatch.dimensionEvaluations : [],
     },
   ].filter((match) => match.jobKey || match.jobTitle || match.reasonSummary)
@@ -353,6 +354,7 @@ const saveAllEdits = async () => {
                         <p v-if="match.reasonSummary" class="match-summary">{{ match.reasonSummary }}</p>
                         <p v-if="match.strengths?.length" class="match-list"><span>優勢：</span>{{ match.strengths.join('、') }}</p>
                         <p v-if="match.gaps?.length" class="match-list"><span>缺口：</span>{{ match.gaps.join('、') }}</p>
+                        <p v-if="match.employmentGap?.summary" class="match-list"><span>空窗期：</span>{{ match.employmentGap.summary }}</p>
                         <MatchDimensionBreakdown :evaluations="match.dimensionEvaluations || []" />
                       </td>
                     </tr>

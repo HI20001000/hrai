@@ -7,6 +7,7 @@ import {
   buildProjectExperienceDurationLabels,
   buildProjectExperiencesSummary,
   normalizeProjectExperiences,
+  parseProjectDurationRange,
 } from './project-experiences.js'
 import {
   SCORING_DIMENSIONS,
@@ -38,9 +39,180 @@ const normalizeList = (value, limit = 20) => {
 
 const normalizeScore = (value) => Math.max(0, Math.min(100, Math.round(Number(value || 0))))
 const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value)
+const DEFAULT_EMPLOYMENT_GAP_LIMIT_MONTHS = 5
 
 const getJobOutputKey = (dictionaryKey, job = {}) => normalizeText(job?.jobKey) || normalizeText(dictionaryKey)
 const getJobTitle = (dictionaryKey, job = {}) => normalizeText(job?.title) || normalizeText(dictionaryKey)
+const normalizeEmploymentGapLimitMonths = (value) => {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue) || numericValue < 0) return DEFAULT_EMPLOYMENT_GAP_LIMIT_MONTHS
+  return Math.round(numericValue)
+}
+
+const getCurrentMonthIndex = (date = new Date()) => {
+  const source = date instanceof Date ? date : new Date(date)
+  const safeDate = Number.isNaN(source.getTime()) ? new Date() : source
+  return safeDate.getFullYear() * 12 + safeDate.getMonth() + 1
+}
+
+const formatYearMonthLabel = (monthIndex) => {
+  if (!Number.isInteger(monthIndex) || monthIndex <= 0) return ''
+  const year = Math.floor((monthIndex - 1) / 12)
+  const month = ((monthIndex - 1) % 12) + 1
+  return `${year}-${String(month).padStart(2, '0')}`
+}
+
+const formatDurationMonthsLabel = (months) => {
+  const numericMonths = Number(months)
+  if (!Number.isInteger(numericMonths) || numericMonths < 0) return ''
+  if (numericMonths === 0) return '0個月'
+  if (numericMonths < 12) return `${numericMonths}個月`
+  const years = Math.floor(numericMonths / 12)
+  const remainingMonths = numericMonths % 12
+  return remainingMonths > 0 ? `${years}年${remainingMonths}個月` : `${years}年`
+}
+
+const normalizeCvYear = (value) => {
+  const numericYear = Number(value)
+  if (!Number.isInteger(numericYear)) return null
+  if (numericYear >= 1000) return numericYear
+  if (numericYear < 0 || numericYear > 99) return null
+  return numericYear >= 70 ? 1900 + numericYear : 2000 + numericYear
+}
+
+const parseEmploymentYearMonthToken = (value) => {
+  const text = normalizeText(value)
+  if (!text) return null
+  if (/^(至今|現在|现在|現今|现今|目前|present|current|now)$/i.test(text)) return { monthIndex: getCurrentMonthIndex() }
+
+  let match = text.match(/^(\d{4}|\d{2})[./-](\d{1,2})$/)
+  if (match) {
+    const year = normalizeCvYear(match[1])
+    const month = Number(match[2])
+    if (year && month >= 1 && month <= 12) return { monthIndex: year * 12 + month }
+  }
+
+  match = text.match(/^(\d{4}|\d{2})\s*年\s*(\d{1,2})\s*月?$/)
+  if (match) {
+    const year = normalizeCvYear(match[1])
+    const month = Number(match[2])
+    if (year && month >= 1 && month <= 12) return { monthIndex: year * 12 + month }
+  }
+
+  match = text.match(/^(\d{4})$/)
+  if (match) {
+    const year = normalizeCvYear(match[1])
+    if (year) return { monthIndex: year * 12 + 12 }
+  }
+
+  return null
+}
+
+const parseEmploymentDurationRange = (value) => {
+  const text = normalizeText(value)
+  if (!text) return null
+
+  const parsedProjectRange = parseProjectDurationRange(text)
+  if (parsedProjectRange) return parsedProjectRange
+
+  const dateToken = String.raw`(?:\d{4}|\d{2})(?:[./-]\d{1,2}|\s*年\s*\d{1,2}\s*月?)?|\d{4}`
+  const presentToken = String.raw`至今|現在|现在|現今|现今|目前|present|current|now`
+  const match = text.match(new RegExp(`(${dateToken})\\s*(?:-|~|–|—|至|到|to)\\s*(${presentToken}|${dateToken})`, 'i'))
+  if (!match) return null
+
+  const start = parseEmploymentYearMonthToken(match[1])
+  const end = parseEmploymentYearMonthToken(match[2])
+  if (!start || !end || end.monthIndex < start.monthIndex) return null
+  return { startMonth: start.monthIndex, endMonth: end.monthIndex }
+}
+
+const parseEmploymentEndMonth = (value) => {
+  const range = parseEmploymentDurationRange(value)
+  if (range) return range.endMonth
+
+  const text = normalizeText(value)
+  if (!text || !/(離職|离职|結束|结束|完結|完结|left|ended|end date)/i.test(text)) return null
+  const datePattern = /(\d{4}|\d{2})(?:[./-](\d{1,2})|\s*年\s*(\d{1,2})\s*月?)/g
+  let latest = null
+  for (const match of text.matchAll(datePattern)) {
+    const year = normalizeCvYear(match[1])
+    const month = Number(match[2] || match[3])
+    if (!year || month < 1 || month > 12) continue
+    const monthIndex = year * 12 + month
+    if (!latest || monthIndex > latest) latest = monthIndex
+  }
+  return latest
+}
+
+const findLatestCompanyEmploymentEndMonth = (extracted = {}) => {
+  const profile = extracted?.profile && typeof extracted.profile === 'object' ? extracted.profile : {}
+  const groups = normalizeProjectExperiences(profile.projectExperiences)
+  let latest = null
+
+  for (const group of groups) {
+    if (group.groupType !== 'company') continue
+    for (const project of group.projects || []) {
+      const endMonth = parseEmploymentEndMonth(project.durationText)
+      if (!Number.isInteger(endMonth)) continue
+      if (!latest || endMonth > latest.endMonth) {
+        latest = {
+          companyName: normalizeText(group.companyName),
+          projectName: normalizeText(project.projectName),
+          durationText: normalizeText(project.durationText),
+          endMonth,
+        }
+      }
+    }
+  }
+
+  return latest
+}
+
+const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) => {
+  const limitMonths = normalizeEmploymentGapLimitMonths(job?.employmentGapLimitMonths)
+  const currentMonth = getCurrentMonthIndex(now)
+  const latestEmployment = findLatestCompanyEmploymentEndMonth(extracted)
+
+  if (!latestEmployment) {
+    return {
+      status: 'unknown',
+      exceeded: false,
+      months: null,
+      limitMonths,
+      latestEmploymentEnd: '',
+      currentSystemMonth: formatYearMonthLabel(currentMonth),
+      durationLabel: '',
+      summary: `未能從 CV 中識別最近一份正式工作的離職月份，暫無法判定是否超過職位字典設定的 ${limitMonths} 個月空窗期上限。`,
+    }
+  }
+
+  const gapMonths = Math.max(0, currentMonth - latestEmployment.endMonth)
+  const durationLabel = formatDurationMonthsLabel(gapMonths)
+  const latestEmploymentEnd = formatYearMonthLabel(latestEmployment.endMonth)
+  const currentSystemMonth = formatYearMonthLabel(currentMonth)
+  const exceeded = gapMonths > limitMonths
+  const base = {
+    status: exceeded ? 'exceeded' : 'within_limit',
+    exceeded,
+    months: gapMonths,
+    limitMonths,
+    latestEmploymentEnd,
+    currentSystemMonth,
+    durationLabel,
+  }
+
+  if (exceeded) {
+    return {
+      ...base,
+      summary: `候選人最近一份正式工作於 ${latestEmploymentEnd} 結束，截至 ${currentSystemMonth} 已有 ${durationLabel} 空窗期，超過職位字典設定的 ${limitMonths} 個月上限，建議面試中確認離職原因、期間安排與技能保持情況。`,
+    }
+  }
+
+  return {
+    ...base,
+    summary: `候選人最近一份正式工作距今空窗期為 ${durationLabel}，未超過職位字典設定的 ${limitMonths} 個月上限，暫不構成空窗期風險，仍可在面試中簡要確認近期安排。`,
+  }
+}
 
 const findDictionaryJobKey = (dictionary, requestedKey) => {
   const normalizedKey = normalizeText(requestedKey)
@@ -236,6 +408,7 @@ export const buildJobIndex = (dictionary = {}) =>
     projectExperience: normalizeList(job?.projectExperience, 10),
     certifications: normalizeList(job?.certifications, 10),
     workYears: Number(job?.workYears ?? job?.minWorkYears ?? 0),
+    employmentGapLimitMonths: normalizeEmploymentGapLimitMonths(job?.employmentGapLimitMonths),
   }))
 
 export const buildFullJobCards = (dictionary = {}, jobKeys = []) =>
@@ -256,6 +429,7 @@ export const buildFullJobCards = (dictionary = {}, jobKeys = []) =>
         certifications: normalizeList(job.certifications, 10),
         minWorkYears: Number(job.minWorkYears ?? job.workYears ?? 0),
         workYears: Number(job.workYears ?? job.minWorkYears ?? 0),
+        employmentGapLimitMonths: normalizeEmploymentGapLimitMonths(job.employmentGapLimitMonths),
         candidatePreference: normalizeList(job.candidatePreference, 10),
         salaryRange: {
           min: Number(job?.salaryRange?.min || 0),
@@ -283,6 +457,7 @@ export const buildSingleJobCard = (jobSnapshot = {}) => {
     certifications: normalizeList(snapshot.certifications, 10),
     minWorkYears: Number(snapshot.minWorkYears ?? snapshot.workYears ?? 0),
     workYears: Number(snapshot.workYears ?? snapshot.minWorkYears ?? 0),
+    employmentGapLimitMonths: normalizeEmploymentGapLimitMonths(snapshot.employmentGapLimitMonths),
     candidatePreference: normalizeList(snapshot.candidatePreference, 10),
     salaryRange: {
       min: Number(snapshot?.salaryRange?.min || 0),
@@ -314,7 +489,7 @@ const normalizeMatchLevel = (value) => {
   return 'medium'
 }
 
-const normalizeRankedJobs = (payload, dictionary) => {
+const normalizeRankedJobs = (payload, dictionary, extracted = {}) => {
   const jobs = Array.isArray(payload?.rankedJobs) ? payload.rankedJobs : []
   const deduped = []
   const seen = new Set()
@@ -335,6 +510,7 @@ const normalizeRankedJobs = (payload, dictionary) => {
       matchLevel: scoring.matchLevel,
       strengths: normalizeList(item?.strengths, 3),
       gaps: normalizeList(item?.gaps, 3),
+      employmentGap: buildEmploymentGapReport(extracted, job),
       reasonSummary: normalizeText(item?.reasonSummary),
       dimensionEvaluations: scoring.dimensionEvaluations,
     })
@@ -373,7 +549,7 @@ export const matchCandidateToJobs = async (extracted, dictionary) => {
   )
   const rerankPayload = parseRequiredJsonObject(rerankContent, 'Rerank')
   validateRankedPayload(rerankPayload, dictionary)
-  return normalizeRankedJobs(rerankPayload, dictionary)
+  return normalizeRankedJobs(rerankPayload, dictionary, extracted)
 }
 
 export const matchCandidateToJobPost = async (extracted, jobSnapshot) => {
@@ -407,6 +583,7 @@ export const matchCandidateToJobPost = async (extracted, jobSnapshot) => {
     matchLevel: scoring.matchLevel,
     strengths: normalizeList(payload.strengths, 3),
     gaps: normalizeList(payload.gaps, 3),
+    employmentGap: buildEmploymentGapReport(extracted, job),
     reasonSummary: normalizeText(payload.reasonSummary),
     dimensionEvaluations: scoring.dimensionEvaluations,
   }

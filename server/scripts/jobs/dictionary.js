@@ -23,11 +23,14 @@ const REQUIRED_JOB_FIELDS = [
   'certifications',
   'minWorkYears',
   'workYears',
+  'employmentGapLimitMonths',
   'candidatePreference',
   'salaryRange',
   'weights',
   'scoringRubrics',
 ]
+
+export const DEFAULT_EMPLOYMENT_GAP_LIMIT_MONTHS = 5
 
 let jobDictionaryCache = null
 
@@ -49,6 +52,7 @@ const FIELD_LABELS = {
   companyExperience: '公司經歷',
   internshipExperience: '實習經歷',
   workYears: '工作年資',
+  employmentGapLimitMonths: '空窗期上限（月）',
   candidatePreference: '候選人偏好',
 }
 
@@ -72,6 +76,12 @@ const ensureNumber = (value, fieldName, jobTitle) => {
 const normalizeStringArray = (value) =>
   Array.isArray(value) ? value.map((item) => normalizeText(item)).filter(Boolean) : value
 
+export const normalizeEmploymentGapLimitMonths = (value) => {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue) || numericValue < 0) return DEFAULT_EMPLOYMENT_GAP_LIMIT_MONTHS
+  return Math.round(numericValue)
+}
+
 const normalizeJobDefinition = (jobTitle, job = {}, fallbackJobKey = '') => {
   const workYears = Number(job.workYears ?? job.minWorkYears ?? 0)
 
@@ -88,6 +98,7 @@ const normalizeJobDefinition = (jobTitle, job = {}, fallbackJobKey = '') => {
     certifications: normalizeStringArray(job.certifications || []),
     minWorkYears: workYears,
     workYears,
+    employmentGapLimitMonths: normalizeEmploymentGapLimitMonths(job.employmentGapLimitMonths),
     candidatePreference: normalizeStringArray(job.candidatePreference || []),
     salaryRange: {
       min: Number(job?.salaryRange?.min || 0),
@@ -150,6 +161,7 @@ export const validateJobDictionary = (dictionary) => {
 
     ensureNumber(job.minWorkYears, 'minWorkYears', jobTitle)
     ensureNumber(job.workYears, 'workYears', jobTitle)
+    ensureNumber(job.employmentGapLimitMonths, 'employmentGapLimitMonths', jobTitle)
     if (!isPlainObject(job.salaryRange)) throw new Error(`職位「${jobTitle}」的薪資範圍必須是物件`)
     ensureNumber(job.salaryRange.min, 'salaryRange.min', jobTitle)
     ensureNumber(job.salaryRange.max, 'salaryRange.max', jobTitle)

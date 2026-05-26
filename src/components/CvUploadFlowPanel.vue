@@ -1467,6 +1467,7 @@ const clearBatchQueueLegacy = () => {
         <p><strong>匹配職位：</strong>{{ singleMatchResult?.application?.matchedPosition || singleMatchResult?.jobPost?.matchedPosition || '--' }}</p>
         <p><strong>匹配分數：</strong>{{ singleMatchResult?.application?.matchedScore ?? singleMatchResult?.match?.matchScore ?? '--' }}</p>
         <p><strong>匹配等級：</strong>{{ singleMatchResult?.application?.matchedLevel || singleMatchResult?.match?.matchLevel || '--' }}</p>
+        <p v-if="singleMatchResult?.match?.employmentGap?.summary"><strong>空窗期：</strong>{{ singleMatchResult.match.employmentGap.summary }}</p>
         <p><strong>投遞編號：</strong>{{ singleMatchResult?.application?.id || '--' }}</p>
         <MatchDimensionBreakdown :evaluations="singleMatchResult?.match?.dimensionEvaluations || []" />
       </div>
