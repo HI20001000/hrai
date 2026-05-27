@@ -375,7 +375,7 @@ onBeforeUnmount(() => {
     <header class="page-header">
       <div>
         <h2>面試管理</h2>
-        <p>集中查看與我相關的已安排面試，並直接更新面試結果。</p>
+        <p>集中查看全系統已安排面試，並直接更新面試結果。</p>
       </div>
       <button type="button" class="secondary-btn" :disabled="isLoading" @click="loadInterviews">
         {{ isLoading ? '刷新中...' : '刷新' }}

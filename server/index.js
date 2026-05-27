@@ -4633,7 +4633,7 @@ const listArrangedInterviews = async (pool, req, res) => {
     return
   }
 
-  const rows = await listScheduledInterviewHistoryApplicationRows(pool, { currentUserId: Number(user.id) })
+  const rows = await listScheduledInterviewHistoryApplicationRows(pool)
 
   const statusHistories = await listJobPostApplicationStatusHistories(
     pool,
