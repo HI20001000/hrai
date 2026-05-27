@@ -4494,13 +4494,18 @@ const hasInterviewScheduleChanged = (existing = {}, interview = {}) => {
 }
 
 const buildScheduleApplicationPayload = (row = {}, statusHistory = []) => ({
+  rowId: row.statusHistoryId
+    ? `history-${Number(row.statusHistoryId)}`
+    : `application-${Number(row.applicationId)}`,
+  statusHistoryId: Number(row.statusHistoryId || 0),
   applicationId: Number(row.applicationId),
   applicationStatus: normalizeApplicationStatus(row.applicationStatus),
   firstInterviewArrangement: normalizeFirstInterviewArrangement(row.firstInterviewArrangement),
   interview: buildInterviewPayload(row),
   remark: normalizeText(row.remark),
   ownerUser: buildOwnerUserPayload(row),
-  createdAt: row.createdAt,
+  createdAt: row.statusCreatedAt || row.createdAt,
+  updatedAt: row.statusUpdatedAt || row.updatedAt,
   jobPostId: Number(row.jobPostId),
   jobPostTitle: normalizeText(row.jobPostTitle),
   candidateId: Number(row.candidateId),
@@ -4513,36 +4518,35 @@ const buildScheduleApplicationPayload = (row = {}, statusHistory = []) => ({
   statusHistory: Array.isArray(statusHistory) ? statusHistory : [],
 })
 
-const listScheduleInterviews = async (pool, req, res, url) => {
-  const user = await getAuthedUser(pool, req)
-  if (!user) {
-    sendJson(res, 401, { message: 'Unauthorized' })
-    return
-  }
-
-  const currentUserId = Number(user.id)
-  const month = parseScheduleMonth(url.searchParams.get('month'))
+const listScheduledInterviewHistoryApplicationRows = async (pool, { currentUserId = 0 } = {}) => {
+  const userId = Number(currentUserId || 0)
+  const userFilter = userId ? 'AND (app.owner_user_id = ? OR history.interviewer_user_id = ?)' : ''
+  const params = userId ? [userId, userId] : []
   const [rows] = await pool.query(
     `SELECT
+        history.id AS statusHistoryId,
         app.id AS applicationId,
-        app.application_status AS applicationStatus,
-        app.first_interview_arrangement AS firstInterviewArrangement,
-        app.interview_scheduled_at AS interviewScheduledAt,
-        app.interview_duration_minutes AS interviewDurationMinutes,
-        app.interviewer_user_id AS interviewerUserId,
+        history.application_status AS applicationStatus,
+        history.first_interview_arrangement AS firstInterviewArrangement,
+        history.interview_scheduled_at AS interviewScheduledAt,
+        history.interview_duration_minutes AS interviewDurationMinutes,
+        history.interviewer_user_id AS interviewerUserId,
         interviewer_user.email AS interviewerEmail,
         interviewer_user.username AS interviewerUsername,
         interviewer_user.avatar_text AS interviewerAvatarText,
         interviewer_user.avatar_bg_color AS interviewerAvatarBgColor,
-        app.interview_location AS interviewLocation,
-        app.interview_status AS interviewStatus,
-        app.remark AS remark,
+        history.interview_location AS interviewLocation,
+        history.interview_status AS interviewStatus,
+        history.remark AS remark,
         app.owner_user_id AS ownerUserId,
         owner_user.email AS ownerEmail,
         owner_user.username AS ownerUsername,
         owner_user.avatar_text AS ownerAvatarText,
         owner_user.avatar_bg_color AS ownerAvatarBgColor,
         app.created_at AS createdAt,
+        app.updated_at AS updatedAt,
+        history.created_at AS statusCreatedAt,
+        history.updated_at AS statusUpdatedAt,
         jp.id AS jobPostId,
         jp.title AS jobPostTitle,
         c.id AS candidateId,
@@ -4552,17 +4556,33 @@ const listScheduleInterviews = async (pool, req, res, url) => {
         cv.source AS source,
         COALESCE(extracts.target_position, '') AS targetPosition,
         app.matched_position AS matchedPosition
-      FROM job_post_applications app
+      FROM job_post_application_status_history history
+      INNER JOIN job_post_applications app ON app.id = history.application_id
       INNER JOIN job_posts jp ON jp.id = app.job_post_id
       INNER JOIN candidates c ON c.id = app.candidate_id
       INNER JOIN candidate_cvs cv ON cv.id = app.candidate_cv_id
       LEFT JOIN candidate_cv_extractions extracts ON extracts.candidate_cv_id = cv.id
       LEFT JOIN users owner_user ON owner_user.id = app.owner_user_id
-      LEFT JOIN users interviewer_user ON interviewer_user.id = app.interviewer_user_id
-      WHERE app.owner_user_id = ? OR app.interviewer_user_id = ?
-      ORDER BY app.interview_scheduled_at ASC, app.created_at DESC, app.id DESC`,
-    [currentUserId, currentUserId]
+      LEFT JOIN users interviewer_user ON interviewer_user.id = history.interviewer_user_id
+      WHERE history.application_status IN ('hr_interview', 'department_interview')
+        AND history.interview_scheduled_at IS NOT NULL
+        ${userFilter}
+      ORDER BY history.interview_scheduled_at ASC, history.id ASC`,
+    params
   )
+  return rows
+}
+
+const listScheduleInterviews = async (pool, req, res, url) => {
+  const user = await getAuthedUser(pool, req)
+  if (!user) {
+    sendJson(res, 401, { message: 'Unauthorized' })
+    return
+  }
+
+  const currentUserId = Number(user.id)
+  const month = parseScheduleMonth(url.searchParams.get('month'))
+  const rows = await listScheduledInterviewHistoryApplicationRows(pool, { currentUserId })
 
   const statusHistories = await listJobPostApplicationStatusHistories(
     pool,
@@ -4613,46 +4633,7 @@ const listArrangedInterviews = async (pool, req, res) => {
     return
   }
 
-  const [rows] = await pool.query(
-    `SELECT
-        app.id AS applicationId,
-        app.application_status AS applicationStatus,
-        app.first_interview_arrangement AS firstInterviewArrangement,
-        app.interview_scheduled_at AS interviewScheduledAt,
-        app.interview_duration_minutes AS interviewDurationMinutes,
-        app.interviewer_user_id AS interviewerUserId,
-        interviewer_user.email AS interviewerEmail,
-        interviewer_user.username AS interviewerUsername,
-        interviewer_user.avatar_text AS interviewerAvatarText,
-        interviewer_user.avatar_bg_color AS interviewerAvatarBgColor,
-        app.interview_location AS interviewLocation,
-        app.interview_status AS interviewStatus,
-        app.remark AS remark,
-        app.owner_user_id AS ownerUserId,
-        owner_user.email AS ownerEmail,
-        owner_user.username AS ownerUsername,
-        owner_user.avatar_text AS ownerAvatarText,
-        owner_user.avatar_bg_color AS ownerAvatarBgColor,
-        app.created_at AS createdAt,
-        jp.id AS jobPostId,
-        jp.title AS jobPostTitle,
-        c.id AS candidateId,
-        c.full_name AS fullName,
-        c.email AS email,
-        c.phone AS phone,
-        cv.source AS source,
-        COALESCE(extracts.target_position, '') AS targetPosition,
-        app.matched_position AS matchedPosition
-      FROM job_post_applications app
-      INNER JOIN job_posts jp ON jp.id = app.job_post_id
-      INNER JOIN candidates c ON c.id = app.candidate_id
-      INNER JOIN candidate_cvs cv ON cv.id = app.candidate_cv_id
-      LEFT JOIN candidate_cv_extractions extracts ON extracts.candidate_cv_id = cv.id
-      LEFT JOIN users owner_user ON owner_user.id = app.owner_user_id
-      LEFT JOIN users interviewer_user ON interviewer_user.id = app.interviewer_user_id
-      WHERE app.interview_scheduled_at IS NOT NULL
-      ORDER BY app.interview_scheduled_at ASC, app.id ASC`
-  )
+  const rows = await listScheduledInterviewHistoryApplicationRows(pool, { currentUserId: Number(user.id) })
 
   const statusHistories = await listJobPostApplicationStatusHistories(
     pool,
@@ -4688,12 +4669,78 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
     sendJson(res, 404, { message: 'Application not found' })
     return
   }
+
+  const body = await parseBody(req)
+  const statusHistoryId = Number(body?.statusHistoryId || 0) || 0
+  if (statusHistoryId) {
+    const [historyRows] = await pool.query(
+      `SELECT
+          id,
+          application_id AS applicationId,
+          application_status AS applicationStatus,
+          first_interview_arrangement AS firstInterviewArrangement,
+          interview_scheduled_at AS interviewScheduledAt,
+          interview_duration_minutes AS interviewDurationMinutes,
+          interviewer_user_id AS interviewerUserId,
+          interview_location AS interviewLocation,
+          interview_status AS interviewStatus,
+          remark
+        FROM job_post_application_status_history
+        WHERE id = ? AND application_id = ?
+        LIMIT 1`,
+      [statusHistoryId, applicationId]
+    )
+    const history = historyRows[0]
+    if (!history) {
+      sendJson(res, 404, { message: 'Interview status history not found' })
+      return
+    }
+    if (!history.interviewScheduledAt) {
+      sendJson(res, 400, { message: 'Interview is not scheduled' })
+      return
+    }
+
+    const nextInterviewStatus = normalizeInterviewStatus(body?.status, '')
+    if (!nextInterviewStatus) {
+      sendJson(res, 400, { message: 'Invalid interview status' })
+      return
+    }
+    const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
+    const nextRemark = hasRemark ? normalizeApplicationRemark(body.remark) : normalizeApplicationRemark(history.remark)
+    const operatorUserId = await getRequestOperatorUserId(pool, req)
+
+    await pool.query(
+      `UPDATE job_post_application_status_history
+        SET interview_status = ?,
+            remark = ?,
+            operator_user_id = COALESCE(?, operator_user_id),
+            updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND application_id = ?`,
+      [nextInterviewStatus, nextRemark, operatorUserId, statusHistoryId, applicationId]
+    )
+    await syncApplicationFromLatestStatusHistory(pool, applicationId)
+
+    sendJson(res, 200, {
+      message: 'Interview status updated',
+      applicationId,
+      statusHistoryId,
+      remark: nextRemark,
+      interview: buildInterviewPayload({
+        interviewScheduledAt: history.interviewScheduledAt,
+        interviewDurationMinutes: history.interviewDurationMinutes,
+        interviewerUserId: history.interviewerUserId,
+        interviewLocation: history.interviewLocation,
+        interviewStatus: nextInterviewStatus,
+      }),
+    })
+    return
+  }
+
   if (!existing.interviewScheduledAt) {
     sendJson(res, 400, { message: 'Interview is not scheduled' })
     return
   }
 
-  const body = await parseBody(req)
   const nextInterviewStatus = normalizeInterviewStatus(body?.status, '')
   if (!nextInterviewStatus) {
     sendJson(res, 400, { message: 'Invalid interview status' })

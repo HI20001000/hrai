@@ -66,6 +66,9 @@ const getUserName = (user) => String(user?.username || user?.email || user?.mail
 
 const isSaving = (applicationId) => savingIds.value.includes(Number(applicationId))
 
+const getInterviewRowKey = (row) =>
+  row?.rowId || (row?.statusHistoryId ? `history-${Number(row.statusHistoryId)}` : Number(row?.applicationId || 0))
+
 const canEditInterviewStatus = computed(() => String(props.currentUser?.role || '').trim() !== 'viewer')
 
 const statusOptions = computed(() => [{ value: '', label: '全部' }, ...INTERVIEW_STATUS_OPTIONS])
@@ -141,7 +144,7 @@ const getStatusHistoryOperatorAvatarStyle = (history) => {
   return { background: /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#64748b' }
 }
 
-const getStatusPopoverKey = (row) => `status-${Number(row?.applicationId || 0)}`
+const getStatusPopoverKey = (row) => `status-${getInterviewRowKey(row)}`
 
 const clearStatusPopoverTimer = () => {
   if (statusPopoverCloseTimer) {
@@ -265,9 +268,14 @@ const openInterviewStatusModal = async (row) => {
     const data = await response.json().catch(() => ({}))
     if (handleUnauthorizedResponse(response)) throw new Error('登入已失效，請重新登入')
     if (!response.ok) throw new Error(data.message || '讀取候選人狀態失敗')
-    activeApplication.value = data.application || row
-    interviewStatusDraft.value = normalizeInterviewStatus(activeApplication.value?.interview?.status)
-    remarkDraft.value = String(activeApplication.value?.remark || '')
+    const detail = data.application || {}
+    activeApplication.value = {
+      ...detail,
+      ...row,
+      statusHistory: Array.isArray(detail.statusHistory) ? detail.statusHistory : row?.statusHistory,
+    }
+    interviewStatusDraft.value = normalizeInterviewStatus(row?.interview?.status)
+    remarkDraft.value = String(row?.remark || '')
   } catch (error) {
     statusModalError.value = error?.message || '讀取候選人狀態失敗'
     activeApplication.value = row
@@ -288,6 +296,7 @@ const closeInterviewStatusModal = () => {
 
 const saveInterviewStatusModal = async () => {
   const applicationId = Number(activeApplication.value?.applicationId || 0)
+  const statusHistoryId = Number(activeApplication.value?.statusHistoryId || 0) || 0
   const nextStatus = normalizeInterviewStatus(interviewStatusDraft.value, '')
   if (!applicationId || !nextStatus || isSaving(applicationId)) return
 
@@ -300,6 +309,7 @@ const saveInterviewStatusModal = async () => {
       body: JSON.stringify({
         status: nextStatus,
         remark: String(remarkDraft.value || '').trim(),
+        statusHistoryId: statusHistoryId || undefined,
       }),
     })
     const data = await response.json().catch(() => ({}))
@@ -322,6 +332,7 @@ const saveInterviewStatusModal = async () => {
 
 const updateInterviewStatus = async (row, nextValue) => {
   const applicationId = Number(row?.applicationId || 0)
+  const statusHistoryId = Number(row?.statusHistoryId || 0) || 0
   const nextStatus = normalizeInterviewStatus(nextValue, '')
   const currentStatus = normalizeInterviewStatus(row?.interview?.status, '')
   if (!applicationId || !nextStatus || nextStatus === currentStatus || isSaving(applicationId)) return
@@ -331,14 +342,15 @@ const updateInterviewStatus = async (row, nextValue) => {
     const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}/interview-status`, {
       method: 'PATCH',
       headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ status: nextStatus }),
+      body: JSON.stringify({ status: nextStatus, statusHistoryId: statusHistoryId || undefined }),
     })
     const data = await response.json().catch(() => ({}))
     if (handleUnauthorizedResponse(response)) throw new Error('登入已失效，請重新登入')
     if (!response.ok) throw new Error(data.message || '更新面試結果失敗')
 
     interviews.value = interviews.value.map((item) =>
-      Number(item.applicationId) === applicationId
+      (statusHistoryId && Number(item.statusHistoryId || 0) === statusHistoryId) ||
+      (!statusHistoryId && Number(item.applicationId) === applicationId)
         ? { ...item, interview: { ...(item.interview || {}), status: nextStatus } }
         : item
     )
@@ -363,7 +375,7 @@ onBeforeUnmount(() => {
     <header class="page-header">
       <div>
         <h2>面試管理</h2>
-        <p>集中查看全系統已安排面試，並直接更新面試結果。</p>
+        <p>集中查看與我相關的已安排面試，並直接更新面試結果。</p>
       </div>
       <button type="button" class="secondary-btn" :disabled="isLoading" @click="loadInterviews">
         {{ isLoading ? '刷新中...' : '刷新' }}
@@ -413,7 +425,7 @@ onBeforeUnmount(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in filteredInterviews" :key="row.applicationId">
+            <tr v-for="row in filteredInterviews" :key="getInterviewRowKey(row)">
               <td>{{ row.fullName || '--' }}</td>
               <td>{{ row.jobPostTitle || '--' }}</td>
               <td>{{ row.source || '--' }}</td>

@@ -256,7 +256,7 @@ onMounted(loadSchedule)
         </header>
 
         <div class="task-list">
-          <article v-for="task in selectedDateTasks" :key="task.applicationId" class="task-item">
+          <article v-for="task in selectedDateTasks" :key="task.rowId || task.statusHistoryId || task.applicationId" class="task-item">
             <time>{{ formatTime(getInterview(task).scheduledAt) }}</time>
             <div>
               <h4>{{ task.fullName || '候選人' }}｜{{ task.jobPostTitle || '--' }}</h4>
@@ -541,7 +541,7 @@ onMounted(loadSchedule)
   padding: 0.65rem;
   border: 1px solid transparent;
   border-radius: 12px;
-  background: #f8fafc;
+  background: none;
   color: var(--text-strong);
   text-align: left;
   cursor: pointer;
@@ -552,18 +552,20 @@ onMounted(loadSchedule)
 }
 
 .calendar-day.today {
+  background: #dcfce7;
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.35);
 }
 
 .calendar-day.selected {
   border-color: #334155;
-  background: #eef2ff;
+  background: none;
 }
 
 .calendar-day.has-task {
   background: none;
 }
 
+.calendar-day.today.selected,
 .calendar-day.today.has-task {
   background: #dcfce7;
 }

@@ -276,7 +276,10 @@ const getRowStatusHistory = (row) => {
 const getStatusHistoryKey = (history, index) =>
   history?.id || `${history?.applicationStatus || 'status'}-${history?.createdAt || index}`
 
-const getStatusPopoverKey = (row) => `status-${Number(row?.applicationId || 0)}`
+const getRowKey = (row) =>
+  row?.rowId || (row?.statusHistoryId ? `history-${Number(row.statusHistoryId)}` : Number(row?.applicationId || 0))
+
+const getStatusPopoverKey = (row) => `status-${getRowKey(row)}`
 
 const clearStatusPopoverTimer = () => {
   if (statusPopoverCloseTimer) {
@@ -1292,7 +1295,7 @@ onBeforeUnmount(() => {
           </tr>
           <tr
             v-for="row in visibleRows"
-            :key="row.applicationId"
+            :key="getRowKey(row)"
             :class="{
               'blacklist-row': row.isBlacklisted,
               'duplicate-row': !row.isBlacklisted && row.isDuplicateApplication,
