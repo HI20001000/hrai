@@ -76,6 +76,20 @@ const verificationCodes = new Map()
 const CV_CACHE_TTL_MS = 10 * 60 * 1000
 const cvUploadCache = new Map()
 
+const resolveInterviewStatusCheckIntervalMs = () => {
+  const candidates = [
+    process.env.INTERVIEW_STATUS_CHECK_INTERVAL_MS,
+    process.env.HRAI_INTERVIEW_STATUS_CHECK_INTERVAL_MS,
+  ]
+  for (const value of candidates) {
+    const numeric = Number(value)
+    if (Number.isFinite(numeric) && numeric >= 0) return Math.floor(numeric)
+  }
+  return 60 * 1000
+}
+
+const INTERVIEW_STATUS_CHECK_INTERVAL_MS = resolveInterviewStatusCheckIntervalMs()
+
 const DB_NAME = getDatabaseName()
 const withCors = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -2251,7 +2265,8 @@ const APPLICATION_STATUS_VALUES = new Set([
 const INTERVIEW_APPLICATION_STATUS_VALUES = new Set(['hr_interview', 'department_interview'])
 const FIRST_INTERVIEW_ARRANGEMENT_VALUES = new Set(['can_invite', 'unsuitable'])
 const INTERVIEW_LOCATION_VALUES = new Set(['zhuhai', 'macau', 'online'])
-const INTERVIEW_STATUS_VALUES = new Set(['passed', 'in_progress', 'failed'])
+const INTERVIEW_STATUS_VALUES = new Set(['not_started', 'in_progress', 'ended', 'passed', 'failed'])
+const TERMINAL_INTERVIEW_STATUS_VALUES = new Set(['passed', 'failed'])
 const DEFAULT_INTERVIEW_DURATION_MINUTES = 30
 const MIN_INTERVIEW_DURATION_MINUTES = 1
 const MAX_INTERVIEW_DURATION_MINUTES = 480
@@ -2391,9 +2406,18 @@ const normalizeInterviewLocation = (value, fallback = '') => {
   return INTERVIEW_LOCATION_VALUES.has(normalized) ? normalized : fallback
 }
 
-const normalizeInterviewStatus = (value, fallback = 'in_progress') => {
+const normalizeInterviewStatus = (value, fallback = 'not_started') => {
   const normalized = normalizeText(value).toLowerCase()
   return INTERVIEW_STATUS_VALUES.has(normalized) ? normalized : fallback
+}
+
+const isTerminalInterviewStatus = (value) =>
+  TERMINAL_INTERVIEW_STATUS_VALUES.has(normalizeInterviewStatus(value, ''))
+
+const parseInterviewDateTime = (value) => {
+  if (!value) return null
+  const date = value instanceof Date ? value : new Date(String(value).replace(' ', 'T'))
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 const normalizeInterviewScheduledAt = (value, fallback = null) => {
@@ -2414,6 +2438,31 @@ const normalizeInterviewDurationMinutes = (value, fallback = DEFAULT_INTERVIEW_D
   return minutes
 }
 
+const getInterviewTemporalStatus = (
+  scheduledAt,
+  durationMinutes = DEFAULT_INTERVIEW_DURATION_MINUTES,
+  now = new Date()
+) => {
+  const start = parseInterviewDateTime(scheduledAt)
+  if (!start) return 'not_started'
+  const minutes = normalizeInterviewDurationMinutes(durationMinutes, DEFAULT_INTERVIEW_DURATION_MINUTES)
+  const end = new Date(start.getTime() + minutes * 60 * 1000)
+  if (now < start) return 'not_started'
+  if (now <= end) return 'in_progress'
+  return 'ended'
+}
+
+const resolveEffectiveInterviewStatus = (
+  status,
+  scheduledAt,
+  durationMinutes = DEFAULT_INTERVIEW_DURATION_MINUTES,
+  now = new Date()
+) => {
+  const normalized = normalizeInterviewStatus(status, '')
+  if (isTerminalInterviewStatus(normalized)) return normalized
+  return getInterviewTemporalStatus(scheduledAt, durationMinutes, now)
+}
+
 const formatDateTimeForPayload = (value) => {
   if (!value) return null
   const date = value instanceof Date ? value : new Date(value)
@@ -2430,9 +2479,9 @@ const resolveInterviewInput = (value = {}, fallback = {}) => {
   const location = Object.prototype.hasOwnProperty.call(source, 'location')
     ? normalizeInterviewLocation(source.location, undefined)
     : normalizeInterviewLocation(fallback.location, '')
-  const status = Object.prototype.hasOwnProperty.call(source, 'status')
+  const inputStatus = Object.prototype.hasOwnProperty.call(source, 'status')
     ? normalizeInterviewStatus(source.status, undefined)
-    : normalizeInterviewStatus(fallback.status, 'in_progress')
+    : normalizeInterviewStatus(fallback.status, 'not_started')
   const interviewerUserId = Object.prototype.hasOwnProperty.call(source, 'interviewerUserId')
     ? Number(source.interviewerUserId || 0) || null
     : Number(fallback.interviewerUserId || 0) || null
@@ -2441,13 +2490,13 @@ const resolveInterviewInput = (value = {}, fallback = {}) => {
     : normalizeInterviewDurationMinutes(fallback.durationMinutes, DEFAULT_INTERVIEW_DURATION_MINUTES)
 
   return {
-    valid: scheduledAt !== undefined && location !== undefined && status !== undefined && durationMinutes !== undefined,
+    valid: scheduledAt !== undefined && location !== undefined && inputStatus !== undefined && durationMinutes !== undefined,
     value: {
       scheduledAt: scheduledAt || null,
       interviewerUserId,
       durationMinutes,
       location: location || null,
-      status: status || 'in_progress',
+      status: resolveEffectiveInterviewStatus(inputStatus, scheduledAt, durationMinutes),
     },
   }
 }
@@ -2465,7 +2514,7 @@ const buildInterviewPayload = (row = {}) => ({
       })
     : null,
   location: normalizeInterviewLocation(row.interviewLocation),
-  status: normalizeInterviewStatus(row.interviewStatus),
+  status: resolveEffectiveInterviewStatus(row.interviewStatus, row.interviewScheduledAt, row.interviewDurationMinutes),
 })
 
 const buildInterviewFallback = (row = {}) => ({
@@ -2473,7 +2522,7 @@ const buildInterviewFallback = (row = {}) => ({
   interviewerUserId: row.interviewerUserId || null,
   durationMinutes: row.interviewDurationMinutes || DEFAULT_INTERVIEW_DURATION_MINUTES,
   location: row.interviewLocation || '',
-  status: row.interviewStatus || 'in_progress',
+  status: row.interviewStatus || 'not_started',
 })
 
 const ensureInterviewInputUserExists = async (pool, interview) => {
@@ -2544,7 +2593,7 @@ const syncApplicationFromLatestStatusHistory = async (pool, applicationId) => {
       latest.interview.durationMinutes || DEFAULT_INTERVIEW_DURATION_MINUTES,
       latest.interview.interviewerUser?.id || null,
       latest.interview.location || null,
-      latest.interview.status || 'in_progress',
+      latest.interview.status || 'not_started',
       normalizeApplicationRemark(latest.remark),
       latestOperatorUserId,
       applicationId,
@@ -4429,7 +4478,11 @@ const listInterviewerInterviewHistorySlots = async (pool, interviewerUserId, dat
           fullName: normalizeText(row.fullName),
           jobPostTitle: normalizeText(row.jobPostTitle),
           applicationStatus: normalizeApplicationStatus(row.applicationStatus),
-          interviewStatus: normalizeInterviewStatus(row.interviewStatus),
+          interviewStatus: resolveEffectiveInterviewStatus(
+            row.interviewStatus,
+            row.interviewScheduledAt,
+            row.interviewDurationMinutes
+          ),
         },
       }
     })
@@ -4451,8 +4504,10 @@ const validateInterviewScheduleAvailability = async (
 
   const durationMinutes = normalizeInterviewDurationMinutes(interview?.durationMinutes, DEFAULT_INTERVIEW_DURATION_MINUTES)
   const end = addMinutes(start, durationMinutes)
-  if (start <= new Date()) {
-    throw new HttpError(400, '面試時間必須晚於當前時間')
+  const currentMinute = new Date()
+  currentMinute.setSeconds(0, 0)
+  if (start < currentMinute) {
+    throw new HttpError(400, '面試時間不可早於當前時間')
   }
 
   const dateKey = getInterviewDateKey(start)
@@ -4606,11 +4661,25 @@ const listScheduleInterviews = async (pool, req, res, url) => {
   const scheduledApplications = relatedApplications.filter((item) => item.interview.scheduledAt)
   const stats = {
     total: relatedApplications.length,
+    hrInterview: scheduledApplications.filter((item) => item.applicationStatus === 'hr_interview').length,
+    hrNotStarted: scheduledApplications.filter(
+      (item) => item.applicationStatus === 'hr_interview' && item.interview.status === 'not_started'
+    ).length,
     hrInProgress: scheduledApplications.filter(
       (item) => item.applicationStatus === 'hr_interview' && item.interview.status === 'in_progress'
     ).length,
+    hrEnded: scheduledApplications.filter(
+      (item) => item.applicationStatus === 'hr_interview' && item.interview.status === 'ended'
+    ).length,
+    departmentInterview: scheduledApplications.filter((item) => item.applicationStatus === 'department_interview').length,
+    departmentNotStarted: scheduledApplications.filter(
+      (item) => item.applicationStatus === 'department_interview' && item.interview.status === 'not_started'
+    ).length,
     departmentInProgress: scheduledApplications.filter(
       (item) => item.applicationStatus === 'department_interview' && item.interview.status === 'in_progress'
+    ).length,
+    departmentEnded: scheduledApplications.filter(
+      (item) => item.applicationStatus === 'department_interview' && item.interview.status === 'ended'
     ).length,
     passed: scheduledApplications.filter((item) => item.interview.status === 'passed').length,
     failed: scheduledApplications.filter((item) => item.interview.status === 'failed').length,
@@ -4645,6 +4714,81 @@ const listArrangedInterviews = async (pool, req, res) => {
       buildScheduleApplicationPayload(row, statusHistories.get(Number(row.applicationId)) || [])
     ),
   })
+}
+
+const updateTemporalInterviewStatusesForTable = async (pool, tableName) => {
+  const [rows] = await pool.query(
+    `SELECT
+        id,
+        interview_scheduled_at AS interviewScheduledAt,
+        interview_duration_minutes AS interviewDurationMinutes,
+        interview_status AS interviewStatus
+      FROM ${tableName}
+      WHERE interview_scheduled_at IS NOT NULL
+        AND (interview_status IS NULL OR interview_status NOT IN ('passed', 'failed'))`
+  )
+
+  const now = new Date()
+  const groupedIds = new Map()
+  for (const row of rows) {
+    const currentStatus = normalizeInterviewStatus(row.interviewStatus, '')
+    const nextStatus = resolveEffectiveInterviewStatus(
+      currentStatus,
+      row.interviewScheduledAt,
+      row.interviewDurationMinutes,
+      now
+    )
+    if (!nextStatus || nextStatus === currentStatus) continue
+    groupedIds.set(nextStatus, [...(groupedIds.get(nextStatus) || []), Number(row.id)])
+  }
+
+  let updatedCount = 0
+  for (const [status, ids] of groupedIds.entries()) {
+    for (let index = 0; index < ids.length; index += 500) {
+      const chunk = ids.slice(index, index + 500)
+      const placeholders = chunk.map(() => '?').join(', ')
+      const [result] = await pool.query(
+        `UPDATE ${tableName}
+          SET interview_status = ?,
+              updated_at = CURRENT_TIMESTAMP
+         WHERE id IN (${placeholders})`,
+        [status, ...chunk]
+      )
+      updatedCount += Number(result?.affectedRows || 0)
+    }
+  }
+
+  return updatedCount
+}
+
+const refreshTemporalInterviewStatuses = async (pool) => {
+  const [historyUpdated, applicationsUpdated] = await Promise.all([
+    updateTemporalInterviewStatusesForTable(pool, 'job_post_application_status_history'),
+    updateTemporalInterviewStatusesForTable(pool, 'job_post_applications'),
+  ])
+  return { historyUpdated, applicationsUpdated }
+}
+
+const startInterviewStatusAutoCheck = (pool) => {
+  if (INTERVIEW_STATUS_CHECK_INTERVAL_MS <= 0) return null
+
+  let isRunning = false
+  const runCheck = async () => {
+    if (isRunning) return
+    isRunning = true
+    try {
+      await refreshTemporalInterviewStatuses(pool)
+    } catch (error) {
+      console.error('Failed to refresh interview statuses:', error)
+    } finally {
+      isRunning = false
+    }
+  }
+
+  runCheck()
+  const timer = setInterval(runCheck, INTERVIEW_STATUS_CHECK_INTERVAL_MS)
+  timer.unref?.()
+  return timer
 }
 
 const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicationId) => {
@@ -4700,11 +4844,16 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
       return
     }
 
-    const nextInterviewStatus = normalizeInterviewStatus(body?.status, '')
-    if (!nextInterviewStatus) {
+    const requestedInterviewStatus = normalizeInterviewStatus(body?.status, '')
+    if (!requestedInterviewStatus) {
       sendJson(res, 400, { message: 'Invalid interview status' })
       return
     }
+    const nextInterviewStatus = resolveEffectiveInterviewStatus(
+      requestedInterviewStatus,
+      history.interviewScheduledAt,
+      history.interviewDurationMinutes
+    )
     const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
     const nextRemark = hasRemark ? normalizeApplicationRemark(body.remark) : normalizeApplicationRemark(history.remark)
     const operatorUserId = await getRequestOperatorUserId(pool, req)
@@ -4741,11 +4890,16 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
     return
   }
 
-  const nextInterviewStatus = normalizeInterviewStatus(body?.status, '')
-  if (!nextInterviewStatus) {
+  const requestedInterviewStatus = normalizeInterviewStatus(body?.status, '')
+  if (!requestedInterviewStatus) {
     sendJson(res, 400, { message: 'Invalid interview status' })
     return
   }
+  const nextInterviewStatus = resolveEffectiveInterviewStatus(
+    requestedInterviewStatus,
+    existing.interviewScheduledAt,
+    existing.interviewDurationMinutes
+  )
   const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
   const nextRemark = hasRemark ? normalizeApplicationRemark(body.remark) : normalizeApplicationRemark(existing.remark)
 
@@ -5882,6 +6036,7 @@ const start = async () => {
   const pool = createDatabasePool()
   await ensureAuthTables(pool)
   await ensureCvTables(pool)
+  startInterviewStatusAutoCheck(pool)
 
   const port = process.env.PORT || 3001
   // 目前 API 以明確順序分發路由；新增相近路徑時需留意較具體的 regex 分支不要被前面的平面路由吃掉。

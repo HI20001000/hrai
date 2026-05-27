@@ -237,9 +237,11 @@ const showInvalidInterviewTimeAlert = () => {
   if (!shouldShowInterviewFields.value) return false
   if (!hasInterviewScheduleDraftChanged()) return false
   const start = parseLocalDateTime(interviewScheduledAtDraft.value)
-  if (!start || start > new Date()) return false
+  const currentMinute = new Date()
+  currentMinute.setSeconds(0, 0)
+  if (!start || start >= currentMinute) return false
 
-  const nextMessage = '面試時間必須晚於當前時間'
+  const nextMessage = '面試時間不可早於當前時間'
   window.alert(nextMessage)
   message.value = nextMessage
   return true
@@ -286,9 +288,9 @@ const selectedInterviewEndTime = computed(() => {
 })
 
 const getCurrentInterviewDateTimeMin = () => {
-  const nextMinute = new Date(Date.now() + 60000)
-  nextMinute.setSeconds(0, 0)
-  return toDateTimeLocalFromSql(nextMinute)
+  const currentMinute = new Date()
+  currentMinute.setSeconds(0, 0)
+  return toDateTimeLocalFromSql(currentMinute)
 }
 
 const currentInterviewPreviewItem = computed(() => {
@@ -528,7 +530,7 @@ const setTableLoadStatus = (status, nextMessage = '') => {
 const resetDetailDrafts = (application = activeApplication.value) => {
   statusDraft.value = normalizeCandidateApplicationStatus(application?.applicationStatus)
   const interview = application?.interview || {}
-  interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt)
+  interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt) || getCurrentInterviewDateTimeMin()
   applyInterviewDurationDraft(interview.durationMinutes || 30)
   interviewerUserIdDraft.value = String(interview.interviewerUser?.id || '')
   interviewLocationDraft.value = normalizeInterviewLocation(interview.location, '')
@@ -542,7 +544,7 @@ const resetDetailDrafts = (application = activeApplication.value) => {
 const startNewStatusHistoryDraft = () => {
   editingStatusHistoryId.value = null
   statusDraft.value = 'screening'
-  interviewScheduledAtDraft.value = ''
+  interviewScheduledAtDraft.value = getCurrentInterviewDateTimeMin()
   applyInterviewDurationDraft(30)
   interviewerUserIdDraft.value = ''
   interviewLocationDraft.value = ''
@@ -564,7 +566,7 @@ const editStatusHistoryDraft = (history) => {
   editingStatusHistoryId.value = historyId
   statusDraft.value = normalizeCandidateApplicationStatus(history?.applicationStatus)
   const interview = history?.interview || {}
-  interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt)
+  interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt) || getCurrentInterviewDateTimeMin()
   applyInterviewDurationDraft(interview.durationMinutes || 30)
   interviewerUserIdDraft.value = String(interview.interviewerUser?.id || '')
   interviewLocationDraft.value = normalizeInterviewLocation(interview.location, '')
@@ -698,8 +700,8 @@ const saveStatusModalChanges = async () => {
         durationMinutes: selectedInterviewDurationMinutes.value,
         interviewerUserId: '',
         location: '',
-        status: 'in_progress',
-  }
+        status: 'not_started',
+      }
   const payload = {
     applicationStatus: nextStatus,
     firstInterviewArrangement: '',
@@ -1152,7 +1154,7 @@ const saveNewStatus = async () => {
         durationMinutes: selectedInterviewDurationMinutes.value,
         interviewerUserId: '',
         location: '',
-        status: 'in_progress',
+        status: 'not_started',
       }
     }
     await fetchJson(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {

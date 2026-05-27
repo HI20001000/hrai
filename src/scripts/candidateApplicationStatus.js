@@ -41,8 +41,10 @@ export const INTERVIEW_LOCATION_OPTIONS = [
 ]
 
 export const INTERVIEW_STATUS_OPTIONS = [
-  { value: 'passed', label: '通過' },
+  { value: 'not_started', label: '未開始' },
   { value: 'in_progress', label: '進行中' },
+  { value: 'ended', label: '已結束' },
+  { value: 'passed', label: '通過' },
   { value: 'failed', label: '不通過' },
 ]
 
@@ -99,13 +101,13 @@ export const normalizeInterviewLocation = (value, fallback = '') => {
 export const getInterviewLocationLabel = (value) =>
   INTERVIEW_LOCATION_LABEL_MAP[normalizeInterviewLocation(value)] || ''
 
-export const normalizeInterviewStatus = (value, fallback = 'in_progress') => {
+export const normalizeInterviewStatus = (value, fallback = 'not_started') => {
   const normalized = String(value || '').trim().toLowerCase()
   return INTERVIEW_STATUS_LABEL_MAP[normalized] ? normalized : fallback
 }
 
 export const getInterviewStatusLabel = (value) =>
-  INTERVIEW_STATUS_LABEL_MAP[normalizeInterviewStatus(value)] || INTERVIEW_STATUS_LABEL_MAP.in_progress
+  INTERVIEW_STATUS_LABEL_MAP[normalizeInterviewStatus(value)] || INTERVIEW_STATUS_LABEL_MAP.not_started
 
 export const normalizeInterviewDurationMinutes = (value, fallback = 30) => {
   const number = Number(value)

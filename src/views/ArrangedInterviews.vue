@@ -4,6 +4,8 @@ import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import { handleUnauthorizedResponse, requireAuthToken, withAuthHeaders } from '../scripts/authState.js'
 import { normalizeSearchText } from '../scripts/searchNormalize.js'
 import AppSelect from '../components/AppSelect.vue'
+import CandidateColumnFilter from '../components/candidate/CandidateColumnFilter.vue'
+import { CV_SOURCE_OPTIONS, normalizeCvSource } from '../scripts/cvSource.js'
 import {
   CANDIDATE_APPLICATION_STATUS_OPTIONS,
   INTERVIEW_STATUS_OPTIONS,
@@ -26,14 +28,18 @@ const interviews = ref([])
 const isLoading = ref(false)
 const message = ref('')
 const searchKeyword = ref('')
-const statusFilter = ref('')
+const jobFilter = ref('')
+const sourceFilter = ref('')
+const interviewDateFilter = ref('')
+const applicationStatusFilter = ref('')
+const interviewResultFilter = ref('')
 const savingIds = ref([])
 const isStatusModalOpen = ref(false)
 const isStatusDetailLoading = ref(false)
 const isSavingStatusModal = ref(false)
 const statusModalError = ref('')
 const activeApplication = ref(null)
-const interviewStatusDraft = ref('in_progress')
+const interviewStatusDraft = ref('not_started')
 const remarkDraft = ref('')
 const activeStatusPopoverKey = ref('')
 const activeStatusPopoverRow = ref(null)
@@ -54,6 +60,14 @@ const formatDateTime = (value) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+const toDateKey = (value) => {
+  const date = value instanceof Date ? value : parseDateTime(value)
+  if (!date) return ''
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+const normalizeFilterText = (value) => String(value ?? '').trim()
+
 const formatTimeRange = (interview) => {
   const start = parseDateTime(interview?.scheduledAt)
   if (!start) return '--'
@@ -71,7 +85,28 @@ const getInterviewRowKey = (row) =>
 
 const canEditInterviewStatus = computed(() => String(props.currentUser?.role || '').trim() !== 'viewer')
 
-const statusOptions = computed(() => [{ value: '', label: '全部' }, ...INTERVIEW_STATUS_OPTIONS])
+const jobFilterOptions = computed(() => {
+  const seen = new Set()
+  const options = []
+  for (const row of interviews.value) {
+    const title = normalizeFilterText(row.jobPostTitle)
+    if (!title || seen.has(title)) continue
+    seen.add(title)
+    options.push({ value: title, label: title })
+  }
+  return [{ value: '', label: '全部' }, ...options]
+})
+
+const sourceFilterOptions = computed(() => [{ value: '', label: '全部' }, ...CV_SOURCE_OPTIONS])
+
+const applicationStatusFilterOptions = computed(() => [
+  { value: '', label: '全部' },
+  ...CANDIDATE_APPLICATION_STATUS_OPTIONS.filter((option) =>
+    ['hr_interview', 'department_interview'].includes(option.value)
+  ),
+])
+
+const interviewResultFilterOptions = computed(() => [{ value: '', label: '全部' }, ...INTERVIEW_STATUS_OPTIONS])
 
 const activeStatusHistory = computed(() => {
   const history = Array.isArray(activeApplication.value?.statusHistory)
@@ -207,10 +242,25 @@ const isStatusPopoverActive = (row) => activeStatusPopoverKey.value === getStatu
 
 const filteredInterviews = computed(() => {
   const keyword = normalizeSearchText(searchKeyword.value)
-  const status = normalizeInterviewStatus(statusFilter.value, '')
+  const selectedJob = normalizeFilterText(jobFilter.value)
+  const selectedSource = normalizeCvSource(sourceFilter.value)
+  const selectedDate = normalizeFilterText(interviewDateFilter.value)
+  const selectedApplicationStatus = normalizeCandidateApplicationStatus(applicationStatusFilter.value, '')
+  const selectedInterviewResult = normalizeInterviewStatus(interviewResultFilter.value, '')
   return interviews.value.filter((row) => {
     const interview = row.interview || {}
-    if (status && interview.status !== status) return false
+    if (selectedJob && normalizeFilterText(row.jobPostTitle) !== selectedJob) return false
+    if (selectedSource && normalizeCvSource(row.source) !== selectedSource) return false
+    if (selectedDate && toDateKey(interview.scheduledAt) !== selectedDate) return false
+    if (
+      selectedApplicationStatus &&
+      normalizeCandidateApplicationStatus(row.applicationStatus, '') !== selectedApplicationStatus
+    ) {
+      return false
+    }
+    if (selectedInterviewResult && normalizeInterviewStatus(interview.status, '') !== selectedInterviewResult) {
+      return false
+    }
     if (!keyword) return true
 
     const haystack = normalizeSearchText([
@@ -290,7 +340,7 @@ const closeInterviewStatusModal = () => {
   isStatusDetailLoading.value = false
   statusModalError.value = ''
   activeApplication.value = null
-  interviewStatusDraft.value = 'in_progress'
+  interviewStatusDraft.value = 'not_started'
   remarkDraft.value = ''
 }
 
@@ -397,13 +447,6 @@ onBeforeUnmount(() => {
             placeholder="搜尋候選人 / 職位 / 來源 / 面試官 / 對接人"
             autocomplete="off"
           />
-          <AppSelect
-            class="status-filter"
-            :model-value="statusFilter"
-            :options="statusOptions"
-            placeholder="面試結果"
-            @update:model-value="statusFilter = $event"
-          />
         </div>
       </header>
 
@@ -412,16 +455,66 @@ onBeforeUnmount(() => {
           <thead>
             <tr>
               <th>候選人</th>
-              <th>職位</th>
-              <th>招聘來源</th>
-              <th>面試時間</th>
+              <th>
+                <div class="column-header">
+                  <span class="column-title">職位</span>
+                  <CandidateColumnFilter
+                    v-model="jobFilter"
+                    filter-key="job"
+                    label="職位"
+                    :options="jobFilterOptions"
+                  />
+                </div>
+              </th>
+              <th>
+                <div class="column-header">
+                  <span class="column-title">招聘來源</span>
+                  <CandidateColumnFilter
+                    v-model="sourceFilter"
+                    filter-key="source"
+                    label="來源"
+                    :options="sourceFilterOptions"
+                  />
+                </div>
+              </th>
+              <th>
+                <div class="column-header">
+                  <span class="column-title">面試時間</span>
+                  <CandidateColumnFilter
+                    v-model="interviewDateFilter"
+                    filter-key="interview-date"
+                    label="面試日期"
+                    mode="date"
+                  />
+                </div>
+              </th>
               <th>區間</th>
               <th>時長</th>
               <th>面試官</th>
               <th>地點</th>
               <th>對接人</th>
-              <th>候選人狀態</th>
-              <th>面試結果</th>
+              <th>
+                <div class="column-header">
+                  <span class="column-title">候選人狀態</span>
+                  <CandidateColumnFilter
+                    v-model="applicationStatusFilter"
+                    filter-key="application-status"
+                    label="候選人狀態"
+                    :options="applicationStatusFilterOptions"
+                  />
+                </div>
+              </th>
+              <th>
+                <div class="column-header">
+                  <span class="column-title">面試結果</span>
+                  <CandidateColumnFilter
+                    v-model="interviewResultFilter"
+                    filter-key="interview-result"
+                    label="面試結果"
+                    :options="interviewResultFilterOptions"
+                  />
+                </div>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -719,6 +812,17 @@ onBeforeUnmount(() => {
   font-weight: 800;
 }
 
+.column-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.column-title {
+  min-width: 0;
+}
+
 .result-cell {
   min-width: 148px;
 }
@@ -813,9 +917,19 @@ onBeforeUnmount(() => {
   background: #dcfce7;
 }
 
+.interview-not_started {
+  color: #475569;
+  background: #e2e8f0;
+}
+
 .interview-in_progress {
   color: #92400e;
   background: #fef3c7;
+}
+
+.interview-ended {
+  color: #1d4ed8;
+  background: #dbeafe;
 }
 
 .interview-failed {

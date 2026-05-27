@@ -51,7 +51,7 @@ const getUserName = (user) => String(user?.username || user?.email || user?.mail
 
 const getInterview = (row) => row?.interview || {}
 
-const getTaskStatusClass = (status) => `interview-${String(status || 'in_progress').trim() || 'in_progress'}`
+const getTaskStatusClass = (status) => `interview-${String(status || 'not_started').trim() || 'not_started'}`
 
 const selectedDateTasks = computed(() => {
   const key = selectedDateKey.value
@@ -96,49 +96,55 @@ const statusCards = computed(() => {
   const getApplicationStatus = (row) => normalizeCandidateApplicationStatus(row?.applicationStatus, '')
   const getNormalizedInterviewStatus = (row) => normalizeInterviewStatus(getInterview(row).status, '')
   const hasScheduledTime = (row) => Boolean(getInterview(row).scheduledAt)
+  const countInterviewRows = (applicationStatus, interviewStatus = '') =>
+    rows.filter((row) => {
+      if (!hasScheduledTime(row)) return false
+      if (applicationStatus && getApplicationStatus(row) !== applicationStatus) return false
+      if (interviewStatus && getNormalizedInterviewStatus(row) !== interviewStatus) return false
+      return true
+    }).length
+  const buildLifecycleStats = (applicationStatus) => [
+    { key: 'not_started', label: '未開始', value: countInterviewRows(applicationStatus, 'not_started') },
+    { key: 'in_progress', label: '進行中', value: countInterviewRows(applicationStatus, 'in_progress') },
+    { key: 'ended', label: '已結束', value: countInterviewRows(applicationStatus, 'ended') },
+  ]
 
   return [
     {
       key: 'total',
       label: '與我相關',
       value: rows.length,
-      hint: '對接人或面試官為我的候選人',
+      description: '對接人或面試官為我的所有候選人',
       tone: 'neutral',
     },
     {
-      key: 'hrInProgress',
-      label: 'HR面試進行中',
-      value: rows.filter((row) =>
-        hasScheduledTime(row) &&
-        getApplicationStatus(row) === 'hr_interview' &&
-        getNormalizedInterviewStatus(row) === 'in_progress'
-      ).length,
-      hint: '候選人狀態為 HR面試，面試結果進行中',
+      key: 'hrInterview',
+      label: 'HR面試',
+      value: countInterviewRows('hr_interview'),
+      description: '候選人狀態為 HR面試',
+      metrics: buildLifecycleStats('hr_interview'),
       tone: 'neutral',
     },
     {
-      key: 'departmentInProgress',
-      label: '部門面試進行中',
-      value: rows.filter((row) =>
-        hasScheduledTime(row) &&
-        getApplicationStatus(row) === 'department_interview' &&
-        getNormalizedInterviewStatus(row) === 'in_progress'
-      ).length,
-      hint: '候選人狀態為 部門面試，面試結果進行中',
+      key: 'departmentInterview',
+      label: '部門面試',
+      value: countInterviewRows('department_interview'),
+      description: '候選人狀態為 部門面試',
+      metrics: buildLifecycleStats('department_interview'),
       tone: 'neutral',
     },
     {
       key: 'passed',
       label: '通過',
       value: rows.filter((row) => hasScheduledTime(row) && getNormalizedInterviewStatus(row) === 'passed').length,
-      hint: '面試結果為通過',
+      description: '面試結果為通過',
       tone: 'success',
     },
     {
       key: 'failed',
       label: '不通過',
       value: rows.filter((row) => hasScheduledTime(row) && getNormalizedInterviewStatus(row) === 'failed').length,
-      hint: '面試結果為不通過',
+      description: '面試結果為不通過',
       tone: 'danger',
     },
   ]
@@ -161,11 +167,11 @@ const filteredRelatedApplications = computed(() => {
 
     if (activeRelatedFilter.value === 'total') return true
     if (!hasScheduledTime) return false
-    if (activeRelatedFilter.value === 'hrInProgress') {
-      return applicationStatus === 'hr_interview' && interviewStatus === 'in_progress'
+    if (activeRelatedFilter.value === 'hrInterview') {
+      return applicationStatus === 'hr_interview'
     }
-    if (activeRelatedFilter.value === 'departmentInProgress') {
-      return applicationStatus === 'department_interview' && interviewStatus === 'in_progress'
+    if (activeRelatedFilter.value === 'departmentInterview') {
+      return applicationStatus === 'department_interview'
     }
     if (activeRelatedFilter.value === 'passed') return interviewStatus === 'passed'
     if (activeRelatedFilter.value === 'failed') return interviewStatus === 'failed'
@@ -242,7 +248,9 @@ onMounted(loadSchedule)
       >
         <span>{{ card.label }}</span>
         <strong>{{ card.value }}</strong>
-        <em>{{ card.hint }}</em>
+        <div v-if="card.metrics?.length" class="status-card-breakdown">
+          <span v-for="metric in card.metrics" :key="metric.key">{{ metric.label }} {{ metric.value }}</span>
+        </div>
       </button>
     </section>
 
@@ -314,7 +322,7 @@ onMounted(loadSchedule)
           <div>
             <h3>{{ activeStatusCard.label }}候選人</h3>
             <p class="subtle">
-              {{ activeStatusCard.key === 'total' ? '包含對接人為我，或面試官為我的所有候選人。' : activeStatusCard.hint }}
+              {{ activeStatusCard.key === 'total' ? '包含對接人為我，或面試官為我的所有候選人。' : activeStatusCard.description }}
               目前顯示 {{ filteredRelatedApplications.length }} 筆。
             </p>
           </div>
@@ -402,11 +410,24 @@ onMounted(loadSchedule)
   font-size: 2rem;
 }
 
-.status-card span,
-.status-card em {
+.status-card span {
   color: var(--text-muted);
-  font-style: normal;
   font-weight: 700;
+}
+
+.status-card-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.status-card-breakdown span {
+  padding: 0.22rem 0.42rem;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text-base);
+  font-size: 0.76rem;
+  font-weight: 800;
 }
 
 .status-card.tone-success {
@@ -482,9 +503,19 @@ onMounted(loadSchedule)
   color: #166534;
 }
 
+.interview-not_started {
+  background: #e2e8f0;
+  color: #475569;
+}
+
 .interview-in_progress {
   background: #fef3c7;
   color: #92400e;
+}
+
+.interview-ended {
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
 .interview-failed {

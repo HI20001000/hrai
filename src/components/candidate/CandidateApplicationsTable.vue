@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
 import AppSelect from '../AppSelect.vue'
+import CandidateColumnFilter from './CandidateColumnFilter.vue'
 import {
   CANDIDATE_APPLICATION_STATUS_OPTIONS,
   getCandidateApplicationStatusLabel,
@@ -997,7 +998,7 @@ const updateApplicationStatus = async (row, nextStatus) => {
         durationMinutes: 30,
         interviewerUserId: '',
         location: '',
-        status: 'in_progress',
+        status: 'not_started',
       }
     }
     const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}/status`, {
@@ -1181,52 +1182,26 @@ onBeforeUnmount(() => {
             <th v-if="showJobColumn" class="job-col">
               <div class="column-header">
                 <span class="column-title">職位</span>
-                <span
+                <CandidateColumnFilter
                   v-if="showJobFilter"
-                  class="column-filter"
-                  :data-filter-owner="columnFilterInstanceId"
-                >
-                  <button
-                    type="button"
-                    class="column-filter-btn"
-                    :class="{ active: isColumnFilterActive('job'), open: isColumnFilterOpen('job') }"
-                    :aria-label="getColumnFilterButtonLabel('job')"
-                    :title="getColumnFilterButtonLabel('job')"
-                    aria-haspopup="listbox"
-                    :aria-expanded="isColumnFilterOpen('job') ? 'true' : 'false'"
-                    @click.stop="toggleColumnFilter('job', $event)"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M4 5h16l-6.2 7.1v5.1l-3.6 1.8v-6.9L4 5Z" />
-                    </svg>
-                  </button>
-                </span>
+                  v-model="jobFilter"
+                  filter-key="job"
+                  :label="columnFilterLabels.job"
+                  :options="jobFilterOptions"
+                />
               </div>
             </th>
             <th class="name-col">候選人名稱</th>
             <th class="status-col">
               <div class="column-header">
                 <span class="column-title">候選人狀態</span>
-                <span
+                <CandidateColumnFilter
                   v-if="showStatusFilter"
-                  class="column-filter"
-                  :data-filter-owner="columnFilterInstanceId"
-                >
-                  <button
-                    type="button"
-                    class="column-filter-btn"
-                    :class="{ active: isColumnFilterActive('status'), open: isColumnFilterOpen('status') }"
-                    :aria-label="getColumnFilterButtonLabel('status')"
-                    :title="getColumnFilterButtonLabel('status')"
-                    aria-haspopup="listbox"
-                    :aria-expanded="isColumnFilterOpen('status') ? 'true' : 'false'"
-                    @click.stop="toggleColumnFilter('status', $event)"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M4 5h16l-6.2 7.1v5.1l-3.6 1.8v-6.9L4 5Z" />
-                    </svg>
-                  </button>
-                </span>
+                  v-model="statusFilter"
+                  filter-key="status"
+                  :label="columnFilterLabels.status"
+                  :options="statusFilterOptions"
+                />
               </div>
             </th>
             <th class="remark-col">備註</th>
@@ -1236,51 +1211,25 @@ onBeforeUnmount(() => {
             <th class="source-col">
               <div class="column-header">
                 <span class="column-title">CV 來源</span>
-                <span
+                <CandidateColumnFilter
                   v-if="showSourceFilter"
-                  class="column-filter"
-                  :data-filter-owner="columnFilterInstanceId"
-                >
-                  <button
-                    type="button"
-                    class="column-filter-btn"
-                    :class="{ active: isColumnFilterActive('source'), open: isColumnFilterOpen('source') }"
-                    :aria-label="getColumnFilterButtonLabel('source')"
-                    :title="getColumnFilterButtonLabel('source')"
-                    aria-haspopup="listbox"
-                    :aria-expanded="isColumnFilterOpen('source') ? 'true' : 'false'"
-                    @click.stop="toggleColumnFilter('source', $event)"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M4 5h16l-6.2 7.1v5.1l-3.6 1.8v-6.9L4 5Z" />
-                    </svg>
-                  </button>
-                </span>
+                  v-model="sourceFilter"
+                  filter-key="source"
+                  :label="columnFilterLabels.source"
+                  :options="sourceFilterOptions"
+                />
               </div>
             </th>
             <th class="owner-col">
               <div class="column-header">
                 <span class="column-title">對接人</span>
-                <span
+                <CandidateColumnFilter
                   v-if="showOwnerFilter"
-                  class="column-filter"
-                  :data-filter-owner="columnFilterInstanceId"
-                >
-                  <button
-                    type="button"
-                    class="column-filter-btn"
-                    :class="{ active: isColumnFilterActive('owner'), open: isColumnFilterOpen('owner') }"
-                    :aria-label="getColumnFilterButtonLabel('owner')"
-                    :title="getColumnFilterButtonLabel('owner')"
-                    aria-haspopup="listbox"
-                    :aria-expanded="isColumnFilterOpen('owner') ? 'true' : 'false'"
-                    @click.stop="toggleColumnFilter('owner', $event)"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M4 5h16l-6.2 7.1v5.1l-3.6 1.8v-6.9L4 5Z" />
-                    </svg>
-                  </button>
-                </span>
+                  v-model="ownerFilter"
+                  filter-key="owner"
+                  :label="columnFilterLabels.owner"
+                  :options="ownerFilterOptions"
+                />
               </div>
             </th>
             <th class="file-col">CV檔案</th>
