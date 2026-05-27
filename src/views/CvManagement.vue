@@ -1486,6 +1486,17 @@ onUnmounted(() => {
           >
             <h3>空窗期</h3>
             <p class="match-gap-summary">{{ activeApplication.match.employmentGap.summary }}</p>
+            <ul v-if="activeApplication.match.employmentGap.gaps?.length" class="match-gap-list">
+              <li v-for="(gap, index) in activeApplication.match.employmentGap.gaps" :key="`${gap.startMonth}-${gap.endMonth}-${index}`">
+                <strong>{{ gap.startMonth }} - {{ gap.endMonth }}</strong>
+                <span>{{ gap.durationLabel || `${gap.months || 0}個月` }}</span>
+                <em>
+                  {{ gap.previousCompanyName || gap.previousProjectName || '上一段經歷' }}
+                  →
+                  {{ gap.nextCompanyName || gap.nextProjectName || '下一段經歷' }}
+                </em>
+              </li>
+            </ul>
           </section>
 
           <section
@@ -1997,6 +2008,30 @@ onUnmounted(() => {
   margin: 0;
   color: var(--text-base);
   line-height: 1.6;
+}
+
+.match-gap-list {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.match-gap-list li {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.match-gap-list em {
+  color: var(--text-muted);
+  font-style: normal;
 }
 
 .detail-remark-cell {

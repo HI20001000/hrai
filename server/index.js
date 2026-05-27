@@ -82,6 +82,7 @@ const resolveInterviewStatusCheckIntervalMs = () => {
     process.env.HRAI_INTERVIEW_STATUS_CHECK_INTERVAL_MINUTES,
   ]
   for (const value of minuteCandidates) {
+    if (String(value ?? '').trim() === '') continue
     const numeric = Number(value)
     if (Number.isFinite(numeric) && numeric >= 0) return Math.floor(numeric * 60 * 1000)
   }
@@ -91,6 +92,7 @@ const resolveInterviewStatusCheckIntervalMs = () => {
     process.env.HRAI_INTERVIEW_STATUS_CHECK_INTERVAL_MS,
   ]
   for (const value of millisecondCandidates) {
+    if (String(value ?? '').trim() === '') continue
     const numeric = Number(value)
     if (Number.isFinite(numeric) && numeric >= 0) return Math.floor(numeric)
   }
@@ -4692,9 +4694,15 @@ const listScheduleInterviews = async (pool, req, res, url) => {
     return
   }
 
+  const requestedUserId = Number(url.searchParams.get('userId') || 0) || 0
   const currentUserId = Number(user.id)
+  if (requestedUserId && requestedUserId !== currentUserId && !isAdminUser(user)) {
+    sendJson(res, 403, { message: 'Only system administrators can view other users schedules' })
+    return
+  }
+  const selectedUserId = requestedUserId || currentUserId
   const month = parseScheduleMonth(url.searchParams.get('month'))
-  const rows = await listScheduledInterviewHistoryApplicationRows(pool, { currentUserId })
+  const rows = await listScheduledInterviewHistoryApplicationRows(pool, { currentUserId: selectedUserId })
 
   const statusHistories = await listJobPostApplicationStatusHistories(
     pool,
@@ -4745,6 +4753,7 @@ const listScheduleInterviews = async (pool, req, res, url) => {
   sendJson(res, 200, {
     month: month.key,
     currentUser: buildUserPayload(user),
+    selectedUserId,
     stats,
     relatedApplications,
     events: monthlyEvents,
@@ -4906,16 +4915,11 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
       sendJson(res, 400, { message: 'Invalid interview status' })
       return
     }
-    const statusValidation = validateManualInterviewStatusChange(
+    const nextInterviewStatus = resolveEffectiveInterviewStatus(
       requestedInterviewStatus,
       history.interviewScheduledAt,
       history.interviewDurationMinutes
     )
-    if (!statusValidation.valid) {
-      sendJson(res, 400, { message: statusValidation.message })
-      return
-    }
-    const nextInterviewStatus = statusValidation.status
     const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
     const nextRemark = hasRemark ? normalizeApplicationRemark(body.remark) : normalizeApplicationRemark(history.remark)
     const operatorUserId = await getRequestOperatorUserId(pool, req)
@@ -4957,16 +4961,11 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
     sendJson(res, 400, { message: 'Invalid interview status' })
     return
   }
-  const statusValidation = validateManualInterviewStatusChange(
+  const nextInterviewStatus = resolveEffectiveInterviewStatus(
     requestedInterviewStatus,
     existing.interviewScheduledAt,
     existing.interviewDurationMinutes
   )
-  if (!statusValidation.valid) {
-    sendJson(res, 400, { message: statusValidation.message })
-    return
-  }
-  const nextInterviewStatus = statusValidation.status
   const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
   const nextRemark = hasRemark ? normalizeApplicationRemark(body.remark) : normalizeApplicationRemark(existing.remark)
 

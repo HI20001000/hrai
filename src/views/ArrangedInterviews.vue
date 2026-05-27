@@ -8,12 +8,16 @@ import CandidateColumnFilter from '../components/candidate/CandidateColumnFilter
 import { CV_SOURCE_OPTIONS, normalizeCvSource } from '../scripts/cvSource.js'
 import {
   CANDIDATE_APPLICATION_STATUS_OPTIONS,
+  INTERVIEW_DURATION_PRESET_OPTIONS,
+  INTERVIEW_LOCATION_OPTIONS,
   INTERVIEW_STATUS_OPTIONS,
   getCandidateApplicationStatusLabel,
   getInterviewDurationLabel,
   getInterviewLocationLabel,
   getInterviewStatusLabel,
   normalizeCandidateApplicationStatus,
+  normalizeInterviewDurationMinutes,
+  normalizeInterviewLocation,
   normalizeInterviewStatus,
   validateInterviewStatusAgainstTime,
 } from '../scripts/candidateApplicationStatus.js'
@@ -42,6 +46,20 @@ const statusModalError = ref('')
 const activeApplication = ref(null)
 const interviewStatusDraft = ref('not_started')
 const remarkDraft = ref('')
+const isApplicationStatusModalOpen = ref(false)
+const isApplicationStatusSaving = ref(false)
+const applicationStatusModalError = ref('')
+const activeStatusApplication = ref(null)
+const editingStatusHistoryId = ref(0)
+const applicationStatusDraft = ref('screening')
+const statusRemarkDraft = ref('')
+const interviewScheduledAtDraft = ref('')
+const interviewDurationModeDraft = ref('30')
+const interviewDurationMinutesDraft = ref('30')
+const interviewerUserIdDraft = ref('')
+const interviewLocationDraft = ref('')
+const applicationInterviewStatusDraft = ref('not_started')
+const userOptions = ref([])
 const activeStatusPopoverKey = ref('')
 const activeStatusPopoverRow = ref(null)
 const statusPopoverStyle = ref({})
@@ -74,6 +92,18 @@ const formatDateTime = (value) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+const toDateTimeLocalValue = (value) => {
+  const date = parseDateTime(value)
+  if (!date) return ''
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const getCurrentInterviewDateTimeMin = () => {
+  const currentMinute = new Date()
+  currentMinute.setSeconds(0, 0)
+  return toDateTimeLocalValue(currentMinute)
+}
+
 const toDateKey = (value) => {
   const date = value instanceof Date ? value : parseDateTime(value)
   if (!date) return ''
@@ -98,6 +128,33 @@ const getInterviewRowKey = (row) =>
   row?.rowId || (row?.statusHistoryId ? `history-${Number(row.statusHistoryId)}` : Number(row?.applicationId || 0))
 
 const canEditInterviewStatus = computed(() => String(props.currentUser?.role || '').trim() !== 'viewer')
+
+const activeApplicationStatusHistory = computed(() => {
+  const history = Array.isArray(activeStatusApplication.value?.statusHistory)
+    ? activeStatusApplication.value.statusHistory
+    : []
+  if (history.length) return history
+  if (!activeStatusApplication.value) return []
+  return [buildFallbackStatusHistory(activeStatusApplication.value)]
+})
+
+const isApplicationInterviewStatusDraft = computed(() =>
+  ['hr_interview', 'department_interview'].includes(normalizeCandidateApplicationStatus(applicationStatusDraft.value, ''))
+)
+
+const selectedInterviewDurationMinutes = computed(() =>
+  normalizeInterviewDurationMinutes(interviewDurationMinutesDraft.value)
+)
+
+const interviewerOptions = computed(() => [
+  { value: '', label: '未指定' },
+  ...userOptions.value.map((user) => ({
+    value: String(user.id),
+    label: user.username || user.email || `用戶 #${user.id}`,
+    avatarText: user.avatarText || String(user.username || user.email || 'U').slice(0, 1).toUpperCase(),
+    avatarBgColor: user.avatarBgColor || '#64748b',
+  })),
+])
 
 const jobFilterOptions = computed(() => {
   const seen = new Set()
@@ -313,6 +370,20 @@ const loadInterviews = async () => {
   }
 }
 
+const loadUserOptions = async () => {
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/users/options`, {
+      headers: withAuthHeaders(),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (handleUnauthorizedResponse(response)) throw new Error('登入已失效，請重新登入')
+    if (!response.ok) throw new Error(data.message || '讀取用戶清單失敗')
+    userOptions.value = Array.isArray(data.users) ? data.users : []
+  } catch {
+    userOptions.value = []
+  }
+}
+
 const openInterviewStatusModal = async (row) => {
   const applicationId = Number(row?.applicationId || 0)
   if (!applicationId || isSaving(applicationId)) return
@@ -358,6 +429,149 @@ const closeInterviewStatusModal = () => {
   remarkDraft.value = ''
 }
 
+const applyInterviewDurationDraft = (minutes) => {
+  const normalized = normalizeInterviewDurationMinutes(minutes)
+  interviewDurationMinutesDraft.value = String(normalized)
+  interviewDurationModeDraft.value = ['10', '30', '60'].includes(String(normalized)) ? String(normalized) : 'custom'
+}
+
+const fillApplicationStatusDraft = (source = {}) => {
+  const interview = source?.interview || {}
+  applicationStatusDraft.value = normalizeCandidateApplicationStatus(source?.applicationStatus)
+  statusRemarkDraft.value = String(source?.remark || '')
+  interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt) || getCurrentInterviewDateTimeMin()
+  applyInterviewDurationDraft(interview.durationMinutes || 30)
+  interviewerUserIdDraft.value = String(interview.interviewerUser?.id || '')
+  interviewLocationDraft.value = normalizeInterviewLocation(interview.location, '')
+  applicationInterviewStatusDraft.value = normalizeInterviewStatus(interview.status)
+}
+
+const startNewApplicationStatusDraft = () => {
+  editingStatusHistoryId.value = 0
+  fillApplicationStatusDraft({
+    applicationStatus: 'screening',
+    interview: { scheduledAt: getCurrentInterviewDateTimeMin(), durationMinutes: 30, status: 'not_started' },
+    remark: '',
+  })
+}
+
+const editApplicationStatusHistoryDraft = (history) => {
+  const historyId = Number(history?.id || 0)
+  if (!historyId || isApplicationStatusSaving.value) return
+  editingStatusHistoryId.value = historyId
+  fillApplicationStatusDraft(history)
+}
+
+const openApplicationStatusModal = async (row) => {
+  const applicationId = Number(row?.applicationId || 0)
+  if (!applicationId || !canEditInterviewStatus.value) return
+
+  closeStatusPopover()
+  isApplicationStatusModalOpen.value = true
+  applicationStatusModalError.value = ''
+  activeStatusApplication.value = row
+  startNewApplicationStatusDraft()
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}`, {
+      headers: withAuthHeaders(),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (handleUnauthorizedResponse(response)) throw new Error('登入已失效，請重新登入')
+    if (!response.ok) throw new Error(data.message || '讀取候選人狀態失敗')
+    activeStatusApplication.value = {
+      ...row,
+      ...(data.application || {}),
+      statusHistory: Array.isArray(data.application?.statusHistory) ? data.application.statusHistory : row.statusHistory,
+    }
+    startNewApplicationStatusDraft()
+  } catch (error) {
+    applicationStatusModalError.value = getRequestErrorMessage(error, '讀取候選人狀態失敗')
+  }
+}
+
+const closeApplicationStatusModal = () => {
+  if (isApplicationStatusSaving.value) return
+  isApplicationStatusModalOpen.value = false
+  applicationStatusModalError.value = ''
+  activeStatusApplication.value = null
+  editingStatusHistoryId.value = 0
+}
+
+const handleDurationModeChange = (value) => {
+  const mode = String(value || '').trim()
+  interviewDurationModeDraft.value = mode
+  if (mode !== 'custom') {
+    interviewDurationMinutesDraft.value = String(normalizeInterviewDurationMinutes(mode))
+  }
+}
+
+const saveApplicationStatusHistory = async () => {
+  const applicationId = Number(activeStatusApplication.value?.applicationId || 0)
+  const historyId = Number(editingStatusHistoryId.value || 0)
+  const nextStatus = normalizeCandidateApplicationStatus(applicationStatusDraft.value, '')
+  if (!applicationId || !nextStatus) return
+
+  if (isApplicationInterviewStatusDraft.value) {
+    const missing = []
+    if (!interviewScheduledAtDraft.value) missing.push('面試時間')
+    if (!interviewerUserIdDraft.value) missing.push('面試官')
+    if (!interviewLocationDraft.value) missing.push('面試地點')
+    if (missing.length) {
+      applicationStatusModalError.value = `請先填寫：${missing.join('、')}`
+      window.alert(applicationStatusModalError.value)
+      return
+    }
+  }
+
+  const interviewPayload = isApplicationInterviewStatusDraft.value
+    ? {
+        scheduledAt: interviewScheduledAtDraft.value || '',
+        durationMinutes: selectedInterviewDurationMinutes.value,
+        interviewerUserId: interviewerUserIdDraft.value || '',
+        location: interviewLocationDraft.value || '',
+        status: normalizeInterviewStatus(applicationInterviewStatusDraft.value),
+      }
+    : {
+        scheduledAt: '',
+        durationMinutes: selectedInterviewDurationMinutes.value,
+        interviewerUserId: '',
+        location: '',
+        status: 'not_started',
+      }
+
+  isApplicationStatusSaving.value = true
+  try {
+    const response = await fetch(
+      historyId
+        ? `${apiBaseUrl}/api/job-post-applications/${applicationId}/status-history/${historyId}`
+        : `${apiBaseUrl}/api/job-post-applications/${applicationId}/status-history`,
+      {
+        method: historyId ? 'PATCH' : 'POST',
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          applicationStatus: nextStatus,
+          firstInterviewArrangement: '',
+          interview: interviewPayload,
+          remark: String(statusRemarkDraft.value || '').trim(),
+        }),
+      }
+    )
+    const data = await response.json().catch(() => ({}))
+    if (handleUnauthorizedResponse(response)) throw new Error('登入已失效，請重新登入')
+    if (!response.ok) throw new Error(data.message || '保存狀態記錄失敗')
+    await loadInterviews()
+    window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
+    window.dispatchEvent(new CustomEvent('hrai-interviews-updated'))
+    message.value = historyId ? '已更新狀態記錄' : '已新增狀態記錄'
+    closeApplicationStatusModal()
+  } catch (error) {
+    applicationStatusModalError.value = getRequestErrorMessage(error, '保存狀態記錄失敗')
+  } finally {
+    isApplicationStatusSaving.value = false
+  }
+}
+
 const saveInterviewStatusModal = async () => {
   const applicationId = Number(activeApplication.value?.applicationId || 0)
   const statusHistoryId = Number(activeApplication.value?.statusHistoryId || 0) || 0
@@ -371,6 +585,11 @@ const saveInterviewStatusModal = async () => {
     window.alert(validation.message)
     return
   }
+  const effectiveStatus = normalizeInterviewStatus(validation.status || nextStatus, nextStatus)
+  if (validation.message) {
+    statusModalError.value = validation.message
+    message.value = validation.message
+  }
 
   savingIds.value = [...savingIds.value, applicationId]
   isSavingStatusModal.value = true
@@ -379,7 +598,7 @@ const saveInterviewStatusModal = async () => {
       method: 'PATCH',
       headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
-        status: nextStatus,
+        status: effectiveStatus,
         remark: String(remarkDraft.value || '').trim(),
         statusHistoryId: statusHistoryId || undefined,
       }),
@@ -415,13 +634,15 @@ const updateInterviewStatus = async (row, nextValue) => {
     window.alert(validation.message)
     return
   }
+  const effectiveStatus = normalizeInterviewStatus(validation.status || nextStatus, nextStatus)
+  if (validation.message) message.value = validation.message
 
   savingIds.value = [...savingIds.value, applicationId]
   try {
     const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}/interview-status`, {
       method: 'PATCH',
       headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ status: nextStatus, statusHistoryId: statusHistoryId || undefined }),
+      body: JSON.stringify({ status: effectiveStatus, statusHistoryId: statusHistoryId || undefined }),
     })
     const data = await response.json().catch(() => ({}))
     if (handleUnauthorizedResponse(response)) throw new Error('登入已失效，請重新登入')
@@ -430,7 +651,7 @@ const updateInterviewStatus = async (row, nextValue) => {
     interviews.value = interviews.value.map((item) =>
       (statusHistoryId && Number(item.statusHistoryId || 0) === statusHistoryId) ||
       (!statusHistoryId && Number(item.applicationId) === applicationId)
-        ? { ...item, interview: { ...(item.interview || {}), status: nextStatus } }
+        ? { ...item, interview: { ...(item.interview || {}), status: effectiveStatus } }
         : item
     )
     window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
@@ -443,7 +664,10 @@ const updateInterviewStatus = async (row, nextValue) => {
   }
 }
 
-onMounted(loadInterviews)
+onMounted(() => {
+  loadInterviews()
+  loadUserOptions()
+})
 onBeforeUnmount(() => {
   clearStatusPopoverTimer()
 })
@@ -566,13 +790,15 @@ onBeforeUnmount(() => {
                   @focusin="openStatusPopover(row, $event)"
                   @focusout="scheduleStatusPopoverClose"
                 >
-                  <span
+                  <button
+                    type="button"
                     class="status-chip"
                     :class="getStatusToneClass(row.applicationStatus)"
-                    tabindex="0"
+                    :disabled="!canEditInterviewStatus"
+                    @click.stop="openApplicationStatusModal(row)"
                   >
                     {{ getCandidateApplicationStatusLabel(row.applicationStatus) }}
-                  </span>
+                  </button>
                 </span>
               </td>
               <td class="result-cell">
@@ -636,6 +862,135 @@ onBeforeUnmount(() => {
         </ol>
       </div>
     </Teleport>
+
+    <div v-if="isApplicationStatusModalOpen" class="modal-backdrop" @click.self="closeApplicationStatusModal">
+      <section class="modal-panel interview-status-modal">
+        <header class="modal-header">
+          <div>
+            <h3>候選人狀態</h3>
+            <p class="subtle">
+              {{ activeStatusApplication?.fullName || '候選人' }}
+              <template v-if="activeStatusApplication?.jobPostTitle">｜{{ activeStatusApplication.jobPostTitle }}</template>
+            </p>
+          </div>
+          <button type="button" class="ghost-btn" :disabled="isApplicationStatusSaving" @click="closeApplicationStatusModal">關閉</button>
+        </header>
+
+        <p v-if="applicationStatusModalError" class="message">{{ applicationStatusModalError }}</p>
+
+        <template v-if="activeStatusApplication">
+          <div class="status-modal-grid">
+            <section class="status-form-panel">
+              <div class="status-field-grid">
+                <label class="field">
+                  <span>候選人狀態</span>
+                  <AppSelect
+                    v-model="applicationStatusDraft"
+                    :options="CANDIDATE_APPLICATION_STATUS_OPTIONS"
+                    :disabled="isApplicationStatusSaving"
+                    placeholder="請選擇狀態"
+                  />
+                </label>
+
+                <template v-if="isApplicationInterviewStatusDraft">
+                  <label class="field">
+                    <span>面試時間</span>
+                    <input v-model="interviewScheduledAtDraft" type="datetime-local" :disabled="isApplicationStatusSaving" />
+                  </label>
+                  <label class="field">
+                    <span>面試時長</span>
+                    <AppSelect
+                      :model-value="interviewDurationModeDraft"
+                      :options="INTERVIEW_DURATION_PRESET_OPTIONS"
+                      :disabled="isApplicationStatusSaving"
+                      @update:model-value="handleDurationModeChange"
+                    />
+                  </label>
+                  <label v-if="interviewDurationModeDraft === 'custom'" class="field">
+                    <span>自定義分鐘</span>
+                    <input v-model="interviewDurationMinutesDraft" type="number" min="1" max="480" :disabled="isApplicationStatusSaving" />
+                  </label>
+                  <label class="field">
+                    <span>面試官</span>
+                    <AppSelect
+                      v-model="interviewerUserIdDraft"
+                      :options="interviewerOptions"
+                      :disabled="isApplicationStatusSaving"
+                      placeholder="請選擇面試官"
+                    />
+                  </label>
+                  <label class="field">
+                    <span>面試地點</span>
+                    <AppSelect
+                      v-model="interviewLocationDraft"
+                      :options="INTERVIEW_LOCATION_OPTIONS"
+                      :disabled="isApplicationStatusSaving"
+                      placeholder="請選擇地點"
+                    />
+                  </label>
+                  <label class="field">
+                    <span>面試結果</span>
+                    <AppSelect
+                      v-model="applicationInterviewStatusDraft"
+                      :options="INTERVIEW_STATUS_OPTIONS"
+                      :disabled="isApplicationStatusSaving"
+                      placeholder="請選擇面試結果"
+                    />
+                  </label>
+                </template>
+
+                <label class="field full-span">
+                  <span>備註</span>
+                  <textarea
+                    v-model.trim="statusRemarkDraft"
+                    rows="4"
+                    :disabled="isApplicationStatusSaving"
+                    placeholder="輸入原因或跟進記錄"
+                  ></textarea>
+                </label>
+              </div>
+            </section>
+
+            <section class="status-history-section">
+              <div class="status-history-heading">
+                <h4>狀態記錄</h4>
+                <button type="button" class="secondary-btn compact-btn" :disabled="isApplicationStatusSaving" @click="startNewApplicationStatusDraft">
+                  新增
+                </button>
+              </div>
+              <ol class="modal-status-history">
+                <li
+                  v-for="(history, index) in activeApplicationStatusHistory"
+                  :key="getStatusHistoryKey(history, index)"
+                  :class="{ current: index === 0, selected: Number(editingStatusHistoryId) === Number(history.id) }"
+                  role="button"
+                  tabindex="0"
+                  @click="editApplicationStatusHistoryDraft(history)"
+                  @keydown.enter.prevent="editApplicationStatusHistoryDraft(history)"
+                >
+                  <span class="history-dot" aria-hidden="true"></span>
+                  <span class="history-main">
+                    <strong>{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</strong>
+                    <em v-if="getInterviewSummaryParts(history).length">
+                      面試資訊：{{ getInterviewSummaryText(history) }}
+                    </em>
+                    <span v-if="String(history.remark || '').trim()" class="history-remark">{{ history.remark }}</span>
+                    <small>{{ formatDateTime(history.updatedAt || history.createdAt) }}</small>
+                  </span>
+                </li>
+              </ol>
+            </section>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="secondary-btn" :disabled="isApplicationStatusSaving" @click="closeApplicationStatusModal">取消</button>
+            <button type="button" class="primary-btn" :disabled="isApplicationStatusSaving" @click="saveApplicationStatusHistory">
+              {{ isApplicationStatusSaving ? '保存中...' : (editingStatusHistoryId ? '更新狀態記錄' : '新增狀態記錄') }}
+            </button>
+          </div>
+        </template>
+      </section>
+    </div>
 
     <div v-if="isStatusModalOpen" class="modal-backdrop" @click.self="closeInterviewStatusModal">
       <section class="modal-panel interview-status-modal">
@@ -862,11 +1217,19 @@ onBeforeUnmount(() => {
   gap: 0.42rem;
   min-height: 26px;
   padding: 0.18rem 0.55rem;
+  border: 0;
   border-radius: 999px;
   background: rgba(47, 111, 237, 0.12);
   color: #2f6fed;
+  font: inherit;
   font-weight: 800;
   outline: none;
+  cursor: pointer;
+}
+
+.status-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
 }
 
 .status-chip::before {
@@ -1151,6 +1514,23 @@ li.current .history-main strong {
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 18px;
   background: #f8fafc;
+}
+
+.status-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.modal-status-history li.selected {
+  border-color: rgba(47, 111, 237, 0.38);
+  background: rgba(47, 111, 237, 0.08);
+}
+
+.compact-btn {
+  padding: 0.42rem 0.7rem;
+  font-size: 0.82rem;
 }
 
 .status-field-grid {

@@ -1468,6 +1468,13 @@ const clearBatchQueueLegacy = () => {
         <p><strong>匹配分數：</strong>{{ singleMatchResult?.application?.matchedScore ?? singleMatchResult?.match?.matchScore ?? '--' }}</p>
         <p><strong>匹配等級：</strong>{{ singleMatchResult?.application?.matchedLevel || singleMatchResult?.match?.matchLevel || '--' }}</p>
         <p v-if="singleMatchResult?.match?.employmentGap?.summary"><strong>空窗期：</strong>{{ singleMatchResult.match.employmentGap.summary }}</p>
+        <ul v-if="singleMatchResult?.match?.employmentGap?.gaps?.length" class="match-gap-list">
+          <li v-for="(gap, index) in singleMatchResult.match.employmentGap.gaps" :key="`${gap.startMonth}-${gap.endMonth}-${index}`">
+            <strong>{{ gap.startMonth }} - {{ gap.endMonth }}</strong>
+            <span>{{ gap.durationLabel || `${gap.months || 0}個月` }}</span>
+            <em>{{ gap.previousCompanyName || gap.previousProjectName || '上一段經歷' }} → {{ gap.nextCompanyName || gap.nextProjectName || '下一段經歷' }}</em>
+          </li>
+        </ul>
         <p><strong>投遞編號：</strong>{{ singleMatchResult?.application?.id || '--' }}</p>
         <MatchDimensionBreakdown :evaluations="singleMatchResult?.match?.dimensionEvaluations || []" />
       </div>
@@ -1772,6 +1779,30 @@ const clearBatchQueueLegacy = () => {
 .match-result-card h4,
 .match-result-card p {
   margin: 0;
+}
+
+.match-gap-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.match-gap-list li {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.match-gap-list em {
+  color: var(--text-muted);
+  font-style: normal;
 }
 
 .detail-page-topbar {

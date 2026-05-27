@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import { handleUnauthorizedResponse, requireAuthToken, withAuthHeaders } from '../scripts/authState.js'
+import AppSelect from '../components/AppSelect.vue'
 import CandidateApplicationsTable from '../components/candidate/CandidateApplicationsTable.vue'
 import {
   getInterviewLocationLabel,
@@ -9,6 +10,13 @@ import {
   normalizeCandidateApplicationStatus,
   normalizeInterviewStatus,
 } from '../scripts/candidateApplicationStatus.js'
+
+const props = defineProps({
+  currentUser: {
+    type: Object,
+    default: null,
+  },
+})
 
 const scheduleData = ref({
   month: '',
@@ -21,6 +29,8 @@ const isLoading = ref(false)
 const message = ref('')
 const currentMonth = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1))
 const selectedDateKey = ref('')
+const selectedUserId = ref('')
+const userOptions = ref([])
 const isRelatedModalOpen = ref(false)
 const activeRelatedFilter = ref('total')
 
@@ -31,6 +41,23 @@ const toDateKey = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-$
 const monthKey = computed(() => `${currentMonth.value.getFullYear()}-${pad(currentMonth.value.getMonth() + 1)}`)
 
 const monthTitle = computed(() => `${currentMonth.value.getFullYear()}年 ${currentMonth.value.getMonth() + 1}月`)
+
+const isAdminUser = computed(() => String(props.currentUser?.role || '').trim() === 'admin')
+
+const scheduleUserOptions = computed(() => {
+  const options = userOptions.value.map((user) => ({
+    value: String(user.id),
+    label: user.username || user.email || `用戶 #${user.id}`,
+  }))
+  const currentId = String(props.currentUser?.id || '')
+  if (currentId && !options.some((option) => option.value === currentId)) {
+    options.unshift({
+      value: currentId,
+      label: props.currentUser?.username || props.currentUser?.mail || props.currentUser?.email || '目前用戶',
+    })
+  }
+  return options
+})
 
 const formatTime = (value) => {
   if (!value) return '--'
@@ -189,7 +216,9 @@ const loadSchedule = async () => {
   message.value = ''
   try {
     if (!requireAuthToken()) throw new Error('登入已失效，請重新登入')
-    const response = await fetch(`${apiBaseUrl}/api/schedule/interviews?month=${monthKey.value}`, {
+    const params = new URLSearchParams({ month: monthKey.value })
+    if (isAdminUser.value && selectedUserId.value) params.set('userId', selectedUserId.value)
+    const response = await fetch(`${apiBaseUrl}/api/schedule/interviews?${params.toString()}`, {
       headers: withAuthHeaders(),
     })
     const data = await response.json().catch(() => ({}))
@@ -202,6 +231,7 @@ const loadSchedule = async () => {
       events: Array.isArray(data.events) ? data.events : [],
       tasksByDate: data.tasksByDate || {},
     }
+    selectedUserId.value = String(data.selectedUserId || selectedUserId.value || props.currentUser?.id || '')
     if (!selectedDateKey.value || !selectedDateKey.value.startsWith(monthKey.value)) {
       selectedDateKey.value = monthKey.value === toDateKey(new Date()).slice(0, 7)
         ? toDateKey(new Date())
@@ -214,6 +244,22 @@ const loadSchedule = async () => {
   }
 }
 
+const loadUserOptions = async () => {
+  if (!isAdminUser.value) return
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/users/options`, {
+      headers: withAuthHeaders(),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (handleUnauthorizedResponse(response)) throw new Error('登入已失效，請重新登入')
+    if (!response.ok) throw new Error(data.message || '讀取用戶清單失敗')
+    userOptions.value = Array.isArray(data.users) ? data.users : []
+  } catch (error) {
+    message.value = error?.message || '讀取用戶清單失敗'
+    userOptions.value = []
+  }
+}
+
 const changeMonth = async (offset) => {
   currentMonth.value = new Date(currentMonth.value.getFullYear(), currentMonth.value.getMonth() + offset, 1)
   selectedDateKey.value = ''
@@ -221,6 +267,33 @@ const changeMonth = async (offset) => {
 }
 
 onMounted(loadSchedule)
+
+onMounted(async () => {
+  selectedUserId.value = String(props.currentUser?.id || '')
+  await loadUserOptions()
+})
+
+watch(
+  () => props.currentUser?.id,
+  (id) => {
+    if (!selectedUserId.value) selectedUserId.value = String(id || '')
+  }
+)
+
+watch(
+  () => props.currentUser?.role,
+  async (role) => {
+    if (String(role || '').trim() === 'admin') {
+      if (!selectedUserId.value) selectedUserId.value = String(props.currentUser?.id || '')
+      await loadUserOptions()
+    }
+  }
+)
+
+watch(selectedUserId, async (next, previous) => {
+  if (!isAdminUser.value || !previous || next === previous) return
+  await loadSchedule()
+})
 </script>
 
 <template>
@@ -230,9 +303,20 @@ onMounted(loadSchedule)
         <h2>時間表</h2>
         <p>按當前登入用戶匯總對接與面試任務，集中查看本月面試安排。</p>
       </div>
-      <button type="button" class="secondary-btn" :disabled="isLoading" @click="loadSchedule">
-        {{ isLoading ? '刷新中...' : '刷新' }}
-      </button>
+      <div class="header-actions">
+        <label v-if="isAdminUser" class="user-switcher">
+          <span>檢視用戶</span>
+          <AppSelect
+            v-model="selectedUserId"
+            :options="scheduleUserOptions"
+            :disabled="isLoading"
+            placeholder="選擇用戶"
+          />
+        </label>
+        <button type="button" class="secondary-btn" :disabled="isLoading" @click="loadSchedule">
+          {{ isLoading ? '刷新中...' : '刷新' }}
+        </button>
+      </div>
     </header>
 
     <p v-if="message" class="message">{{ message }}</p>
@@ -362,6 +446,25 @@ onMounted(loadSchedule)
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.user-switcher {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 220px;
+}
+
+.user-switcher span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .page-header h2,

@@ -177,9 +177,9 @@ export const validateInterviewStatusAgainstTime = (status, interview = {}, now =
   const expectedLabel = getInterviewStatusLabel(expectedStatus)
   const selectedLabel = getInterviewStatusLabel(nextStatus)
   return {
-    valid: false,
+    valid: true,
     expectedStatus,
-    status: nextStatus,
-    message: `目前本機時間為 ${formatLocalDateTime(now)}，面試時段為 ${formatLocalDateTime(start)}-${formatLocalDateTime(end)}，不可更新為「${selectedLabel}」。請改選「${expectedLabel}」，或選擇「通過 / 不通過」。`,
+    status: expectedStatus,
+    message: `目前本機時間為 ${formatLocalDateTime(now)}，面試時段為 ${formatLocalDateTime(start)}-${formatLocalDateTime(end)}，已依時間規則將「${selectedLabel}」套用為「${expectedLabel}」。`,
   }
 }

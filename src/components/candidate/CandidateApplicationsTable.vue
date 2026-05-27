@@ -177,6 +177,8 @@ const statusFilter = ref('')
 const jobFilter = ref('')
 const ownerFilter = ref('')
 const sourceFilter = ref('')
+const matchedPositionFilter = ref('')
+const matchedScoreSort = ref('')
 const currentPage = ref(1)
 const statusOverrides = ref({})
 const savingStatusIds = ref([])
@@ -483,11 +485,26 @@ const ownerFilterOptions = computed(() => {
   return [{ value: '', label: '全部' }, ...options]
 })
 
+const matchedPositionFilterOptions = computed(() => {
+  const seen = new Set()
+  const options = []
+
+  for (const row of displayRows.value) {
+    const position = normalizeFilterText(row.matchedPosition)
+    if (!position || seen.has(position)) continue
+    seen.add(position)
+    options.push({ value: position, label: position })
+  }
+
+  return [{ value: '', label: '全部' }, ...options]
+})
+
 const columnFilterLabels = {
   job: '職位',
   status: '候選人狀態',
   owner: '對接人',
   source: 'CV 來源',
+  matchedPosition: '匹配職位',
 }
 
 const getColumnFilterOptions = (key) => {
@@ -495,6 +512,7 @@ const getColumnFilterOptions = (key) => {
   if (key === 'status') return statusFilterOptions.value
   if (key === 'owner') return ownerFilterOptions.value
   if (key === 'source') return sourceFilterOptions.value
+  if (key === 'matchedPosition') return matchedPositionFilterOptions.value
   return []
 }
 
@@ -503,6 +521,7 @@ const getColumnFilterValue = (key) => {
   if (key === 'status') return statusFilter.value
   if (key === 'owner') return ownerFilter.value
   if (key === 'source') return sourceFilter.value
+  if (key === 'matchedPosition') return matchedPositionFilter.value
   return ''
 }
 
@@ -522,7 +541,15 @@ const setColumnFilterValue = (key, value) => {
   }
   if (key === 'source') {
     sourceFilter.value = nextValue
+    return
   }
+  if (key === 'matchedPosition') {
+    matchedPositionFilter.value = nextValue
+  }
+}
+
+const toggleMatchedScoreSort = (direction) => {
+  matchedScoreSort.value = matchedScoreSort.value === direction ? '' : direction
 }
 
 const getColumnFilterOptionAvatarStyle = (option) => {
@@ -662,6 +689,7 @@ const filteredRows = computed(() => {
   const selectedJob = normalizeFilterText(jobFilter.value)
   const selectedOwner = normalizeFilterText(ownerFilter.value)
   const selectedSource = normalizeCvSource(sourceFilter.value)
+  const selectedMatchedPosition = normalizeFilterText(matchedPositionFilter.value)
 
   return displayRows.value.filter((row) => {
     if (
@@ -680,6 +708,10 @@ const filteredRows = computed(() => {
     }
 
     if (selectedSource && normalizeCvSource(row.source) !== selectedSource) {
+      return false
+    }
+
+    if (selectedMatchedPosition && normalizeFilterText(row.matchedPosition) !== selectedMatchedPosition) {
       return false
     }
 
@@ -708,17 +740,30 @@ const filteredRows = computed(() => {
   })
 })
 
+const sortedRows = computed(() => {
+  const rows = [...filteredRows.value]
+  if (!matchedScoreSort.value) return rows
+
+  const direction = matchedScoreSort.value === 'asc' ? 1 : -1
+  return rows.sort((a, b) => {
+    const aScore = Number(a?.matchedScore || 0)
+    const bScore = Number(b?.matchedScore || 0)
+    if (aScore !== bScore) return (aScore - bScore) * direction
+    return normalizeFilterText(a?.matchedPosition).localeCompare(normalizeFilterText(b?.matchedPosition))
+  })
+})
+
 const effectivePageSize = computed(() => Math.max(1, Number(props.pageSize) || 30))
 
 const totalPages = computed(() =>
-  Math.max(1, Math.ceil(filteredRows.value.length / effectivePageSize.value))
+  Math.max(1, Math.ceil(sortedRows.value.length / effectivePageSize.value))
 )
 
 const visibleRows = computed(() => {
-  if (!props.paginated) return filteredRows.value
+  if (!props.paginated) return sortedRows.value
 
   const start = (currentPage.value - 1) * effectivePageSize.value
-  return filteredRows.value.slice(start, start + effectivePageSize.value)
+  return sortedRows.value.slice(start, start + effectivePageSize.value)
 })
 
 const paginationPages = computed(() => {
@@ -732,11 +777,11 @@ const paginationPages = computed(() => {
 })
 
 const paginationStart = computed(() =>
-  filteredRows.value.length ? (currentPage.value - 1) * effectivePageSize.value + 1 : 0
+  sortedRows.value.length ? (currentPage.value - 1) * effectivePageSize.value + 1 : 0
 )
 
 const paginationEnd = computed(() =>
-  Math.min(currentPage.value * effectivePageSize.value, filteredRows.value.length)
+  Math.min(currentPage.value * effectivePageSize.value, sortedRows.value.length)
 )
 
 const tableWrapStyle = computed(() =>
@@ -809,7 +854,7 @@ const goToPage = (page) => {
   currentPage.value = Math.max(1, Math.min(Number(page) || 1, totalPages.value))
 }
 
-watch([searchKeyword, statusFilter, jobFilter, ownerFilter, sourceFilter], () => {
+watch([searchKeyword, statusFilter, jobFilter, ownerFilter, sourceFilter, matchedPositionFilter, matchedScoreSort], () => {
   currentPage.value = 1
 })
 
@@ -1206,7 +1251,37 @@ onBeforeUnmount(() => {
             </th>
             <th class="remark-col">備註</th>
             <th v-if="showTargetPositionColumn" class="position-col">期望職位</th>
-            <th class="position-col">匹配職位</th>
+            <th class="position-col">
+              <div class="column-header match-column-header">
+                <span class="column-title">匹配職位</span>
+                <CandidateColumnFilter
+                  v-model="matchedPositionFilter"
+                  filter-key="matched-position"
+                  :label="columnFilterLabels.matchedPosition"
+                  :options="matchedPositionFilterOptions"
+                />
+                <span class="match-sort-controls" aria-label="匹配分數排序">
+                  <button
+                    type="button"
+                    class="match-sort-btn"
+                    :class="{ active: matchedScoreSort === 'asc' }"
+                    title="匹配分數升序"
+                    @click="toggleMatchedScoreSort('asc')"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    class="match-sort-btn"
+                    :class="{ active: matchedScoreSort === 'desc' }"
+                    title="匹配分數降序"
+                    @click="toggleMatchedScoreSort('desc')"
+                  >
+                    ↓
+                  </button>
+                </span>
+              </div>
+            </th>
             <th v-if="showPhoneColumn" class="phone-col">電話</th>
             <th class="source-col">
               <div class="column-header">
@@ -1418,8 +1493,8 @@ onBeforeUnmount(() => {
 
     <div v-if="paginated" class="table-pagination" aria-label="候選人清單分頁">
       <p class="pagination-summary">
-        <template v-if="filteredRows.length">
-          顯示 {{ paginationStart }}-{{ paginationEnd }} / 共 {{ filteredRows.length }} 筆，每頁 {{ effectivePageSize }} 筆
+        <template v-if="sortedRows.length">
+          顯示 {{ paginationStart }}-{{ paginationEnd }} / 共 {{ sortedRows.length }} 筆，每頁 {{ effectivePageSize }} 筆
         </template>
         <template v-else>共 0 筆</template>
       </p>
@@ -1751,6 +1826,36 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.match-column-header {
+  gap: 0.3rem;
+}
+
+.match-sort-controls {
+  display: inline-flex;
+  gap: 0.2rem;
+}
+
+.match-sort-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.78);
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.match-sort-btn:hover,
+.match-sort-btn.active {
+  border-color: rgba(47, 111, 237, 0.26);
+  color: var(--accent);
+  background: rgba(47, 111, 237, 0.1);
 }
 
 .column-filter {

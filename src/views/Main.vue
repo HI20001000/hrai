@@ -82,7 +82,7 @@ onUnmounted(() => {
           <JobPostsView v-if="activePage === 'reports'" />
           <CvManagement v-else-if="activePage === 'cv'" />
           <JobApplyView v-else-if="activePage === 'files'" />
-          <ScheduleView v-else-if="activePage === 'schedule'" />
+          <ScheduleView v-else-if="activePage === 'schedule'" :current-user="currentUser" />
           <ArrangedInterviewsView v-else-if="activePage === 'interviews'" :current-user="currentUser" />
           <OnboardedPersonnelManagement v-else-if="activePage === 'personnel'" />
           <BlacklistManagement v-else-if="activePage === 'blacklist'" />

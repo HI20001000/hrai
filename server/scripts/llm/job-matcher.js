@@ -144,36 +144,48 @@ const parseEmploymentEndMonth = (value) => {
   return latest
 }
 
-const findLatestCompanyEmploymentEndMonth = (extracted = {}) => {
+const findCompanyEmploymentRanges = (extracted = {}) => {
   const profile = extracted?.profile && typeof extracted.profile === 'object' ? extracted.profile : {}
   const groups = normalizeProjectExperiences(profile.projectExperiences)
-  let latest = null
+  const ranges = []
 
   for (const group of groups) {
     if (group.groupType !== 'company') continue
     for (const project of group.projects || []) {
-      const endMonth = parseEmploymentEndMonth(project.durationText)
-      if (!Number.isInteger(endMonth)) continue
-      if (!latest || endMonth > latest.endMonth) {
-        latest = {
-          companyName: normalizeText(group.companyName),
-          projectName: normalizeText(project.projectName),
-          durationText: normalizeText(project.durationText),
-          endMonth,
-        }
-      }
+      const range = parseEmploymentDurationRange(project.durationText)
+      if (!range) continue
+      ranges.push({
+        companyName: normalizeText(group.companyName),
+        projectName: normalizeText(project.projectName),
+        durationText: normalizeText(project.durationText),
+        startMonth: range.startMonth,
+        endMonth: range.endMonth,
+      })
     }
   }
 
+  return ranges.sort((a, b) => a.startMonth - b.startMonth || a.endMonth - b.endMonth)
+}
+
+const findLatestCompanyEmploymentEndMonth = (extracted = {}) => {
+  const ranges = findCompanyEmploymentRanges(extracted)
+  let latest = null
+  for (const range of ranges) {
+    if (!latest || range.endMonth > latest.endMonth) latest = range
+  }
   return latest
 }
 
 const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) => {
   const limitMonths = normalizeEmploymentGapLimitMonths(job?.employmentGapLimitMonths)
   const currentMonth = getCurrentMonthIndex(now)
-  const latestEmployment = findLatestCompanyEmploymentEndMonth(extracted)
+  const threeYearsAgoMonth = currentMonth - 35
+  const employmentRanges = findCompanyEmploymentRanges(extracted)
+  const relevantRanges = employmentRanges
+    .filter((range) => range.endMonth >= threeYearsAgoMonth && range.startMonth <= currentMonth)
+    .sort((a, b) => a.startMonth - b.startMonth || a.endMonth - b.endMonth)
 
-  if (!latestEmployment) {
+  if (!relevantRanges.length) {
     return {
       status: 'unknown',
       exceeded: false,
@@ -182,35 +194,68 @@ const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) =>
       latestEmploymentEnd: '',
       currentSystemMonth: formatYearMonthLabel(currentMonth),
       durationLabel: '',
-      summary: `未能從 CV 中識別最近一份正式工作的離職月份，暫無法判定是否超過職位字典設定的 ${limitMonths} 個月空窗期上限。`,
+      gaps: [],
+      summary: `未能從 CV 中識別近三年內的正式工作經歷區間，暫無法列明經歷之間的空窗期。`,
     }
   }
 
-  const gapMonths = Math.max(0, currentMonth - latestEmployment.endMonth)
-  const durationLabel = formatDurationMonthsLabel(gapMonths)
-  const latestEmploymentEnd = formatYearMonthLabel(latestEmployment.endMonth)
+  const gaps = []
+  let previous = relevantRanges[0]
+  for (const current of relevantRanges.slice(1)) {
+    if (current.startMonth <= previous.endMonth + 1) {
+      if (current.endMonth > previous.endMonth) previous = current
+      continue
+    }
+
+    const gapStartMonth = Math.max(previous.endMonth + 1, threeYearsAgoMonth)
+    const gapEndMonth = Math.min(current.startMonth - 1, currentMonth)
+    const gapMonths = gapEndMonth >= gapStartMonth ? gapEndMonth - gapStartMonth + 1 : 0
+    if (gapMonths > 0) {
+      gaps.push({
+        startMonth: formatYearMonthLabel(gapStartMonth),
+        endMonth: formatYearMonthLabel(gapEndMonth),
+        months: gapMonths,
+        durationLabel: formatDurationMonthsLabel(gapMonths),
+        previousCompanyName: previous.companyName,
+        previousProjectName: previous.projectName,
+        previousDurationText: previous.durationText,
+        nextCompanyName: current.companyName,
+        nextProjectName: current.projectName,
+        nextDurationText: current.durationText,
+        exceeded: gapMonths > limitMonths,
+      })
+    }
+    previous = current
+  }
+
+  const longestGap = gaps.reduce((max, gap) => (gap.months > (max?.months || 0) ? gap : max), null)
+  const gapMonths = longestGap?.months || 0
+  const durationLabel = longestGap?.durationLabel || ''
   const currentSystemMonth = formatYearMonthLabel(currentMonth)
-  const exceeded = gapMonths > limitMonths
+  const exceeded = gaps.some((gap) => gap.exceeded)
   const base = {
-    status: exceeded ? 'exceeded' : 'within_limit',
+    status: gaps.length ? (exceeded ? 'exceeded' : 'within_limit') : 'no_gap',
     exceeded,
     months: gapMonths,
     limitMonths,
-    latestEmploymentEnd,
+    latestEmploymentEnd: formatYearMonthLabel(findLatestCompanyEmploymentEndMonth(extracted)?.endMonth || relevantRanges[relevantRanges.length - 1].endMonth),
     currentSystemMonth,
     durationLabel,
+    gaps,
   }
 
-  if (exceeded) {
+  if (!gaps.length) {
     return {
       ...base,
-      summary: `候選人最近一份正式工作於 ${latestEmploymentEnd} 結束，截至 ${currentSystemMonth} 已有 ${durationLabel} 空窗期，超過職位字典設定的 ${limitMonths} 個月上限，建議面試中確認離職原因、期間安排與技能保持情況。`,
+      summary: `近三年內未識別到正式工作經歷之間的空窗期。`,
     }
   }
 
   return {
     ...base,
-    summary: `候選人最近一份正式工作距今空窗期為 ${durationLabel}，未超過職位字典設定的 ${limitMonths} 個月上限，暫不構成空窗期風險，仍可在面試中簡要確認近期安排。`,
+    summary: exceeded
+      ? `近三年內識別到 ${gaps.length} 段工作經歷之間的空窗期，最長為 ${durationLabel}，超過職位字典設定的 ${limitMonths} 個月上限，建議面試中確認原因與期間安排。`
+      : `近三年內識別到 ${gaps.length} 段工作經歷之間的空窗期，最長為 ${durationLabel}，未超過職位字典設定的 ${limitMonths} 個月上限。`,
   }
 }
 
