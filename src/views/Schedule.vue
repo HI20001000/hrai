@@ -561,12 +561,11 @@ onMounted(loadSchedule)
 }
 
 .calendar-day.has-task {
-  background: #dcfce7;
+  background: none;
 }
 
-.calendar-day.selected.has-task {
-  border-color: #93c5fd;
-  background: #dbeafe;
+.calendar-day.today.has-task {
+  background: #dcfce7;
 }
 
 .calendar-day em {

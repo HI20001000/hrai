@@ -1,11 +1,41 @@
 import { extractCandidateInfoByLlm } from './client.js'
 import {
+  extractCandidateInfoByRegexText,
   normalizeExtractedFields,
   parseLlmContentToJson,
   validateCvExtractionPayload,
 } from './parsers.js'
 import { extractTextFromBuffer } from './text-extractors.js'
 import { HttpError, LlmOutputFormatError } from '../errors.js'
+
+const extractCandidateNameFromFileName = (fileName = '') => {
+  const baseName = String(fileName || '')
+    .replace(/\.[^.]+$/, '')
+    .trim()
+  const afterBracket = baseName.includes('】') ? baseName.slice(baseName.lastIndexOf('】') + 1) : ''
+  const match = afterBracket.trim().match(/^([\p{Script=Han}A-Za-z·]{2,24})(?=[_\s（(]|$)/u)
+  return match?.[1]?.trim() || ''
+}
+
+const buildRegexFallbackExtraction = (cvText, fileName) => {
+  const fallback = extractCandidateInfoByRegexText(cvText)
+  const nameFromFileName = extractCandidateNameFromFileName(fileName)
+  if (!nameFromFileName) return fallback
+
+  const extracted = {
+    ...(fallback.extracted || {}),
+    fullName: nameFromFileName,
+  }
+  const missingFields = Array.isArray(fallback.missingFields)
+    ? fallback.missingFields.filter((field) => field !== 'fullName')
+    : []
+  return {
+    ...fallback,
+    extracted,
+    missingFields,
+    llmJson: null,
+  }
+}
 
 export const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType = '') => {
   const normalizedName = String(fileName || '').toLowerCase()
@@ -21,21 +51,25 @@ export const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType
     throw new HttpError(422, '履歷未提取到可用文字內容，請確認檔案不是圖片或空白檔。')
   }
 
-  const primaryContent = await extractCandidateInfoByLlm(cvText, fileName)
-  const parsed = parseLlmContentToJson(primaryContent)
-  if (!parsed) {
-    throw new LlmOutputFormatError('CV extraction LLM output is not valid JSON')
-  }
-
   try {
-    validateCvExtractionPayload(parsed)
-  } catch (error) {
-    throw new LlmOutputFormatError(`CV extraction output schema mismatch: ${error?.message || error}`)
-  }
+    const primaryContent = await extractCandidateInfoByLlm(cvText, fileName)
+    const parsed = parseLlmContentToJson(primaryContent)
+    if (!parsed) {
+      throw new LlmOutputFormatError('CV extraction LLM output is not valid JSON')
+    }
 
-  const normalized = normalizeExtractedFields(parsed, { sourceText: cvText })
-  return {
-    ...normalized,
-    llmJson: parsed,
+    try {
+      validateCvExtractionPayload(parsed)
+    } catch (error) {
+      throw new LlmOutputFormatError(`CV extraction output schema mismatch: ${error?.message || error}`)
+    }
+
+    const normalized = normalizeExtractedFields(parsed, { sourceText: cvText })
+    return {
+      ...normalized,
+      llmJson: parsed,
+    }
+  } catch (error) {
+    return buildRegexFallbackExtraction(cvText, fileName)
   }
 }

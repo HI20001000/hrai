@@ -1951,7 +1951,7 @@ const detectCvSourceFromFileName = (fileName = '') => {
   if (!text) return ''
   if (/(智联简历|智聯簡歷)/.test(text)) return '智聯'
   if (/(内推|內推)/.test(text)) return '內推'
-  if (/^【[^】]+_[^】]+\s+[^】]+】.+\s+\S+/.test(text)) return 'BOSS'
+  if (/^[A-Za-z]?\s*【[^】]+[_＿][^】]+】\s*[^\\/]+?\.(pdf|docx?|txt)$/i.test(text)) return 'BOSS'
   return ''
 }
 
