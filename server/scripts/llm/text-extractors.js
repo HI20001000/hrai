@@ -6,7 +6,13 @@ import zlib from 'node:zlib'
 
 const runPythonScript = (script, buffer) =>
   new Promise((resolve) => {
-    const interpreters = ['python3', 'python']
+    const interpreters = [
+      ...(process.env.PYTHON ? [[process.env.PYTHON]] : []),
+      ['python3'],
+      ['python'],
+      ['py', '-3'],
+      ['py'],
+    ]
     const execute = (index) => {
       if (index >= interpreters.length) {
         resolve('')
@@ -14,7 +20,8 @@ const runPythonScript = (script, buffer) =>
       }
 
       let settled = false
-      const proc = spawn(interpreters[index], ['-X', 'utf8', '-c', script], {
+      const [command, ...baseArgs] = interpreters[index]
+      const proc = spawn(command, [...baseArgs, '-X', 'utf8', '-c', script], {
         env: {
           ...process.env,
           PYTHONIOENCODING: 'utf-8',

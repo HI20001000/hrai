@@ -72,6 +72,17 @@ export const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType
   const normalizedType = String(mimeType || '').toLowerCase()
   const cvText = (await extractTextFromBuffer(buffer, fileName, mimeType)).slice(0, 12000)
   if (!cvText.trim()) {
+    const fileNameFallback = buildRegexFallbackExtraction('', fileName)
+    const fallbackProfile = fileNameFallback?.extracted?.profile || {}
+    const hasFileNameFallback = Boolean(
+      fileNameFallback?.extracted?.fullName ||
+      fileNameFallback?.extracted?.email ||
+      fileNameFallback?.extracted?.phone ||
+      (Array.isArray(fallbackProfile.targetPosition) && fallbackProfile.targetPosition.length) ||
+      fallbackProfile.expectedSalary
+    )
+    if (hasFileNameFallback) return fileNameFallback
+
     if (normalizedName.endsWith('.pdf') || normalizedType.includes('pdf')) {
       throw new HttpError(
         422,

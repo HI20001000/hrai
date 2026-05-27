@@ -125,7 +125,7 @@ docker compose up --build
 - 後端 API：`http://localhost:7001`
 - 前端：`http://localhost:7002`
 
-Docker 後端容器會安裝 Python、`pypdf` 與 server 依賴，適合需要 PDF 文字抽取的環境。
+Docker 後端容器會安裝 Python、`PyMuPDF`、`pypdf` 與 server 依賴，適合需要 PDF 文字抽取的環境。
 
 ## 常用命令
 
