@@ -6,6 +6,8 @@ import CandidateApplicationsTable from '../components/candidate/CandidateApplica
 import {
   getInterviewLocationLabel,
   getInterviewStatusLabel,
+  normalizeCandidateApplicationStatus,
+  normalizeInterviewStatus,
 } from '../scripts/candidateApplicationStatus.js'
 
 const scheduleData = ref({
@@ -68,6 +70,7 @@ const calendarDays = computed(() => {
   const firstWeekday = start.getDay()
   const gridStart = new Date(start)
   gridStart.setDate(start.getDate() - firstWeekday)
+  const todayKey = toDateKey(new Date())
   return Array.from({ length: 42 }, (_, index) => {
     const date = new Date(gridStart)
     date.setDate(gridStart.getDate() + index)
@@ -80,48 +83,66 @@ const calendarDays = computed(() => {
       inMonth: date.getMonth() === currentMonth.value.getMonth(),
       isSelected: key === selectedDateKey.value,
       isToday: key === toDateKey(new Date()),
+      isPast: key < todayKey,
       tasks,
     }
   })
 })
 
-const statusCards = computed(() => [
-  {
-    key: 'total',
-    label: '與我相關',
-    value: Number(scheduleData.value.stats?.total || 0),
-    hint: '對接人或面試官為我的候選人',
-    tone: 'neutral',
-  },
-  {
-    key: 'passed',
-    label: '通過',
-    value: Number(scheduleData.value.stats?.passed || 0),
-    hint: '面試狀態為通過',
-    tone: 'success',
-  },
-  {
-    key: 'inProgress',
-    label: '進行中',
-    value: Number(scheduleData.value.stats?.inProgress || 0),
-    hint: '面試狀態仍在跟進',
-    tone: 'warning',
-  },
-  {
-    key: 'unscheduled',
-    label: '未安排時間',
-    value: Number(scheduleData.value.stats?.unscheduled || 0),
-    hint: '尚未填寫面試時間',
-    tone: 'soft',
-  },
-  {
-    key: 'failed',
-    label: '不通過',
-    value: Number(scheduleData.value.stats?.failed || 0),
-    hint: '面試狀態為不通過',
-    tone: 'danger',
-  },
-])
+const statusCards = computed(() => {
+  const rows = Array.isArray(scheduleData.value.relatedApplications)
+    ? scheduleData.value.relatedApplications
+    : []
+  const getApplicationStatus = (row) => normalizeCandidateApplicationStatus(row?.applicationStatus, '')
+  const getNormalizedInterviewStatus = (row) => normalizeInterviewStatus(getInterview(row).status, '')
+  const hasScheduledTime = (row) => Boolean(getInterview(row).scheduledAt)
+
+  return [
+    {
+      key: 'total',
+      label: '與我相關',
+      value: rows.length,
+      hint: '對接人或面試官為我的候選人',
+      tone: 'neutral',
+    },
+    {
+      key: 'hrInProgress',
+      label: 'HR面試進行中',
+      value: rows.filter((row) =>
+        hasScheduledTime(row) &&
+        getApplicationStatus(row) === 'hr_interview' &&
+        getNormalizedInterviewStatus(row) === 'in_progress'
+      ).length,
+      hint: '候選人狀態為 HR面試，面試結果進行中',
+      tone: 'neutral',
+    },
+    {
+      key: 'departmentInProgress',
+      label: '部門面試進行中',
+      value: rows.filter((row) =>
+        hasScheduledTime(row) &&
+        getApplicationStatus(row) === 'department_interview' &&
+        getNormalizedInterviewStatus(row) === 'in_progress'
+      ).length,
+      hint: '候選人狀態為 部門面試，面試結果進行中',
+      tone: 'neutral',
+    },
+    {
+      key: 'passed',
+      label: '通過',
+      value: rows.filter((row) => hasScheduledTime(row) && getNormalizedInterviewStatus(row) === 'passed').length,
+      hint: '面試結果為通過',
+      tone: 'success',
+    },
+    {
+      key: 'failed',
+      label: '不通過',
+      value: rows.filter((row) => hasScheduledTime(row) && getNormalizedInterviewStatus(row) === 'failed').length,
+      hint: '面試結果為不通過',
+      tone: 'danger',
+    },
+  ]
+})
 
 const activeStatusCard = computed(
   () => statusCards.value.find((card) => card.key === activeRelatedFilter.value) || statusCards.value[0]
@@ -135,14 +156,19 @@ const filteredRelatedApplications = computed(() => {
   return rows.filter((row) => {
     const interview = getInterview(row)
     const hasScheduledTime = Boolean(interview.scheduledAt)
-    const status = String(interview.status || 'in_progress').trim()
+    const interviewStatus = normalizeInterviewStatus(interview.status, '')
+    const applicationStatus = normalizeCandidateApplicationStatus(row.applicationStatus, '')
 
     if (activeRelatedFilter.value === 'total') return true
-    if (activeRelatedFilter.value === 'unscheduled') return !hasScheduledTime
     if (!hasScheduledTime) return false
-    if (activeRelatedFilter.value === 'passed') return status === 'passed'
-    if (activeRelatedFilter.value === 'inProgress') return status === 'in_progress'
-    if (activeRelatedFilter.value === 'failed') return status === 'failed'
+    if (activeRelatedFilter.value === 'hrInProgress') {
+      return applicationStatus === 'hr_interview' && interviewStatus === 'in_progress'
+    }
+    if (activeRelatedFilter.value === 'departmentInProgress') {
+      return applicationStatus === 'department_interview' && interviewStatus === 'in_progress'
+    }
+    if (activeRelatedFilter.value === 'passed') return interviewStatus === 'passed'
+    if (activeRelatedFilter.value === 'failed') return interviewStatus === 'failed'
     return true
   })
 })
@@ -272,7 +298,7 @@ onMounted(loadSchedule)
             :key="day.key"
             type="button"
             class="calendar-day"
-            :class="{ muted: !day.inMonth, selected: day.isSelected, today: day.isToday, 'has-task': day.tasks.length }"
+            :class="{ muted: !day.inMonth, selected: day.isSelected, today: day.isToday, past: day.isPast, 'has-task': day.tasks.length }"
             @click="selectedDateKey = day.key"
           >
             <span>{{ day.day }}</span>
@@ -538,6 +564,11 @@ onMounted(loadSchedule)
   background: #dcfce7;
 }
 
+.calendar-day.selected.has-task {
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
 .calendar-day em {
   width: fit-content;
   padding: 0.18rem 0.42rem;
@@ -547,6 +578,11 @@ onMounted(loadSchedule)
   font-size: 0.72rem;
   font-style: normal;
   font-weight: 800;
+}
+
+.calendar-day.past em {
+  background: #e5e7eb;
+  color: #94a3b8;
 }
 
 .modal-backdrop {

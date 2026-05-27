@@ -362,7 +362,7 @@ onBeforeUnmount(() => {
   <section class="arranged-page">
     <header class="page-header">
       <div>
-        <h2>安排面試</h2>
+        <h2>面試管理</h2>
         <p>集中查看全系統已安排面試，並直接更新面試結果。</p>
       </div>
       <button type="button" class="secondary-btn" :disabled="isLoading" @click="loadInterviews">
@@ -745,6 +745,7 @@ onBeforeUnmount(() => {
 }
 
 .status-tone-screening,
+.status-tone-screening_rejected,
 .status-tone-screening_hr_approved,
 .status-tone-screening_hr_rejected,
 .status-tone-screening_department_approved,

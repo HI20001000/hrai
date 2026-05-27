@@ -563,15 +563,15 @@ const getVisibleColumnFilterOptions = (key) => {
 const buildColumnFilterMenuStyle = (target, key) => {
   if (!target || typeof target.getBoundingClientRect !== 'function') return {}
 
-  const rect = target.getBoundingClientRect()
+  const anchor = target.closest?.('th') || target
+  const rect = anchor.getBoundingClientRect()
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768
   const margin = 12
   const gap = 8
-  const preferredWidth = key === 'status' ? 340 : 320
-  const width = Math.min(preferredWidth, Math.max(180, viewportWidth - margin * 2))
+  const width = Math.min(Math.max(rect.width, 180), Math.max(180, viewportWidth - margin * 2))
   const left = Math.min(
-    Math.max(rect.right - width, margin),
+    Math.max(rect.left, margin),
     Math.max(margin, viewportWidth - width - margin)
   )
   const spaceBelow = viewportHeight - rect.bottom - gap - margin
@@ -608,7 +608,8 @@ const toggleColumnFilter = async (key, event = null) => {
 }
 
 const selectColumnFilterOption = (key, value) => {
-  setColumnFilterValue(key, value)
+  const nextValue = String(value ?? '')
+  setColumnFilterValue(key, getColumnFilterValue(key) === nextValue ? '' : nextValue)
   columnFilterSearchKeyword.value = ''
   closeColumnFilter()
 }
@@ -1789,8 +1790,8 @@ onBeforeUnmount(() => {
 .column-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.55rem;
+  justify-content: flex-start;
+  gap: 0.38rem;
   min-width: 0;
 }
 
@@ -1852,7 +1853,7 @@ onBeforeUnmount(() => {
 
 .column-filter-menu {
   position: fixed;
-  z-index: 240;
+  z-index: 20050;
   display: grid;
   gap: 0.4rem;
   padding: 0.55rem;
@@ -2646,6 +2647,7 @@ th.status-col {
 }
 
 .status-tone-screening,
+.status-tone-screening_rejected,
 .status-tone-screening_hr_approved,
 .status-tone-screening_hr_rejected,
 .status-tone-screening_department_approved,

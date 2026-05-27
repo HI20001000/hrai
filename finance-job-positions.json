@@ -1,778 +1,1106 @@
 {
-  "客戶經理": {
-    "description": "負責零售銀行客戶關係維護、存貸款及理財產品推介，並配合分行業務與合規要求推動客戶經營。",
+  "全棧開發工程師": {
+    "jobKey": "全棧開發工程師",
+    "title": "全棧開發工程師",
+    "description": "本崗位負責企業級 Web 應用的前後端協同開發與維護，兼具前端頁面實現與後端業務邏輯開發能力，支撐項目從需求到交付的全流程落地。負責用戶交互層與業務邏輯層的開發工作，保障產品功能穩定、用戶體驗流暢，並與跨職能團隊緊密配合，推動項目按時交付。",
     "industry": [
-      "銀行",
-      "金融服務"
+      "資訊科技",
+      "軟件開發行業",
+      "負責企業級 Web 應用的前後端開發與維護",
+      "支撐業務系統的功能實現與迭代優化",
+      "保障項目按時交付與穩定運行。"
     ],
     "roleKeywords": [
-      "零售銀行客戶經理",
-      "個人銀行客戶經理",
-      "Retail Banking Relationship Manager"
+      "前端開發",
+      "Vue2",
+      "Vue3",
+      "HTML",
+      "CSS",
+      "JavaScript",
+      "Java",
+      "Spring Boot",
+      "SQL",
+      "前後端協同",
+      "Web 應用開發",
+      "數據交互",
+      "團隊協作"
     ],
     "coreResponsibilities": [
-      "客戶關係維護",
-      "存貸款產品推介",
-      "理財產品介紹",
-      "分行業務拓展"
+      "Web 應用開發：根據項目需求",
+      "負責前端頁面開發與維護",
+      "實現業務邏輯處理",
+      "數據交互等功能",
+      "參與後端業務邏輯實現",
+      "完成端到端的功能開發工作。",
+      "項目協同推進：與團隊成員緊密配合",
+      "按時按質完成開發任務",
+      "保障項目順利推進與按時交付。",
+      "技術支撐與文檔：完成開發相關文檔編寫",
+      "代碼維護與優化",
+      "參與培訓與技術交流",
+      "支持項目全流程的順利開展。"
     ],
     "requiredSkills": [
-      "客戶管理",
-      "零售銀行產品知識",
-      "銷售與服務",
-      "溝通協調"
+      "前端技術：熟悉 HTML",
+      "CSS",
+      "JavaScript 等基礎技術",
+      "掌握 Vue2",
+      "Vue3 技術棧",
+      "具備獨立完成前端頁面開發與維護的能力。",
+      "後端技術：熟悉 Java 編程語言",
+      "了解 Spring",
+      "Spring Boot 等後端技術棧",
+      "能夠參與後端業務邏輯開發。",
+      "數據庫能力：熟悉 SQL 語言",
+      "具備基礎的數據庫開發與數據交互實現能力。",
+      "軟件開發能力：具備良好的代碼編寫習慣",
+      "能夠獨立完成開發任務",
+      "並參與項目協同開發。"
+    ],
+    "projectExperience": [
+      "需具備 Web 應用前後端開發相關工作經驗",
+      "參與過企業級 Web 項目的開發與交付",
+      "有 Vue 生態項目",
+      "Java 後端開發或前後端協同開發經驗者優先。"
     ],
     "preferredSkills": [
-      "財富管理基礎",
-      "合規意識",
-      "Excel",
-      "雙語溝通"
+      "了解前後端分離架構",
+      "RESTful API 設計規範",
+      "具備性能優化",
+      "代碼調優或單元測試相關經驗",
+      "熟悉版本控制工具（Git）",
+      "項目管理工具（如 Jira）的使用",
+      "有跨端開發",
+      "小程序開發或低代碼平台使用經驗者優先。"
     ],
     "certifications": [
-      "金融從業資格",
-      "保險中介人資格"
+      "無強制要求",
+      "持有 Java 認證",
+      "前端開發相關認證或軟件工程師職稱者優先。"
     ],
-    "minWorkYears": 2,
+    "minWorkYears": 1,
+    "workYears": 1,
+    "employmentGapLimitMonths": 3,
+    "candidatePreference": [
+      "具備強烈的責任心",
+      "對待工作認真負責",
+      "能夠按時按質完成任務",
+      "具備良好的溝通能力與團隊協作意識",
+      "能與團隊成員有效配合解決問題",
+      "具備持續學習能力",
+      "願意跟進前後端技術生態的更新迭代",
+      "邏輯思維清晰",
+      "具備問題排查與解決能力",
+      "能主動推動項目進展。"
+    ],
     "salaryRange": {
-      "min": 18000,
-      "max": 35000
+      "min": 6000,
+      "max": 15000
     },
     "weights": {
       "requiredSkills": 0.22,
-      "projectExperience": 0.18,
-      "industry": 0.15,
-      "coreResponsibilities": 0.1,
+      "coreResponsibilities": 0.12,
+      "companyExperience": 0.16,
+      "internshipExperience": 0.05,
+      "projectExperience": 0.12,
+      "industry": 0.12,
       "certifications": 0.07,
       "workYears": 0.08,
-      "candidatePreference": 0.2
-    },
-    "employmentGapLimitMonths": 5
-  },
-  "企業銀行客戶經理": {
-    "description": "負責企業客戶開發與維護，提供授信、現金管理、貿易融資及企業銀行服務方案。",
-    "industry": [
-      "銀行",
-      "金融服務"
-    ],
-    "roleKeywords": [
-      "企業銀行客戶經理",
-      "企業金融客戶經理",
-      "Corporate Banking Relationship Manager"
-    ],
-    "coreResponsibilities": [
-      "企業客戶開發",
-      "授信方案建議",
-      "現金管理服務推動",
-      "貿易融資協調"
-    ],
-    "requiredSkills": [
-      "企業金融知識",
-      "客戶關係管理",
-      "授信分析",
-      "方案提案"
-    ],
-    "preferredSkills": [
-      "財務報表閱讀",
-      "貿易融資知識",
-      "合規意識",
-      "PowerPoint"
-    ],
-    "certifications": [
-      "金融從業資格",
-      "CFA"
-    ],
-    "minWorkYears": 3,
-    "salaryRange": {
-      "min": 25000,
-      "max": 50000
-    },
-    "weights": {
-      "requiredSkills": 0.24,
-      "projectExperience": 0.18,
-      "industry": 0.16,
-      "coreResponsibilities": 0.1,
-      "certifications": 0.07,
-      "workYears": 0.1,
-      "candidatePreference": 0.15
-    },
-    "employmentGapLimitMonths": 5
-  },
-  "財富管理顧問": {
-    "description": "為個人客戶提供資產配置、保險、基金及理財建議，兼顧客戶適當性與產品銷售合規要求。",
-    "industry": [
-      "銀行",
-      "金融服務"
-    ],
-    "roleKeywords": [
-      "財富管理顧問",
-      "理財顧問",
-      "Wealth Management Advisor"
-    ],
-    "coreResponsibilities": [
-      "客戶需求分析",
-      "資產配置建議",
-      "理財產品推介",
-      "客戶適當性評估"
-    ],
-    "requiredSkills": [
-      "理財規劃",
-      "客戶管理",
-      "金融產品知識",
-      "溝通說服"
-    ],
-    "preferredSkills": [
-      "基金產品知識",
-      "保險規劃",
-      "投資市場基礎",
-      "雙語溝通"
-    ],
-    "certifications": [
-      "CFP",
-      "保險中介人資格",
-      "基金從業資格"
-    ],
-    "minWorkYears": 2,
-    "salaryRange": {
-      "min": 20000,
-      "max": 45000
-    },
-    "weights": {
-      "requiredSkills": 0.22,
-      "projectExperience": 0.18,
-      "industry": 0.15,
-      "coreResponsibilities": 0.1,
-      "certifications": 0.08,
-      "workYears": 0.07,
-      "candidatePreference": 0.2
-    },
-    "employmentGapLimitMonths": 5
-  },
-  "授信分析師": {
-    "description": "負責企業或個人授信資料分析、財務評估與風險判斷，支援貸款及授信審批流程。",
-    "industry": [
-      "銀行",
-      "風險管理"
-    ],
-    "roleKeywords": [
-      "授信分析師",
-      "信貸分析師",
-      "Credit Analyst"
-    ],
-    "coreResponsibilities": [
-      "授信資料審閱",
-      "財務報表分析",
-      "信用風險評估",
-      "授信建議撰寫"
-    ],
-    "requiredSkills": [
-      "信用分析",
-      "財務分析",
-      "風險判斷",
-      "報告撰寫"
-    ],
-    "preferredSkills": [
-      "Excel",
-      "貸款產品知識",
-      "文件審核",
-      "雙語書寫"
-    ],
-    "certifications": [
-      "金融從業資格",
-      "FRM"
-    ],
-    "minWorkYears": 2,
-    "salaryRange": {
-      "min": 18000,
-      "max": 32000
-    },
-    "weights": {
-      "requiredSkills": 0.28,
-      "projectExperience": 0.18,
-      "industry": 0.18,
-      "coreResponsibilities": 0.1,
-      "certifications": 0.08,
-      "workYears": 0.12,
       "candidatePreference": 0.06
     },
-    "employmentGapLimitMonths": 5
+    "scoringRubrics": {
+      "requiredSkills": {
+        "high": {
+          "criteria": "CV 明確符合「必備技能」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「必備技能」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「必備技能」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "coreResponsibilities": {
+        "high": {
+          "criteria": "CV 明確符合「核心職責」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「核心職責」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「核心職責」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "companyExperience": {
+        "high": {
+          "criteria": "CV 明確符合「公司經歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「公司經歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「公司經歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "internshipExperience": {
+        "high": {
+          "criteria": "CV 明確符合「實習經歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「實習經歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「實習經歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "projectExperience": {
+        "high": {
+          "criteria": "CV 明確符合「專案經歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「專案經歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「專案經歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "industry": {
+        "high": {
+          "criteria": "CV 明確符合「行業背景」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「行業背景」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「行業背景」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "certifications": {
+        "high": {
+          "criteria": "CV 明確符合「證照」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「證照」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「證照」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "workYears": {
+        "high": {
+          "criteria": "CV 明確符合「年限/資歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「年限/資歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「年限/資歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "candidatePreference": {
+        "high": {
+          "criteria": "CV 明確符合「候選人偏好」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「候選人偏好」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「候選人偏好」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      }
+    }
   },
-  "信貸專員": {
-    "description": "負責貸款申請受理、文件核對、客戶訪談及貸前貸後流程跟進，確保作業符合內部規範。",
+  "DB 中級開發工程師": {
+    "jobKey": "DB 中級開發工程師",
+    "title": "DB 中級開發工程師",
+    "description": "本崗位負責銀行業務系統數據庫的全生命週期管理、架構維護與業務支撐，確保數據安全、穩定、高效運行，同時結合業務場景開展數據分析與優化，為業務決策提供數據支持。連接技術與業務，解決複雜數據問題，保障銀行核心業務系統的平穩運轉。",
     "industry": [
-      "銀行",
-      "金融服務"
+      "金融",
+      "銀行業資訊科技部門",
+      "負責業務系統數據架構與運維支撐",
+      "確保銀行核心業務系統的數據安全",
+      "穩定與高效運行。"
     ],
     "roleKeywords": [
-      "信貸專員",
-      "貸款專員",
-      "Loan Officer"
-    ],
-    "coreResponsibilities": [
-      "貸款申請受理",
-      "文件核對",
-      "客戶訪談",
-      "貸後跟進"
-    ],
-    "requiredSkills": [
-      "文件審核",
-      "客戶溝通",
-      "貸款流程認知",
-      "風險意識"
-    ],
-    "preferredSkills": [
-      "KYC 基礎",
-      "零售銀行產品知識",
-      "Excel",
-      "服務意識"
-    ],
-    "certifications": [
-      "金融從業資格"
-    ],
-    "minWorkYears": 1,
-    "salaryRange": {
-      "min": 15000,
-      "max": 28000
-    },
-    "weights": {
-      "requiredSkills": 0.28,
-      "projectExperience": 0.14,
-      "industry": 0.2,
-      "coreResponsibilities": 0.06,
-      "certifications": 0.08,
-      "workYears": 0.14,
-      "candidatePreference": 0.1
-    },
-    "employmentGapLimitMonths": 5
-  },
-  "財資專員": {
-    "description": "負責資金調度、現金流監控、銀行往來及流動性管理，支援機構日常財資運作。",
-    "industry": [
-      "銀行",
-      "企業財務"
-    ],
-    "roleKeywords": [
-      "財資專員",
-      "資金管理專員",
-      "Treasury Officer"
-    ],
-    "coreResponsibilities": [
-      "資金調度",
-      "現金流監控",
-      "銀行往來管理",
-      "流動性分析"
-    ],
-    "requiredSkills": [
-      "資金管理",
-      "現金流分析",
-      "財務基礎",
-      "風險意識"
-    ],
-    "preferredSkills": [
-      "Excel",
-      "銀行系統操作",
-      "對帳能力",
-      "報表整理"
-    ],
-    "certifications": [
-      "CPA",
-      "金融從業資格"
-    ],
-    "minWorkYears": 3,
-    "salaryRange": {
-      "min": 22000,
-      "max": 40000
-    },
-    "weights": {
-      "requiredSkills": 0.26,
-      "projectExperience": 0.18,
-      "industry": 0.18,
-      "coreResponsibilities": 0.1,
-      "certifications": 0.06,
-      "workYears": 0.12,
-      "candidatePreference": 0.1
-    },
-    "employmentGapLimitMonths": 5
-  },
-  "合規專員": {
-    "description": "負責監管規定解讀、內部合規審查及制度執行監督，協助機構維持合規管理框架。",
-    "industry": [
-      "合規",
-      "銀行",
-      "金融服務"
-    ],
-    "roleKeywords": [
-      "合規專員",
-      "法遵專員",
-      "Compliance Officer"
-    ],
-    "coreResponsibilities": [
-      "監管規定解讀",
-      "內部合規審查",
-      "制度執行監督",
-      "合規報告整理"
-    ],
-    "requiredSkills": [
-      "法規理解",
-      "合規審查",
-      "風險識別",
-      "文件控管"
-    ],
-    "preferredSkills": [
-      "AML 基礎",
-      "政策撰寫",
-      "Excel",
-      "跨部門溝通"
-    ],
-    "certifications": [
-      "CAMS",
-      "金融從業資格",
-      "FRM"
-    ],
-    "minWorkYears": 3,
-    "salaryRange": {
-      "min": 22000,
-      "max": 42000
-    },
-    "weights": {
-      "requiredSkills": 0.3,
-      "projectExperience": 0.14,
-      "industry": 0.2,
-      "coreResponsibilities": 0.08,
-      "certifications": 0.14,
-      "workYears": 0.1,
-      "candidatePreference": 0.04
-    },
-    "employmentGapLimitMonths": 5
-  },
-  "反洗錢／認識你的客戶分析師": {
-    "description": "負責客戶盡職審查、交易監控及可疑活動分析，支援機構反洗錢及客戶身份識別要求。",
-    "industry": [
-      "合規",
-      "銀行",
-      "金融服務"
-    ],
-    "roleKeywords": [
-      "反洗錢／認識你的客戶分析師",
-      "AML/KYC 分析師",
-      "AML KYC Analyst"
-    ],
-    "coreResponsibilities": [
-      "客戶盡職審查",
-      "交易監控",
-      "可疑活動分析",
-      "合規記錄維護"
-    ],
-    "requiredSkills": [
-      "AML",
-      "KYC",
-      "風險識別",
-      "調查分析"
-    ],
-    "preferredSkills": [
-      "CFT 基礎",
-      "文件審閱",
-      "Excel",
-      "雙語書寫"
-    ],
-    "certifications": [
-      "CAMS",
-      "金融從業資格"
-    ],
-    "minWorkYears": 2,
-    "salaryRange": {
-      "min": 18000,
-      "max": 32000
-    },
-    "weights": {
-      "requiredSkills": 0.32,
-      "projectExperience": 0.14,
-      "industry": 0.18,
-      "coreResponsibilities": 0.06,
-      "certifications": 0.16,
-      "workYears": 0.1,
-      "candidatePreference": 0.04
-    },
-    "employmentGapLimitMonths": 5
-  },
-  "風險分析師": {
-    "description": "負責信用、市場或操作風險評估，編製風險報告並支援風險控制措施執行。",
-    "industry": [
-      "風險管理",
-      "銀行",
-      "金融服務"
-    ],
-    "roleKeywords": [
-      "風險分析師",
-      "風險管理分析師",
-      "Risk Analyst"
-    ],
-    "coreResponsibilities": [
-      "風險評估",
-      "風險報告編製",
-      "控制措施跟進",
-      "風險數據分析"
-    ],
-    "requiredSkills": [
-      "風險管理",
+      "數據庫全生命週期管理",
+      "Oracle",
+      "DB2",
+      "GBase",
+      "Unix",
+      "Linux",
+      "SQL 優化",
+      "存儲過程",
+      "銀行業務系統",
       "數據分析",
-      "報告撰寫",
-      "風險判斷"
-    ],
-    "preferredSkills": [
-      "Excel",
-      "Python",
-      "監管要求理解",
-      "統計基礎"
-    ],
-    "certifications": [
-      "FRM",
-      "金融從業資格"
-    ],
-    "minWorkYears": 2,
-    "salaryRange": {
-      "min": 20000,
-      "max": 38000
-    },
-    "weights": {
-      "requiredSkills": 0.28,
-      "projectExperience": 0.18,
-      "industry": 0.18,
-      "coreResponsibilities": 0.1,
-      "certifications": 0.1,
-      "workYears": 0.12,
-      "candidatePreference": 0.04
-    },
-    "employmentGapLimitMonths": 5
-  },
-  "內部稽核專員": {
-    "description": "負責內部稽核計劃執行、流程測試及缺失跟進，支援機構內控與治理要求。",
-    "industry": [
-      "合規",
-      "銀行",
-      "企業財務"
-    ],
-    "roleKeywords": [
-      "內部稽核專員",
-      "內部審計專員",
-      "Internal Auditor"
+      "性能調優",
+      "故障處理",
+      "高可用架構"
     ],
     "coreResponsibilities": [
-      "稽核計劃執行",
-      "流程測試",
-      "缺失跟進",
-      "稽核報告整理"
+      "數據庫全生命週期管理：負責銀行業務系統數據庫的規劃",
+      "設計",
+      "安裝",
+      "升級",
+      "遷移",
+      "備份",
+      "恢復",
+      "性能調優及故障處理",
+      "獨立完成部署實施與驗證",
+      "維護 Oracle RAC",
+      "Data Guard 等高可用架構。",
+      "系統與機房運維：負責 Windows",
+      "AIX",
+      "Unix",
+      "Linux 等多操作系統的配置與故障排錯",
+      "掌握客戶房服務器",
+      "網絡設備",
+      "PC 及工作站的運維架構",
+      "執行日常巡檢與維護保養",
+      "快速處理各類系統設置與硬件問題。",
+      "數據結構與業務轉化：深入分析業務表結構與關係",
+      "將銀行業務需求轉化為數據庫設計與開發方案",
+      "負責存儲過程",
+      "函數等數據庫對象的編寫",
+      "調試與優化",
+      "開展表結構變更",
+      "數據歸檔",
+      "索引優化等日常運維操作。",
+      "數據分析與洞察輸出：運用 Excel 高級功能",
+      "SQL",
+      "Python 等工具",
+      "對業務數據進行提取",
+      "清洗和分析",
+      "從海量數據中挖掘有價值信息",
+      "形成具備洞察力的結論",
+      "為業務決策提供數據支持。",
+      "客戶支持與需求響應：收集並分析各類技術問題與業務需求",
+      "獨立解決故障",
+      "結合銀行業務場景與客戶高效溝通",
+      "提供合理的數據庫及數據解決方案。"
     ],
     "requiredSkills": [
-      "內部控制",
-      "稽核程序",
-      "風險識別",
-      "報告撰寫"
+      "數據庫技術：熟練掌握 Oracle",
+      "DB2",
+      "GBase 等主流數據庫",
+      "具備數據庫部署",
+      "遷移",
+      "備份恢復",
+      "性能調優",
+      "故障處理能力",
+      "熟練編寫與優化 SQL 語句",
+      "存儲過程與函數。",
+      "操作系統：熟悉 Unix",
+      "Linux 平台",
+      "了解 Windows",
+      "AIX 操作系統",
+      "具備實際故障排錯與配置能力。",
+      "運維架構：了解主流存儲設備及第三方備份工具",
+      "熟悉機房服務器",
+      "網絡設備等硬件運維架構。",
+      "數據處理：熟練使用 Excel 高級功能",
+      "掌握 Python 等編程語言進行數據提取",
+      "清洗與分析。",
+      "業務理解：了解銀行業務流程",
+      "能將業務需求轉化為數據庫設計與開發方案。"
+    ],
+    "projectExperience": [
+      "需具備三年以上數據庫維護管理或數據處理與分析相關工作經驗",
+      "有銀行業務系統數據庫運維",
+      "高可用架構部署",
+      "業務數據優化或數據分析專案經驗者優先。"
     ],
     "preferredSkills": [
-      "Excel",
-      "流程分析",
-      "文件抽查",
-      "跨部門溝通"
+      "具備數據挖掘",
+      "商業智能分析相關經驗",
+      "了解數據庫中間件",
+      "分庫分表",
+      "數據同步等技術",
+      "具備團隊管理潛力",
+      "有向技術管理方向發展的意願",
+      "具備良好的批判性思維與數據敏感度",
+      "能從業務數據中提煉分析結論。"
     ],
     "certifications": [
-      "CIA",
-      "CPA",
-      "金融從業資格"
+      "無強制要求",
+      "持有 Oracle OCP",
+      "DB2 認證",
+      "Linux 系統管理認證等相關資格證書者優先。"
     ],
-    "minWorkYears": 2,
+    "minWorkYears": 3,
+    "workYears": 3,
+    "employmentGapLimitMonths": 3,
+    "candidatePreference": [
+      "責任心強",
+      "細致耐心",
+      "對數據工作保持嚴謹態度",
+      "邏輯思維清晰",
+      "善於獨立思考並解決問題",
+      "具備良好的團隊協作",
+      "溝通能力與主動服務意識",
+      "有自我學習與持續成長的動力",
+      "具備技術管理方向發展意願者優先。"
+    ],
     "salaryRange": {
-      "min": 18000,
-      "max": 34000
-    },
-    "weights": {
-      "requiredSkills": 0.26,
-      "projectExperience": 0.18,
-      "industry": 0.2,
-      "coreResponsibilities": 0.08,
-      "certifications": 0.1,
-      "workYears": 0.14,
-      "candidatePreference": 0.04
-    },
-    "employmentGapLimitMonths": 5
-  },
-  "財務報告會計": {
-    "description": "負責月結、財務報表編製、監管或管理報表整理，以及會計準則與內部流程的執行。",
-    "industry": [
-      "企業財務",
-      "銀行",
-      "保險"
-    ],
-    "roleKeywords": [
-      "財務報告會計",
-      "財務會計",
-      "Financial Reporting Accountant"
-    ],
-    "coreResponsibilities": [
-      "月結處理",
-      "財務報表編製",
-      "報表分析整理",
-      "會計政策執行"
-    ],
-    "requiredSkills": [
-      "會計準則",
-      "財務報表編製",
-      "月結作業",
-      "數字準確性"
-    ],
-    "preferredSkills": [
-      "Excel",
-      "ERP",
-      "對帳能力",
-      "管理報表整理"
-    ],
-    "certifications": [
-      "CPA",
-      "會計專業資格"
-    ],
-    "minWorkYears": 2,
-    "salaryRange": {
-      "min": 18000,
-      "max": 32000
-    },
-    "weights": {
-      "requiredSkills": 0.28,
-      "projectExperience": 0.16,
-      "industry": 0.18,
-      "coreResponsibilities": 0.08,
-      "certifications": 0.1,
-      "workYears": 0.16,
-      "candidatePreference": 0.04
-    },
-    "employmentGapLimitMonths": 5
-  },
-  "金融營運專員": {
-    "description": "負責後台營運、交易對帳、資料錄入、清算結算及日常作業流程維護。",
-    "industry": [
-      "金融服務",
-      "銀行",
-      "保險"
-    ],
-    "roleKeywords": [
-      "金融營運專員",
-      "後台營運專員",
-      "Finance Operations Specialist"
-    ],
-    "coreResponsibilities": [
-      "交易對帳",
-      "資料錄入",
-      "清算結算支援",
-      "異常作業跟進"
-    ],
-    "requiredSkills": [
-      "營運流程執行",
-      "對帳能力",
-      "細節管理",
-      "時效管理"
-    ],
-    "preferredSkills": [
-      "Excel",
-      "銀行系統操作",
-      "文書處理",
-      "跨部門協作"
-    ],
-    "certifications": [
-      "金融從業資格"
-    ],
-    "minWorkYears": 1,
-    "salaryRange": {
-      "min": 14000,
-      "max": 26000
-    },
-    "weights": {
-      "requiredSkills": 0.24,
-      "projectExperience": 0.18,
-      "industry": 0.22,
-      "coreResponsibilities": 0.08,
-      "certifications": 0.06,
-      "workYears": 0.16,
-      "candidatePreference": 0.06
-    },
-    "employmentGapLimitMonths": 5
-  },
-  "保險顧問": {
-    "description": "負責保險產品介紹、客戶需求分析及售後服務，確保銷售過程符合披露及合規要求。",
-    "industry": [
-      "保險",
-      "金融服務"
-    ],
-    "roleKeywords": [
-      "保險顧問",
-      "保險業務顧問",
-      "Insurance Advisor"
-    ],
-    "coreResponsibilities": [
-      "客戶需求分析",
-      "保險產品介紹",
-      "投保方案建議",
-      "售後服務跟進"
-    ],
-    "requiredSkills": [
-      "保險產品知識",
-      "客戶溝通",
-      "需求分析",
-      "銷售服務"
-    ],
-    "preferredSkills": [
-      "理財基礎",
-      "法規披露意識",
-      "雙語溝通",
-      "客戶維護"
-    ],
-    "certifications": [
-      "保險中介人資格"
-    ],
-    "minWorkYears": 1,
-    "salaryRange": {
-      "min": 15000,
-      "max": 35000
+      "min": 7000,
+      "max": 9997
     },
     "weights": {
       "requiredSkills": 0.22,
-      "projectExperience": 0.18,
-      "industry": 0.16,
-      "coreResponsibilities": 0.1,
-      "certifications": 0.08,
-      "workYears": 0.06,
-      "candidatePreference": 0.2
-    },
-    "employmentGapLimitMonths": 5
-  },
-  "核保專員": {
-    "description": "負責保單申請審閱、風險判斷及承保條件評估，確保核保作業符合公司標準與監管要求。",
-    "industry": [
-      "保險",
-      "風險管理"
-    ],
-    "roleKeywords": [
-      "核保專員",
-      "保險核保專員",
-      "Insurance Underwriter"
-    ],
-    "coreResponsibilities": [
-      "保單申請審閱",
-      "風險判斷",
-      "承保條件評估",
-      "核保記錄維護"
-    ],
-    "requiredSkills": [
-      "核保判斷",
-      "風險評估",
-      "資料審閱",
-      "保險產品知識"
-    ],
-    "preferredSkills": [
-      "醫療或壽險基礎",
-      "Excel",
-      "報告整理",
-      "細節管理"
-    ],
-    "certifications": [
-      "保險中介人資格",
-      "LOMA"
-    ],
-    "minWorkYears": 2,
-    "salaryRange": {
-      "min": 18000,
-      "max": 32000
-    },
-    "weights": {
-      "requiredSkills": 0.28,
-      "projectExperience": 0.18,
-      "industry": 0.2,
-      "coreResponsibilities": 0.06,
-      "certifications": 0.1,
-      "workYears": 0.14,
-      "candidatePreference": 0.04
-    },
-    "employmentGapLimitMonths": 5
-  },
-  "理賠專員": {
-    "description": "負責理賠申請受理、文件核實、案件進度跟進及客戶通知，確保理賠作業合規與時效。",
-    "industry": [
-      "保險",
-      "金融服務"
-    ],
-    "roleKeywords": [
-      "理賠專員",
-      "保險理賠專員",
-      "Claims Officer"
-    ],
-    "coreResponsibilities": [
-      "理賠申請受理",
-      "文件核實",
-      "案件進度跟進",
-      "客戶通知與結案"
-    ],
-    "requiredSkills": [
-      "理賠流程認知",
-      "文件審核",
-      "客戶溝通",
-      "個案處理"
-    ],
-    "preferredSkills": [
-      "保險條款理解",
-      "Excel",
-      "服務意識",
-      "時效管理"
-    ],
-    "certifications": [
-      "保險中介人資格"
-    ],
-    "minWorkYears": 1,
-    "salaryRange": {
-      "min": 15000,
-      "max": 28000
-    },
-    "weights": {
-      "requiredSkills": 0.24,
-      "projectExperience": 0.2,
-      "industry": 0.22,
-      "coreResponsibilities": 0.06,
-      "certifications": 0.08,
-      "workYears": 0.14,
+      "coreResponsibilities": 0.12,
+      "companyExperience": 0.16,
+      "internshipExperience": 0.05,
+      "projectExperience": 0.12,
+      "industry": 0.12,
+      "certifications": 0.07,
+      "workYears": 0.08,
       "candidatePreference": 0.06
     },
-    "employmentGapLimitMonths": 5
+    "scoringRubrics": {
+      "requiredSkills": {
+        "high": {
+          "criteria": "CV 明確符合「必備技能」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「必備技能」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「必備技能」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "coreResponsibilities": {
+        "high": {
+          "criteria": "CV 明確符合「核心職責」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「核心職責」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「核心職責」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "companyExperience": {
+        "high": {
+          "criteria": "CV 明確符合「公司經歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「公司經歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「公司經歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "internshipExperience": {
+        "high": {
+          "criteria": "CV 明確符合「實習經歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「實習經歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「實習經歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "projectExperience": {
+        "high": {
+          "criteria": "CV 明確符合「專案經歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「專案經歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「專案經歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "industry": {
+        "high": {
+          "criteria": "CV 明確符合「行業背景」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「行業背景」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「行業背景」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "certifications": {
+        "high": {
+          "criteria": "CV 明確符合「證照」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「證照」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「證照」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "workYears": {
+        "high": {
+          "criteria": "CV 明確符合「年限/資歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「年限/資歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「年限/資歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "candidatePreference": {
+        "high": {
+          "criteria": "CV 明確符合「候選人偏好」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「候選人偏好」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「候選人偏好」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      }
+    }
   },
-  "客經": {
-    "description": "123",
+  "IT項目經理（技術型）": {
+    "jobKey": "IT項目經理（技術型）",
+    "title": "IT項目經理（技術型）",
+    "description": "兼具軟件技術能力與項目管理能力，主要負責企業軟件開發項目的全流程落地。崗位核心連接業務端、客戶端與技術開發團隊，負責需求梳理分析、產品原型設計、技術方案落地、項目進度管控、風險管理與文檔建設。精准轉化業務需求為可落地的技術方案，统筹內外資源、把控項目質量與進度，開展代碼評審與技術把關，保障軟件項目高質量、高效率、低成本交付，推動產品迭代優化與項目穩定上線。",
     "industry": [
-      "123"
+      "資訊科技",
+      "軟件開發",
+      "企業數位化服務行業",
+      "面向各類企業定制化軟件系統",
+      "業務管理平台",
+      "信息化系統開發項目。行業專注企業數位化轉型",
+      "軟件定制研發與技術落地",
+      "注重項目標準化管理",
+      "技術落地性與業務适配性",
+      "具備成熟的軟件開發與項目交付體系。"
     ],
     "roleKeywords": [
-      "123"
+      "IT項目管理",
+      "軟件開發",
+      "需求分析",
+      "產品原型設計",
+      "Axure",
+      "墨刀",
+      "技術方案設計",
+      "JAVA",
+      "SQL",
+      "項目風險管控",
+      "資源協調",
+      "代碼評審",
+      "項目文檔撰寫",
+      "客戶溝通",
+      "項目交付"
     ],
     "coreResponsibilities": [
-      "123"
+      "1. 需求分析與對接：負責軟件項目全流程需求調研與分析",
+      "深度對接內部業務部門及外部客戶",
+      "梳理",
+      "拆解",
+      "確認業務需求",
+      "澄清需求模糊點",
+      "統一需求標準",
+      "杜絕需求偏差",
+      "保障需求清晰",
+      "完整",
+      "可落地。",
+      "2. 項目全流程管控：結合項目目標制定科學合理的項目執行計劃",
+      "全程跟蹤項目開發進度",
+      "動態管理項目風險",
+      "需求變更與流程調整",
+      "靈活協調內外人力",
+      "技術",
+      "資源",
+      "嚴格把控項目進度",
+      "質量與成本",
+      "確保項目按時",
+      "按質",
+      "按預算完成交付。",
+      "3. 技術與產品方案把關：主導項目技術方案規劃與產品功能設計",
+      "結合業務場景與技術條件",
+      "驗證需求可行性與合理性",
+      "解決方案落地難點",
+      "確保技術方案",
+      "產品設計與業務需求高度匹配",
+      "保障項目技術落地穩定可靠。",
+      "4. 產品原型設計：熟練運用Axure",
+      "墨刀等原型設計工具",
+      "獨立製作高保真",
+      "低保真產品原型",
+      "完整還原產品功能模塊",
+      "操作邏輯與交互流程",
+      "為項目開發",
+      "客戶確認",
+      "團隊執行提供直觀參考。",
+      "5. 項目文檔建設：嚴格按照公司標準規範",
+      "獨立編寫",
+      "更新與維護各類項目文檔",
+      "包含項目計劃書",
+      "進度匯報",
+      "需求規格說明書",
+      "技術方案",
+      "變更記錄等",
+      "實現項目全流程可追溯",
+      "可歸檔。",
+      "6. 多方溝通對接：作為項目核心對接人",
+      "主導外部客戶",
+      "內部開發",
+      "產品",
+      "測試等多方方案溝通與答疑工作",
+      "具備專業的方案講解",
+      "邏輯梳理與談判能力",
+      "高效推動各方達成工作共識。",
+      "7. 技術質量管控：負責內部代碼評審工作",
+      "規範團隊代碼開發標準",
+      "排查代碼漏洞",
+      "邏輯問題與性能隱患",
+      "獨立輸出專業的代碼走查報告",
+      "督促問題整改",
+      "全面提升項目開發質量。"
     ],
     "requiredSkills": [
-      "123"
+      "1. 技術基礎技能：具備紮實的軟件開發技術背景",
+      "熟練掌握JAVA開發語言",
+      "SQL數據庫語言",
+      "熟悉軟件開發底層邏輯與技術原理",
+      "可獨立判斷技術方案可行性。",
+      "2. 項目管理技能：精通軟件開發全流程",
+      "熟悉各類開發管理方法與項目管控模式",
+      "熟練掌握項目計劃制定",
+      "進度跟蹤",
+      "風險識別",
+      "變更管理",
+      "成本管控等專業能力。",
+      "3. 產品設計技能：熟練使用Axure",
+      "墨刀等主流原型設計工具",
+      "具備獨立完成產品原型設計",
+      "交互流程梳理",
+      "功能模塊規劃的能力。",
+      "4. 需求轉化能力：具備優秀的業務拆解與需求分析能力",
+      "可精准將復雜業務需求轉化為標準化",
+      "可落地的技術解決方案與開發需求。",
+      "5. 溝通協調技能：具備出色的跨部門",
+      "客戶端溝通協調能力",
+      "邏輯清晰",
+      "表達專業",
+      "可高效對接多方資源",
+      "解決協同問題。",
+      "6. 文檔撰寫技能：具備扎實的文字功底",
+      "熟悉項目各類正式文檔的撰寫規範",
+      "可獨立完成高質量項目文檔編寫與維護。",
+      "7. 質量管控技能：具備專業的代碼評審能力",
+      "能夠完成代碼走查",
+      "問題排查",
+      "質量把關",
+      "並輸出規範的走查報告。"
+    ],
+    "projectExperience": [
+      "具備完整的軟件開發項目管理經驗",
+      "擁有帶領技術團隊獨立完成企業級軟件項目",
+      "信息化系統項目的全流程交付實績",
+      "有需求分析",
+      "原型設計",
+      "技術方案落地",
+      "代碼質量管控",
+      "項目風險處理等完整項目經歷",
+      "能夠獨立負責中型及以上軟件項目的整體推進與交付。"
     ],
     "preferredSkills": [
-      "123"
+      "1. 熟悉前後端開發技術棧",
+      "數據庫優化",
+      "系統架構設計",
+      "具備豐富的技術落地經驗",
+      "2. 熟練使用Jira",
+      "Project",
+      "Confluence等專業項目管理工具",
+      "3. 熟悉敏捷開發",
+      "瀑布開發等多種項目管理模式",
+      "可靈活适配不同項目場景",
+      "4. 具備企業信息化系統",
+      "行業定制化軟件項目開發與管理經驗",
+      "5. 具備強大的問題預判能力",
+      "擅長處理突發項目風險與技術問題。"
     ],
     "certifications": [
-      "123"
+      "持有PMP項目管理師認證",
+      "軟件工程師",
+      "系統項目管理師等相關資格證照者優先。"
     ],
-    "minWorkYears": 1,
+    "minWorkYears": 3,
+    "workYears": 3,
+    "employmentGapLimitMonths": 3,
+    "candidatePreference": [
+      "1. 邏輯思維縝密",
+      "具備優秀的問題分析與解決能力",
+      "能夠快速處理項目突發問題",
+      "2. 抗壓能力強",
+      "可適應項目節點壓力",
+      "主動推進項目進度",
+      "不拖延",
+      "不推诿",
+      "3. 工作認真負責",
+      "細致嚴謹",
+      "具備極強的責任心與執行力",
+      "重視項目質量與交付成果",
+      "4. 具備良好的團隊管理能力與團隊協作意識",
+      "善於調動團隊積極性",
+      "5. 學習能力強",
+      "願意持續更新項目管理方法與技術知識",
+      "適配行業發展",
+      "6. 有良好的服務意識與職業素養",
+      "對客戶需求敏感",
+      "善於平衡業務與技術落地。"
+    ],
     "salaryRange": {
-      "min": 0,
-      "max": 0
+      "min": 10000,
+      "max": 15000
     },
     "weights": {
-      "requiredSkills": 0.25,
-      "projectExperience": 0.2,
-      "industry": 0.15,
-      "coreResponsibilities": 0.1,
-      "certifications": 0.1,
-      "workYears": 0.1,
-      "candidatePreference": 0.1
+      "requiredSkills": 0.22,
+      "coreResponsibilities": 0.12,
+      "companyExperience": 0.16,
+      "internshipExperience": 0.05,
+      "projectExperience": 0.12,
+      "industry": 0.12,
+      "certifications": 0.07,
+      "workYears": 0.08,
+      "candidatePreference": 0.06
     },
-    "employmentGapLimitMonths": 5
+    "scoringRubrics": {
+      "requiredSkills": {
+        "high": {
+          "criteria": "CV 明確符合「必備技能」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「必備技能」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「必備技能」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "coreResponsibilities": {
+        "high": {
+          "criteria": "CV 明確符合「核心職責」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「核心職責」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「核心職責」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "companyExperience": {
+        "high": {
+          "criteria": "CV 明確符合「公司經歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「公司經歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「公司經歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "internshipExperience": {
+        "high": {
+          "criteria": "CV 明確符合「實習經歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「實習經歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「實習經歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "projectExperience": {
+        "high": {
+          "criteria": "CV 明確符合「專案經歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「專案經歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「專案經歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "industry": {
+        "high": {
+          "criteria": "CV 明確符合「行業背景」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「行業背景」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「行業背景」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "certifications": {
+        "high": {
+          "criteria": "CV 明確符合「證照」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「證照」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「證照」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "workYears": {
+        "high": {
+          "criteria": "CV 明確符合「年限/資歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「年限/資歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「年限/資歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "candidatePreference": {
+        "high": {
+          "criteria": "CV 明確符合「候選人偏好」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「候選人偏好」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「候選人偏好」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      }
+    }
+  },
+  "IT項目經理（業務型）": {
+    "jobKey": "IT項目經理（業務型）",
+    "title": "IT項目經理（業務型）",
+    "description": "本崗位聚焦澳門政務與金融領域，負責政企客戶 IT 項目的全生命週期管理，是連接客戶需求、技術團隊與交付目標的核心角色。深度對接澳門政府部門及金融機構，精准轉化業務需求為可落地的項目方案，統籌資源推動項目實施，確保項目按期、按質、按預算交付，助力澳門本地數字化轉型落地。",
+    "industry": [
+      "澳門政務與金融科技行業",
+      "負責政府部門及金融機構的數字化轉型 IT 項目",
+      "推動政務系統",
+      "金融科技系統的需求落地與項目交付",
+      "連接客戶需求與技術實現",
+      "保障澳門本地 IT 項目的合規",
+      "高效推進。"
+    ],
+    "roleKeywords": [
+      "澳門 IT 項目管理",
+      "政務",
+      "金融領域",
+      "項目全生命週期管理",
+      "客戶需求對接",
+      "跨境 IT 項目",
+      "PMP",
+      "政務數字化",
+      "項目風險控制",
+      "投標方案撰寫",
+      "粵語溝通"
+    ],
+    "coreResponsibilities": [
+      "項目全生命週期管理：負責澳門市場政務",
+      "金融領域 IT 項目的立項",
+      "規劃",
+      "實施",
+      "交付至驗收的全流程管理",
+      "確保項目按期",
+      "按質完成。",
+      "客戶需求對接與轉化：深度對接澳門政府部門及金融機構客戶",
+      "精准解讀業務需求",
+      "並轉化為投標方案",
+      "需求規格說明書等專業項目材料。",
+      "項目實施與資源協調：主導項目整體實施",
+      "制定總體及分階段計劃",
+      "協調客戶",
+      "開發",
+      "測試等多方資源",
+      "跟進開發進度",
+      "定期向相關方匯報",
+      "推動項目順利驗收。",
+      "項目風險與質量管控：識別",
+      "評估並控制項目進度",
+      "質量",
+      "風險問題",
+      "制定應對措施",
+      "保障項目在可控範圍內推進",
+      "按時完成交付。"
+    ],
+    "requiredSkills": [
+      "項目管理能力：熟悉項目管理體系與軟件開發流程",
+      "能高效組織跨領域資源協作",
+      "完成項目任務。",
+      "客戶與業務理解：具備良好的邏輯思維與需求分析能力",
+      "能快速理解澳門政企客戶的業務場景與需求。",
+      "文檔撰寫能力：具備優秀的文字表達與書寫能力",
+      "可獨立完成投標方案",
+      "需求說明書",
+      "進度報告等各類項目文件與對公材料。",
+      "溝通能力：粵語熟練",
+      "能與澳門政企客戶建立流暢",
+      "高效的溝通",
+      "保障需求傳遞與項目協同。",
+      "基礎專業背景：本科及以上學歷",
+      "主修計算機",
+      "信息管理等相關專業",
+      "了解 IT 開發基本流程。"
+    ],
+    "projectExperience": [
+      "需具備 3 年以上 IT 行業工作經驗",
+      "其中至少 1 年以上 IT 項目管理經驗",
+      "有澳門政務數字化項目或金融領域 IT 項目管理經驗者優先",
+      "具備跨境 IT 項目管理經驗者將被優先考慮。"
+    ],
+    "preferredSkills": [
+      "熟悉澳門本地政務數字化流程與行業規範",
+      "具備 IT 開發相關經驗",
+      "了解技術開發流程與常見問題",
+      "具備澳門政企客戶資源或行業資源",
+      "熟練使用項目管理工具（如 Jira",
+      "MS Project",
+      "Trello 等）",
+      "具備基本的英語溝通能力",
+      "可支持跨境項目協作。"
+    ],
+    "certifications": [
+      "優先考慮：持有 PMP（項目管理專業人士）認證者優先。"
+    ],
+    "minWorkYears": 3,
+    "workYears": 3,
+    "employmentGapLimitMonths": 3,
+    "candidatePreference": [
+      "責任心強",
+      "具備團隊合作精神",
+      "能承受項目壓力",
+      "樂觀積極",
+      "主動推動問題解決",
+      "邏輯思維清晰",
+      "具備良好的分析與決策能力",
+      "文字功底紮實",
+      "能獨立完成高質量的項目文檔撰寫",
+      "熟悉澳門本地市場環境",
+      "了解政企客戶的溝通方式與流程",
+      "有持續學習意識",
+      "願意跟進政務數字化",
+      "金融科技領域的政策與技術更新。"
+    ],
+    "salaryRange": {
+      "min": 10000,
+      "max": 15000
+    },
+    "weights": {
+      "requiredSkills": 0.22,
+      "coreResponsibilities": 0.12,
+      "companyExperience": 0.16,
+      "internshipExperience": 0.05,
+      "projectExperience": 0.12,
+      "industry": 0.12,
+      "certifications": 0.07,
+      "workYears": 0.08,
+      "candidatePreference": 0.06
+    },
+    "scoringRubrics": {
+      "requiredSkills": {
+        "high": {
+          "criteria": "CV 明確符合「必備技能」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「必備技能」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「必備技能」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "coreResponsibilities": {
+        "high": {
+          "criteria": "CV 明確符合「核心職責」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「核心職責」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「核心職責」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "companyExperience": {
+        "high": {
+          "criteria": "CV 明確符合「公司經歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「公司經歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「公司經歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "internshipExperience": {
+        "high": {
+          "criteria": "CV 明確符合「實習經歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「實習經歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「實習經歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "projectExperience": {
+        "high": {
+          "criteria": "CV 明確符合「專案經歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「專案經歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「專案經歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "industry": {
+        "high": {
+          "criteria": "CV 明確符合「行業背景」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「行業背景」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「行業背景」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "certifications": {
+        "high": {
+          "criteria": "CV 明確符合「證照」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「證照」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「證照」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "workYears": {
+        "high": {
+          "criteria": "CV 明確符合「年限/資歷」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「年限/資歷」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「年限/資歷」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      },
+      "candidatePreference": {
+        "high": {
+          "criteria": "CV 明確符合「候選人偏好」的核心要求，且有具體工作、項目或成果證據。",
+          "score": 100
+        },
+        "medium": {
+          "criteria": "CV 有部分「候選人偏好」相關證據，但深度、場景或近期性仍需確認。",
+          "score": 65
+        },
+        "low": {
+          "criteria": "CV 缺少足夠「候選人偏好」證據，或只呈現弱相關/可遷移能力。",
+          "score": 30
+        }
+      }
+    }
   }
 }

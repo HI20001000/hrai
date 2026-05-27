@@ -27,7 +27,7 @@ const pageItems = [
   { key: 'cv', label: '候選人管理', description: '查看候選人資料', icon: 'document' },
   { key: 'files', label: '上傳候選人 CV', description: '上傳履歷與應徵', icon: 'tray' },
   { key: 'schedule', label: '時間表', description: '面試日程與任務', icon: 'calendar' },
-  { key: 'interviews', label: '安排面試', description: '面試安排與結果', icon: 'checklist' },
+  { key: 'interviews', label: '面試管理', description: '面試安排與結果', icon: 'checklist' },
   { key: 'personnel', label: '已入職名單', description: '人員與項目安排', icon: 'users' },
   { key: 'blacklist', label: '黑名單', description: '候選人風險名單', icon: 'document' },
   { key: 'projects', label: '項目管理', description: '項目組與調動', icon: 'project' },
@@ -294,9 +294,11 @@ onBeforeUnmount(() => {
 
 .main-toolbar {
   display: grid;
-  align-content: start;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-content: stretch;
   gap: 1.25rem;
   width: 100%;
+  height: calc(100dvh - 2rem);
   min-height: calc(100dvh - 2rem);
   padding: 1.15rem;
   border: 1px solid rgba(255, 255, 255, 0.6);
@@ -325,6 +327,7 @@ onBeforeUnmount(() => {
 
 .brand-heading {
   gap: 0.8rem;
+  justify-content: center;
 }
 
 .toolbar-user-card {
@@ -435,6 +438,9 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 0.72rem;
   align-content: start;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.25rem;
 }
 
 .nav-button {

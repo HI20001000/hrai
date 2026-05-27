@@ -233,6 +233,43 @@ const showMissingInterviewRequiredFieldsAlert = () => {
   return true
 }
 
+const showInvalidInterviewTimeAlert = () => {
+  if (!shouldShowInterviewFields.value) return false
+  if (!hasInterviewScheduleDraftChanged()) return false
+  const start = parseLocalDateTime(interviewScheduledAtDraft.value)
+  if (!start || start > new Date()) return false
+
+  const nextMessage = '面試時間必須晚於當前時間'
+  window.alert(nextMessage)
+  message.value = nextMessage
+  return true
+}
+
+const showUnavailableInterviewTimeAlert = () => {
+  if (!shouldShowInterviewFields.value || interviewerAvailabilityStatus.value !== 'success') return false
+  if (!hasInterviewScheduleDraftChanged()) return false
+  const dateKey = getDateKeyFromDateTimeLocal(interviewScheduledAtDraft.value)
+  const availabilityDate = String(interviewerAvailability.value?.date || '')
+  const availabilityInterviewerId = Number(interviewerAvailability.value?.interviewerUser?.id || 0)
+  if (
+    availabilityDate !== dateKey ||
+    availabilityInterviewerId !== Number(interviewerUserIdDraft.value || 0) ||
+    Number(interviewerAvailability.value?.durationMinutes || 0) !== selectedInterviewDurationMinutes.value
+  ) {
+    return false
+  }
+
+  const freeSlots = Array.isArray(interviewerAvailability.value?.freeSlots)
+    ? interviewerAvailability.value.freeSlots
+    : []
+  if (freeSlots.some((slot) => doesSelectedInterviewFitSlot(slot))) return false
+
+  const nextMessage = '所選面試時間不在面試官空閒時段內，請重新選擇'
+  window.alert(nextMessage)
+  message.value = nextMessage
+  return true
+}
+
 const availabilityDateLabel = computed(() => {
   const dateKey = getDateKeyFromDateTimeLocal(interviewScheduledAtDraft.value)
   if (!dateKey) return ''
@@ -248,11 +285,18 @@ const selectedInterviewEndTime = computed(() => {
   return toDateTimeLocalFromSql(end)
 })
 
+const getCurrentInterviewDateTimeMin = () => {
+  const nextMinute = new Date(Date.now() + 60000)
+  nextMinute.setSeconds(0, 0)
+  return toDateTimeLocalFromSql(nextMinute)
+}
+
 const currentInterviewPreviewItem = computed(() => {
   if (!shouldShowInterviewFields.value || !interviewScheduledAtDraft.value || !selectedInterviewEndTime.value) return null
   return {
     type: 'preview',
     applicationId: activeApplication.value?.applicationId || 'current',
+    statusHistoryId: Number(editingStatusHistoryId.value || 0),
     start: interviewScheduledAtDraft.value.replace('T', ' '),
     end: selectedInterviewEndTime.value.replace('T', ' '),
     durationMinutes: selectedInterviewDurationMinutes.value,
@@ -261,14 +305,55 @@ const currentInterviewPreviewItem = computed(() => {
   }
 })
 
+const toAvailabilityDateTime = (date) => toDateTimeLocalFromSql(date).replace('T', ' ')
+
+const minutesBetweenDates = (start, end) =>
+  Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000))
+
+const splitFreeSlotAroundPreview = (slot, previewItem) => {
+  if (!previewItem) return [{ ...slot, type: 'free' }]
+  const slotStart = parseLocalDateTime(slot?.start)
+  const slotEnd = parseLocalDateTime(slot?.end)
+  const previewStart = parseLocalDateTime(previewItem.start)
+  const previewEnd = parseLocalDateTime(previewItem.end)
+  if (!slotStart || !slotEnd || !previewStart || !previewEnd || previewEnd <= slotStart || previewStart >= slotEnd) {
+    return [{ ...slot, type: 'free' }]
+  }
+
+  const segments = []
+  const beforeEnd = previewStart < slotEnd ? previewStart : slotEnd
+  if (slotStart < beforeEnd) {
+    segments.push({
+      ...slot,
+      type: 'free',
+      start: toAvailabilityDateTime(slotStart),
+      end: toAvailabilityDateTime(beforeEnd),
+      durationMinutes: minutesBetweenDates(slotStart, beforeEnd),
+    })
+  }
+
+  const afterStart = previewEnd > slotStart ? previewEnd : slotStart
+  if (afterStart < slotEnd) {
+    segments.push({
+      ...slot,
+      type: 'free',
+      start: toAvailabilityDateTime(afterStart),
+      end: toAvailabilityDateTime(slotEnd),
+      durationMinutes: minutesBetweenDates(afterStart, slotEnd),
+    })
+  }
+
+  return segments
+}
+
 const availabilityTimelineItems = computed(() => {
   const previewItem = currentInterviewPreviewItem.value
   const freeSlots = Array.isArray(interviewerAvailability.value?.freeSlots)
-    ? interviewerAvailability.value.freeSlots.map((slot) => ({ ...slot, type: 'free' }))
+    ? interviewerAvailability.value.freeSlots.flatMap((slot) => splitFreeSlotAroundPreview(slot, previewItem))
     : []
   const booked = Array.isArray(interviewerAvailability.value?.booked)
     ? interviewerAvailability.value.booked
-        .filter((slot) => Number(slot.applicationId || 0) !== Number(previewItem?.applicationId || 0))
+        .filter((slot) => Number(slot.statusHistoryId || 0) !== Number(previewItem?.statusHistoryId || 0))
         .map((slot) => ({ ...slot, type: 'booked' }))
     : []
   const preview = previewItem ? [previewItem] : []
@@ -381,6 +466,17 @@ const isEditingStatusHistory = computed(() => Number(editingStatusHistoryId.valu
 const selectedStatusHistory = computed(() =>
   activeStatusHistory.value.find((history) => Number(history.id) === Number(editingStatusHistoryId.value)) || null
 )
+
+const hasInterviewScheduleDraftChanged = () => {
+  if (!isEditingStatusHistory.value || !selectedStatusHistory.value) return true
+
+  const interview = selectedStatusHistory.value.interview || {}
+  return (
+    toDateTimeLocalValue(interview.scheduledAt) !== String(interviewScheduledAtDraft.value || '') ||
+    normalizeInterviewDurationMinutes(interview.durationMinutes || 30) !== selectedInterviewDurationMinutes.value ||
+    String(interview.interviewerUser?.id || '') !== String(interviewerUserIdDraft.value || '')
+  )
+}
 
 const statusModalEditorTitle = computed(() =>
   isEditingStatusHistory.value ? '編輯狀態記錄' : '新增狀態記錄'
@@ -582,6 +678,12 @@ const saveStatusModalChanges = async () => {
   if (isInterviewStatus && showMissingInterviewRequiredFieldsAlert()) {
     return
   }
+  if (isInterviewStatus && showInvalidInterviewTimeAlert()) {
+    return
+  }
+  if (isInterviewStatus && showUnavailableInterviewTimeAlert()) {
+    return
+  }
 
   const interviewPayload = isInterviewStatus
     ? {
@@ -693,7 +795,7 @@ const loadInterviewerAvailability = async () => {
       interviewerUserId: String(interviewerUserId),
       date: dateKey,
       durationMinutes: String(selectedInterviewDurationMinutes.value),
-      applicationId: String(activeApplication.value?.applicationId || activeApplicationId.value || 0),
+      statusHistoryId: String(editingStatusHistoryId.value || 0),
     })
     const data = await fetchJson(`${apiBaseUrl}/api/schedule/interviewer-availability?${params.toString()}`)
     interviewerAvailability.value = data
@@ -806,7 +908,7 @@ const deleteSelectedApplications = async () => {
   try {
     const response = await fetch(`${apiBaseUrl}/api/job-post-applications/batch-delete`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ applicationIds: selectedApplicationIds.value }),
     })
     const data = await response.json()
@@ -1600,11 +1702,24 @@ onUnmounted(() => {
                     </thead>
                     <tbody>
                       <tr>
+                        <th scope="row">面試官<span class="required-mark" aria-hidden="true">*</span></th>
+                        <td>
+                          <AppSelect
+                            :model-value="interviewerUserIdDraft"
+                            :options="interviewerOptions"
+                            placeholder="請選擇面試官"
+                            :disabled="isSavingStatusModal"
+                            @update:model-value="interviewerUserIdDraft = $event"
+                          />
+                        </td>
+                      </tr>
+                      <tr>
                         <th scope="row">面試時間<span class="required-mark" aria-hidden="true">*</span></th>
                         <td>
                           <input
                             v-model="interviewScheduledAtDraft"
                             type="datetime-local"
+                            :min="getCurrentInterviewDateTimeMin()"
                             autocomplete="off"
                             :disabled="isSavingStatusModal"
                           />
@@ -1633,18 +1748,6 @@ onUnmounted(() => {
                               placeholder="分鐘"
                             />
                           </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <th scope="row">面試官<span class="required-mark" aria-hidden="true">*</span></th>
-                        <td>
-                          <AppSelect
-                            :model-value="interviewerUserIdDraft"
-                            :options="interviewerOptions"
-                            placeholder="請選擇面試官"
-                            :disabled="isSavingStatusModal"
-                            @update:model-value="interviewerUserIdDraft = $event"
-                          />
                         </td>
                       </tr>
                       <tr>
@@ -1761,7 +1864,9 @@ onUnmounted(() => {
                   <span class="availability-copy">
                     <strong>{{ item.type === 'preview' ? '當前安排' : item.type === 'booked' ? '已安排' : '空閒' }}</strong>
                     <em v-if="item.type === 'preview'">{{ item.fullName || '當前候選人' }}｜{{ item.jobPostTitle || '--' }}</em>
-                    <em v-else-if="item.type === 'booked'">{{ item.fullName || '候選人' }}｜{{ item.jobPostTitle || '--' }}</em>
+                    <em v-else-if="item.type === 'booked'">
+                      {{ item.fullName || '候選人' }}｜{{ item.jobPostTitle || '--' }}｜{{ getCandidateApplicationStatusLabel(item.applicationStatus) }}｜{{ getInterviewStatusLabel(item.interviewStatus) }}
+                    </em>
                     <em v-else-if="doesSelectedInterviewFitSlot(item)">可插入當前面試時間</em>
                     <em v-else-if="doesSlotFitDuration(item)">可點擊調整到此時段</em>
                     <em v-else>時長不足</em>

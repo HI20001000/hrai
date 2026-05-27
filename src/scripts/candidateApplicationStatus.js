@@ -1,5 +1,6 @@
 const CANDIDATE_APPLICATION_STATUS_LABEL_OPTIONS = [
   { value: 'screening', label: '簡歷篩選中' },
+  { value: 'screening_rejected', label: '簡歷不通過' },
   { value: 'screening_hr_approved', label: '簡歷篩選 - HR通過' },
   { value: 'screening_hr_rejected', label: '簡歷篩選 - HR不通過' },
   { value: 'screening_department_approved', label: '簡歷篩選 - 部門通過' },
@@ -58,8 +59,7 @@ const STATUS_LABEL_MAP = Object.fromEntries(
 
 const LEGACY_STATUS_MAP = {
   submitted: 'screening',
-  rejected: 'screening_hr_rejected',
-  screening_rejected: 'screening_hr_rejected',
+  rejected: 'screening_rejected',
 }
 
 const FIRST_INTERVIEW_ARRANGEMENT_LABEL_MAP = Object.fromEntries(

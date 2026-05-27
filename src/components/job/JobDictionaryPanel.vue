@@ -176,8 +176,6 @@ const sortedJobTitles = computed(() =>
   Object.keys(jobDictionary.value || {}).sort((a, b) => a.localeCompare(b))
 )
 
-const rawDictionaryPreview = computed(() => JSON.stringify(jobDictionary.value || {}, null, 2))
-
 const activeJobTitle = computed(() => selectedJobTitle.value || '未選擇職位')
 
 const emitUpdated = () => {
@@ -345,28 +343,56 @@ const addJob = () => {
   emitUpdated()
 }
 
-const deleteSelectedJob = () => {
+const deleteSelectedJob = async () => {
   if (!selectedJobTitle.value || !jobDictionary.value[selectedJobTitle.value]) {
     jobDictionaryError.value = '請先選擇要刪除的職位'
     return
   }
 
-  const confirmed = window.confirm(`確定刪除職位字典「${selectedJobTitle.value}」？`)
+  const deletedTitle = selectedJobTitle.value
+  const confirmed = window.confirm(`確定刪除職位字典「${deletedTitle}」？`)
   if (!confirmed) return
 
-  const nextDictionary = { ...jobDictionary.value }
-  delete nextDictionary[selectedJobTitle.value]
-  jobDictionary.value = nextDictionary
-  const nextTitle = Object.keys(nextDictionary).sort((a, b) => a.localeCompare(b))[0] || ''
-  if (nextTitle) {
-    setSelectedJob(nextTitle)
-  } else {
-    selectedJobTitle.value = ''
-    jobDraft.value = null
+  const auth = getAuthContext()
+  if (!auth.ok) {
+    jobDictionaryError.value = auth.message
+    return
   }
-  jobDictionaryMessage.value = '已從當前字典草稿移除職位，記得儲存整份字典'
+
+  const nextDictionary = { ...jobDictionary.value }
+  delete nextDictionary[deletedTitle]
   jobDictionaryError.value = ''
-  emitUpdated()
+  jobDictionaryMessage.value = ''
+  jobDictionarySaving.value = true
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/job-dictionary`, {
+      method: 'PUT',
+      headers: auth.headers,
+      body: JSON.stringify({ dictionary: nextDictionary }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      jobDictionaryError.value = data.message || '刪除職位字典失敗'
+      return
+    }
+
+    const resolvedDictionary = resolveJobDictionary(data)
+    jobDictionary.value = resolvedDictionary
+    const nextTitle = Object.keys(resolvedDictionary).sort((a, b) => a.localeCompare(b))[0] || ''
+    if (nextTitle) {
+      setSelectedJob(nextTitle)
+    } else {
+      selectedJobTitle.value = ''
+      jobDraft.value = null
+      emitSelectedTitleChange('')
+    }
+    jobDictionaryMessage.value = `已刪除職位字典「${deletedTitle}」`
+    emitUpdated()
+  } catch {
+    jobDictionaryError.value = '刪除職位字典失敗'
+  } finally {
+    jobDictionarySaving.value = false
+  }
 }
 
 const saveJobDictionaryConfig = async () => {
@@ -756,16 +782,6 @@ onMounted(() => {
         <p v-else class="empty-dictionary-state">尚未選擇職位。</p>
       </section>
     </div>
-
-    <section class="raw-preview-section">
-      <div class="card-header">
-        <div>
-          <h3>原始 JSON 預覽</h3>
-          <p>只讀預覽，實際儲存以上方表單編輯內容為準。</p>
-        </div>
-      </div>
-      <pre class="raw-preview">{{ rawDictionaryPreview }}</pre>
-    </section>
   </section>
 </template>
 
@@ -820,8 +836,7 @@ onMounted(() => {
 }
 
 .dictionary-sidebar,
-.dictionary-editor,
-.raw-preview-section {
+.dictionary-editor {
   padding: 0.9rem;
 }
 
@@ -1050,18 +1065,6 @@ onMounted(() => {
   text-align: center;
   font-size: 0.84rem;
   font-weight: 850;
-}
-
-.raw-preview {
-  margin: 0;
-  max-height: 320px;
-  overflow: auto;
-  padding: 0.9rem;
-  border-radius: 20px;
-  background: rgba(15, 23, 42, 0.92);
-  color: #e2e8f0;
-  font-size: 0.82rem;
-  line-height: 1.55;
 }
 
 @media (max-width: 960px) {

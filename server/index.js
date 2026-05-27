@@ -286,7 +286,7 @@ const ROLE_ACCESS_ROUTES = [
   { method: 'PATCH', pattern: /^\/api\/users\/\d+\/role$/, roles: ['admin'] },
   { method: 'PUT', pattern: /^\/api\/job-dictionary$/, roles: ['admin'] },
   { method: 'POST', pattern: /^\/api\/job-dictionary\/rubric-suggestions$/, roles: ['admin'] },
-  { method: 'POST', pattern: /^\/api\/job-dictionary\/job-suggestions$/, roles: ['admin'] },
+  { method: 'POST', pattern: /^\/api\/job-dictionary\/job-suggestions$/, roles: ['admin', 'hr'] },
 ]
 
 const matchesMethodRoute = (routes, pathname, method) => {
@@ -1419,6 +1419,17 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
     sendJson(res, 400, { message: 'Invalid interviewerUserId' })
     return
   }
+  const willAppendStatusHistory = hasStatus && nextStatus !== currentStatus
+  const latestHistory = willAppendStatusHistory
+    ? null
+    : await getLatestJobPostApplicationStatusHistory(pool, applicationId)
+  if (willAppendStatusHistory || hasInterviewScheduleChanged(existing, interviewResult.value)) {
+    await validateInterviewScheduleAvailability(pool, {
+      applicationStatus: nextStatus,
+      interview: interviewResult.value,
+      excludeStatusHistoryId: Number(latestHistory?.id || 0),
+    })
+  }
   const operatorUserId = await getRequestOperatorUserId(pool, req)
 
   await pool.query(
@@ -1456,7 +1467,7 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
       interview: interviewResult.value,
       remark: nextRemark,
     },
-    { append: hasStatus && nextStatus !== currentStatus, operatorUserId }
+    { append: willAppendStatusHistory, operatorUserId }
   )
 
   sendJson(res, 200, {
@@ -1500,6 +1511,10 @@ const createJobPostApplicationStatusHistory = async (pool, req, res, application
     sendJson(res, 400, { message: 'Invalid interviewerUserId' })
     return
   }
+  await validateInterviewScheduleAvailability(pool, {
+    applicationStatus: nextStatus,
+    interview: interviewResult.value,
+  })
   const operatorUserId = await getRequestOperatorUserId(pool, req)
   const [result] = await pool.query(
     `INSERT INTO job_post_application_status_history
@@ -1591,6 +1606,16 @@ const updateJobPostApplicationStatusHistory = async (pool, req, res, application
   if (!(await ensureInterviewInputUserExists(pool, interviewResult.value))) {
     sendJson(res, 400, { message: 'Invalid interviewerUserId' })
     return
+  }
+  if (
+    normalizeApplicationStatus(existing.applicationStatus, '') !== nextStatus ||
+    hasInterviewScheduleChanged(existing, interviewResult.value)
+  ) {
+    await validateInterviewScheduleAvailability(pool, {
+      applicationStatus: nextStatus,
+      interview: interviewResult.value,
+      excludeStatusHistoryId: historyId,
+    })
   }
   const operatorUserId = await getRequestOperatorUserId(pool, req)
   await pool.query(
@@ -2205,6 +2230,7 @@ const resolveJobPostStatusInput = (value, fallback = 'open') => {
 
 const APPLICATION_STATUS_VALUES = new Set([
   'screening',
+  'screening_rejected',
   'screening_hr_approved',
   'screening_hr_rejected',
   'screening_department_approved',
@@ -2222,6 +2248,7 @@ const APPLICATION_STATUS_VALUES = new Set([
   'hr_withdrew_onboarding',
 ])
 
+const INTERVIEW_APPLICATION_STATUS_VALUES = new Set(['hr_interview', 'department_interview'])
 const FIRST_INTERVIEW_ARRANGEMENT_VALUES = new Set(['can_invite', 'unsuitable'])
 const INTERVIEW_LOCATION_VALUES = new Set(['zhuhai', 'macau', 'online'])
 const INTERVIEW_STATUS_VALUES = new Set(['passed', 'in_progress', 'failed'])
@@ -2233,8 +2260,8 @@ const normalizeApplicationStatus = (value, fallback = 'screening') => {
   const normalized = normalizeText(value).toLowerCase()
   const mapped = normalized === 'submitted'
     ? 'screening'
-    : normalized === 'rejected' || normalized === 'screening_rejected'
-      ? 'screening_hr_rejected'
+    : normalized === 'rejected'
+      ? 'screening_rejected'
       : normalized
   return APPLICATION_STATUS_VALUES.has(mapped) ? mapped : fallback
 }
@@ -4346,6 +4373,126 @@ const buildAvailabilityIntervalPayload = (start, end, extra = {}) => ({
   ...extra,
 })
 
+const rangesOverlap = (startA, endA, startB, endB) => startA < endB && startB < endA
+
+const getScheduleDayBounds = (dateKey) => {
+  const dayStart = `${dateKey} 00:00:00`
+  const nextDay = new Date(`${dateKey}T00:00:00`)
+  nextDay.setDate(nextDay.getDate() + 1)
+  return {
+    dayStart,
+    dayEnd: toSqlDateTime(nextDay),
+    workdayStart: new Date(`${dateKey}T09:00:00`),
+    workdayEnd: new Date(`${dateKey}T18:00:00`),
+  }
+}
+
+const isInterviewApplicationStatus = (status) =>
+  INTERVIEW_APPLICATION_STATUS_VALUES.has(normalizeApplicationStatus(status, ''))
+
+const listInterviewerInterviewHistorySlots = async (pool, interviewerUserId, dateKey) => {
+  const bounds = getScheduleDayBounds(dateKey)
+  const [rows] = await pool.query(
+    `SELECT
+        history.id AS statusHistoryId,
+        history.application_id AS applicationId,
+        history.application_status AS applicationStatus,
+        history.interview_scheduled_at AS interviewScheduledAt,
+        history.interview_duration_minutes AS interviewDurationMinutes,
+        history.interview_status AS interviewStatus,
+        jp.title AS jobPostTitle,
+        c.full_name AS fullName
+      FROM job_post_application_status_history history
+      INNER JOIN job_post_applications app ON app.id = history.application_id
+      INNER JOIN job_posts jp ON jp.id = app.job_post_id
+      INNER JOIN candidates c ON c.id = app.candidate_id
+      WHERE history.interviewer_user_id = ?
+        AND history.application_status IN ('hr_interview', 'department_interview')
+        AND history.interview_scheduled_at IS NOT NULL
+        AND history.interview_scheduled_at >= ?
+        AND history.interview_scheduled_at < ?
+      ORDER BY history.interview_scheduled_at ASC, history.id ASC`,
+    [interviewerUserId, bounds.dayStart, bounds.dayEnd]
+  )
+
+  return rows
+    .map((row) => {
+      const start = parseSqlDateTime(row.interviewScheduledAt)
+      if (!start) return null
+      const minutes = normalizeInterviewDurationMinutes(row.interviewDurationMinutes, DEFAULT_INTERVIEW_DURATION_MINUTES)
+      return {
+        start,
+        end: addMinutes(start, minutes),
+        payload: {
+          statusHistoryId: Number(row.statusHistoryId),
+          applicationId: Number(row.applicationId),
+          fullName: normalizeText(row.fullName),
+          jobPostTitle: normalizeText(row.jobPostTitle),
+          applicationStatus: normalizeApplicationStatus(row.applicationStatus),
+          interviewStatus: normalizeInterviewStatus(row.interviewStatus),
+        },
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.start.getTime() - b.start.getTime())
+}
+
+const validateInterviewScheduleAvailability = async (
+  pool,
+  { applicationStatus, interview = {}, excludeStatusHistoryId = 0 } = {}
+) => {
+  if (!isInterviewApplicationStatus(applicationStatus)) return
+
+  const interviewerUserId = Number(interview?.interviewerUserId || 0) || null
+  const start = parseSqlDateTime(interview?.scheduledAt)
+  if (!interviewerUserId || !start) {
+    throw new HttpError(400, '請提供面試官與面試時間')
+  }
+
+  const durationMinutes = normalizeInterviewDurationMinutes(interview?.durationMinutes, DEFAULT_INTERVIEW_DURATION_MINUTES)
+  const end = addMinutes(start, durationMinutes)
+  if (start <= new Date()) {
+    throw new HttpError(400, '面試時間必須晚於當前時間')
+  }
+
+  const dateKey = getInterviewDateKey(start)
+  const { workdayStart, workdayEnd } = getScheduleDayBounds(dateKey)
+  if (start < workdayStart || end > workdayEnd) {
+    throw new HttpError(400, '面試時間必須在 09:00-18:00 內')
+  }
+
+  const booked = await listInterviewerInterviewHistorySlots(pool, interviewerUserId, dateKey)
+  const conflict = booked.find((item) => {
+    if (Number(item.payload.statusHistoryId || 0) === Number(excludeStatusHistoryId || 0)) return false
+    return rangesOverlap(start, end, item.start, item.end)
+  })
+
+  if (conflict) {
+    throw new HttpError(
+      400,
+      `面試官該時段已有面試：${conflict.payload.fullName || '候選人'} ${toSqlDateTime(conflict.start).slice(11, 16)}-${toSqlDateTime(conflict.end).slice(11, 16)}`
+    )
+  }
+}
+
+const hasInterviewScheduleChanged = (existing = {}, interview = {}) => {
+  const existingScheduledAt = normalizeInterviewScheduledAt(existing.interviewScheduledAt, '') || ''
+  const nextScheduledAt = normalizeInterviewScheduledAt(interview.scheduledAt, '') || ''
+  const existingDuration = normalizeInterviewDurationMinutes(
+    existing.interviewDurationMinutes,
+    DEFAULT_INTERVIEW_DURATION_MINUTES
+  )
+  const nextDuration = normalizeInterviewDurationMinutes(interview.durationMinutes, DEFAULT_INTERVIEW_DURATION_MINUTES)
+  const existingInterviewerId = Number(existing.interviewerUserId || 0) || 0
+  const nextInterviewerId = Number(interview.interviewerUserId || 0) || 0
+
+  return (
+    existingScheduledAt !== nextScheduledAt ||
+    existingDuration !== nextDuration ||
+    existingInterviewerId !== nextInterviewerId
+  )
+}
+
 const buildScheduleApplicationPayload = (row = {}, statusHistory = []) => ({
   applicationId: Number(row.applicationId),
   applicationStatus: normalizeApplicationStatus(row.applicationStatus),
@@ -4436,13 +4583,16 @@ const listScheduleInterviews = async (pool, req, res, url) => {
     tasksByDate[dateKey] = [...(tasksByDate[dateKey] || []), item]
   }
 
-  const unscheduledApplications = relatedApplications.filter((item) => !item.interview.scheduledAt)
   const scheduledApplications = relatedApplications.filter((item) => item.interview.scheduledAt)
   const stats = {
     total: relatedApplications.length,
+    hrInProgress: scheduledApplications.filter(
+      (item) => item.applicationStatus === 'hr_interview' && item.interview.status === 'in_progress'
+    ).length,
+    departmentInProgress: scheduledApplications.filter(
+      (item) => item.applicationStatus === 'department_interview' && item.interview.status === 'in_progress'
+    ).length,
     passed: scheduledApplications.filter((item) => item.interview.status === 'passed').length,
-    inProgress: scheduledApplications.filter((item) => item.interview.status === 'in_progress').length,
-    unscheduled: unscheduledApplications.length,
     failed: scheduledApplications.filter((item) => item.interview.status === 'failed').length,
   }
 
@@ -4609,7 +4759,7 @@ const getInterviewerAvailability = async (pool, req, res, url) => {
     url.searchParams.get('durationMinutes'),
     DEFAULT_INTERVIEW_DURATION_MINUTES
   )
-  const excludeApplicationId = Number(url.searchParams.get('applicationId') || 0) || 0
+  const excludeStatusHistoryId = Number(url.searchParams.get('statusHistoryId') || 0) || 0
 
   if (!interviewerUserId || !dateKey) {
     sendJson(res, 400, { message: 'interviewerUserId and date are required' })
@@ -4624,48 +4774,11 @@ const getInterviewerAvailability = async (pool, req, res, url) => {
     return
   }
 
-  const dayStart = `${dateKey} 00:00:00`
-  const nextDay = new Date(`${dateKey}T00:00:00`)
-  nextDay.setDate(nextDay.getDate() + 1)
-  const dayEnd = toSqlDateTime(nextDay)
-  const [rows] = await pool.query(
-    `SELECT
-        app.id AS applicationId,
-        app.interview_scheduled_at AS interviewScheduledAt,
-        app.interview_duration_minutes AS interviewDurationMinutes,
-        jp.title AS jobPostTitle,
-        c.full_name AS fullName
-      FROM job_post_applications app
-      INNER JOIN job_posts jp ON jp.id = app.job_post_id
-      INNER JOIN candidates c ON c.id = app.candidate_id
-      WHERE app.interviewer_user_id = ?
-        AND app.interview_scheduled_at IS NOT NULL
-        AND app.interview_scheduled_at >= ?
-        AND app.interview_scheduled_at < ?
-      ORDER BY app.interview_scheduled_at ASC, app.id ASC`,
-    [interviewerUserId, dayStart, dayEnd]
+  const { workdayStart, workdayEnd } = getScheduleDayBounds(dateKey)
+  const booked = await listInterviewerInterviewHistorySlots(pool, interviewerUserId, dateKey)
+  const blockingBooked = booked.filter(
+    (item) => Number(item.payload.statusHistoryId || 0) !== excludeStatusHistoryId
   )
-
-  const workdayStart = new Date(`${dateKey}T09:00:00`)
-  const workdayEnd = new Date(`${dateKey}T18:00:00`)
-  const booked = rows
-    .map((row) => {
-      const start = parseSqlDateTime(row.interviewScheduledAt)
-      if (!start) return null
-      const minutes = normalizeInterviewDurationMinutes(row.interviewDurationMinutes, DEFAULT_INTERVIEW_DURATION_MINUTES)
-      return {
-        start,
-        end: addMinutes(start, minutes),
-        payload: {
-          applicationId: Number(row.applicationId),
-          fullName: normalizeText(row.fullName),
-          jobPostTitle: normalizeText(row.jobPostTitle),
-        },
-      }
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.start.getTime() - b.start.getTime())
-  const blockingBooked = booked.filter((item) => Number(item.payload.applicationId || 0) !== excludeApplicationId)
 
   const freeSlots = []
   let cursor = new Date(workdayStart)
