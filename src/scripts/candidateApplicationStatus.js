@@ -48,6 +48,9 @@ export const INTERVIEW_STATUS_OPTIONS = [
   { value: 'failed', label: '不通過' },
 ]
 
+export const TEMPORAL_INTERVIEW_STATUS_VALUES = new Set(['not_started', 'in_progress', 'ended'])
+export const TERMINAL_INTERVIEW_STATUS_VALUES = new Set(['passed', 'failed'])
+
 export const INTERVIEW_DURATION_PRESET_OPTIONS = [
   { value: '10', label: '10分鐘' },
   { value: '30', label: '30分鐘' },
@@ -117,3 +120,66 @@ export const normalizeInterviewDurationMinutes = (value, fallback = 30) => {
 }
 
 export const getInterviewDurationLabel = (value) => `${normalizeInterviewDurationMinutes(value)}分鐘`
+
+export const isTerminalInterviewStatus = (value) =>
+  TERMINAL_INTERVIEW_STATUS_VALUES.has(normalizeInterviewStatus(value, ''))
+
+const parseInterviewDateTime = (value) => {
+  if (!value) return null
+  const date = value instanceof Date ? value : new Date(String(value).replace(' ', 'T'))
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const formatLocalDateTime = (date) => {
+  const pad = (number) => String(number).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+export const getInterviewTemporalStatus = (
+  scheduledAt,
+  durationMinutes = 30,
+  now = new Date()
+) => {
+  const start = parseInterviewDateTime(scheduledAt)
+  if (!start) return 'not_started'
+  const minutes = normalizeInterviewDurationMinutes(durationMinutes, 30)
+  const end = new Date(start.getTime() + minutes * 60 * 1000)
+  if (now < start) return 'not_started'
+  if (now <= end) return 'in_progress'
+  return 'ended'
+}
+
+export const validateInterviewStatusAgainstTime = (status, interview = {}, now = new Date()) => {
+  const nextStatus = normalizeInterviewStatus(status, '')
+  if (!nextStatus) {
+    return { valid: false, message: '請選擇有效的面試結果' }
+  }
+  if (isTerminalInterviewStatus(nextStatus)) {
+    return { valid: true, expectedStatus: nextStatus, status: nextStatus }
+  }
+
+  const start = parseInterviewDateTime(interview?.scheduledAt)
+  if (!start) {
+    return {
+      valid: false,
+      status: nextStatus,
+      message: '請先安排面試時間後，再更新為「未開始」、「進行中」或「已結束」。',
+    }
+  }
+
+  const minutes = normalizeInterviewDurationMinutes(interview?.durationMinutes, 30)
+  const end = new Date(start.getTime() + minutes * 60 * 1000)
+  const expectedStatus = getInterviewTemporalStatus(start, minutes, now)
+  if (nextStatus === expectedStatus) {
+    return { valid: true, expectedStatus, status: nextStatus }
+  }
+
+  const expectedLabel = getInterviewStatusLabel(expectedStatus)
+  const selectedLabel = getInterviewStatusLabel(nextStatus)
+  return {
+    valid: false,
+    expectedStatus,
+    status: nextStatus,
+    message: `目前本機時間為 ${formatLocalDateTime(now)}，面試時段為 ${formatLocalDateTime(start)}-${formatLocalDateTime(end)}，不可更新為「${selectedLabel}」。請改選「${expectedLabel}」，或選擇「通過 / 不通過」。`,
+  }
+}

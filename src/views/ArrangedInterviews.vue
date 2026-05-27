@@ -15,6 +15,7 @@ import {
   getInterviewStatusLabel,
   normalizeCandidateApplicationStatus,
   normalizeInterviewStatus,
+  validateInterviewStatusAgainstTime,
 } from '../scripts/candidateApplicationStatus.js'
 
 const props = defineProps({
@@ -45,6 +46,19 @@ const activeStatusPopoverKey = ref('')
 const activeStatusPopoverRow = ref(null)
 const statusPopoverStyle = ref({})
 let statusPopoverCloseTimer = null
+
+const API_CONNECTION_ERROR_MESSAGE = '後端服務無法連線，請確認 API 位址或服務是否啟動'
+
+const getRequestErrorMessage = (error, fallback) => {
+  const message = String(error?.message || '')
+  if (
+    error instanceof TypeError ||
+    /failed to fetch|networkerror|network request failed|load failed/i.test(message)
+  ) {
+    return API_CONNECTION_ERROR_MESSAGE
+  }
+  return message || fallback
+}
 
 const pad = (number) => String(number).padStart(2, '0')
 
@@ -293,7 +307,7 @@ const loadInterviews = async () => {
     if (!response.ok) throw new Error(data.message || '讀取安排面試失敗')
     interviews.value = Array.isArray(data.interviews) ? data.interviews : []
   } catch (error) {
-    message.value = error?.message || '讀取安排面試失敗'
+    message.value = getRequestErrorMessage(error, '讀取安排面試失敗')
   } finally {
     isLoading.value = false
   }
@@ -327,7 +341,7 @@ const openInterviewStatusModal = async (row) => {
     interviewStatusDraft.value = normalizeInterviewStatus(row?.interview?.status)
     remarkDraft.value = String(row?.remark || '')
   } catch (error) {
-    statusModalError.value = error?.message || '讀取候選人狀態失敗'
+    statusModalError.value = getRequestErrorMessage(error, '讀取候選人狀態失敗')
     activeApplication.value = row
   } finally {
     isStatusDetailLoading.value = false
@@ -349,6 +363,14 @@ const saveInterviewStatusModal = async () => {
   const statusHistoryId = Number(activeApplication.value?.statusHistoryId || 0) || 0
   const nextStatus = normalizeInterviewStatus(interviewStatusDraft.value, '')
   if (!applicationId || !nextStatus || isSaving(applicationId)) return
+
+  const validation = validateInterviewStatusAgainstTime(nextStatus, activeApplication.value?.interview || {})
+  if (!validation.valid) {
+    statusModalError.value = validation.message
+    message.value = validation.message
+    window.alert(validation.message)
+    return
+  }
 
   savingIds.value = [...savingIds.value, applicationId]
   isSavingStatusModal.value = true
@@ -372,7 +394,7 @@ const saveInterviewStatusModal = async () => {
     message.value = `已更新 ${activeApplication.value?.fullName || '候選人'} 的面試結果`
     closeInterviewStatusModal()
   } catch (error) {
-    statusModalError.value = error?.message || '更新面試結果失敗'
+    statusModalError.value = getRequestErrorMessage(error, '更新面試結果失敗')
     message.value = statusModalError.value
   } finally {
     isSavingStatusModal.value = false
@@ -386,6 +408,13 @@ const updateInterviewStatus = async (row, nextValue) => {
   const nextStatus = normalizeInterviewStatus(nextValue, '')
   const currentStatus = normalizeInterviewStatus(row?.interview?.status, '')
   if (!applicationId || !nextStatus || nextStatus === currentStatus || isSaving(applicationId)) return
+
+  const validation = validateInterviewStatusAgainstTime(nextStatus, row?.interview || {})
+  if (!validation.valid) {
+    message.value = validation.message
+    window.alert(validation.message)
+    return
+  }
 
   savingIds.value = [...savingIds.value, applicationId]
   try {
@@ -408,7 +437,7 @@ const updateInterviewStatus = async (row, nextValue) => {
     window.dispatchEvent(new CustomEvent('hrai-interviews-updated'))
     message.value = `已更新 ${row.fullName || '候選人'} 的面試結果`
   } catch (error) {
-    message.value = error?.message || '更新面試結果失敗'
+    message.value = getRequestErrorMessage(error, '更新面試結果失敗')
   } finally {
     savingIds.value = savingIds.value.filter((id) => id !== applicationId)
   }

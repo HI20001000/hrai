@@ -77,11 +77,20 @@ const CV_CACHE_TTL_MS = 10 * 60 * 1000
 const cvUploadCache = new Map()
 
 const resolveInterviewStatusCheckIntervalMs = () => {
-  const candidates = [
+  const minuteCandidates = [
+    process.env.INTERVIEW_STATUS_CHECK_INTERVAL_MINUTES,
+    process.env.HRAI_INTERVIEW_STATUS_CHECK_INTERVAL_MINUTES,
+  ]
+  for (const value of minuteCandidates) {
+    const numeric = Number(value)
+    if (Number.isFinite(numeric) && numeric >= 0) return Math.floor(numeric * 60 * 1000)
+  }
+
+  const millisecondCandidates = [
     process.env.INTERVIEW_STATUS_CHECK_INTERVAL_MS,
     process.env.HRAI_INTERVIEW_STATUS_CHECK_INTERVAL_MS,
   ]
-  for (const value of candidates) {
+  for (const value of millisecondCandidates) {
     const numeric = Number(value)
     if (Number.isFinite(numeric) && numeric >= 0) return Math.floor(numeric)
   }
@@ -2267,6 +2276,13 @@ const FIRST_INTERVIEW_ARRANGEMENT_VALUES = new Set(['can_invite', 'unsuitable'])
 const INTERVIEW_LOCATION_VALUES = new Set(['zhuhai', 'macau', 'online'])
 const INTERVIEW_STATUS_VALUES = new Set(['not_started', 'in_progress', 'ended', 'passed', 'failed'])
 const TERMINAL_INTERVIEW_STATUS_VALUES = new Set(['passed', 'failed'])
+const INTERVIEW_STATUS_LABELS = {
+  not_started: '未開始',
+  in_progress: '進行中',
+  ended: '已結束',
+  passed: '通過',
+  failed: '不通過',
+}
 const DEFAULT_INTERVIEW_DURATION_MINUTES = 30
 const MIN_INTERVIEW_DURATION_MINUTES = 1
 const MAX_INTERVIEW_DURATION_MINUTES = 480
@@ -2420,6 +2436,11 @@ const parseInterviewDateTime = (value) => {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
+const formatInterviewValidationDateTime = (date) => {
+  const pad = (number) => String(number).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 const normalizeInterviewScheduledAt = (value, fallback = null) => {
   const text = String(value || '').trim()
   if (!text) return null
@@ -2450,6 +2471,42 @@ const getInterviewTemporalStatus = (
   if (now < start) return 'not_started'
   if (now <= end) return 'in_progress'
   return 'ended'
+}
+
+const validateManualInterviewStatusChange = (
+  status,
+  scheduledAt,
+  durationMinutes = DEFAULT_INTERVIEW_DURATION_MINUTES,
+  now = new Date()
+) => {
+  const requestedStatus = normalizeInterviewStatus(status, '')
+  if (!requestedStatus) {
+    return { valid: false, message: 'Invalid interview status' }
+  }
+  if (isTerminalInterviewStatus(requestedStatus)) {
+    return { valid: true, status: requestedStatus, expectedStatus: requestedStatus }
+  }
+
+  const start = parseInterviewDateTime(scheduledAt)
+  if (!start) {
+    return { valid: false, message: 'Interview is not scheduled' }
+  }
+
+  const minutes = normalizeInterviewDurationMinutes(durationMinutes, DEFAULT_INTERVIEW_DURATION_MINUTES)
+  const end = new Date(start.getTime() + minutes * 60 * 1000)
+  const expectedStatus = getInterviewTemporalStatus(start, minutes, now)
+  if (requestedStatus === expectedStatus) {
+    return { valid: true, status: requestedStatus, expectedStatus }
+  }
+
+  const requestedLabel = INTERVIEW_STATUS_LABELS[requestedStatus] || requestedStatus
+  const expectedLabel = INTERVIEW_STATUS_LABELS[expectedStatus] || expectedStatus
+  return {
+    valid: false,
+    status: requestedStatus,
+    expectedStatus,
+    message: `目前本機時間為 ${formatInterviewValidationDateTime(now)}，面試時段為 ${formatInterviewValidationDateTime(start)}-${formatInterviewValidationDateTime(end)}，不可更新為「${requestedLabel}」。請改選「${expectedLabel}」，或選擇「通過 / 不通過」。`,
+  }
 }
 
 const resolveEffectiveInterviewStatus = (
@@ -4849,11 +4906,16 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
       sendJson(res, 400, { message: 'Invalid interview status' })
       return
     }
-    const nextInterviewStatus = resolveEffectiveInterviewStatus(
+    const statusValidation = validateManualInterviewStatusChange(
       requestedInterviewStatus,
       history.interviewScheduledAt,
       history.interviewDurationMinutes
     )
+    if (!statusValidation.valid) {
+      sendJson(res, 400, { message: statusValidation.message })
+      return
+    }
+    const nextInterviewStatus = statusValidation.status
     const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
     const nextRemark = hasRemark ? normalizeApplicationRemark(body.remark) : normalizeApplicationRemark(history.remark)
     const operatorUserId = await getRequestOperatorUserId(pool, req)
@@ -4895,11 +4957,16 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
     sendJson(res, 400, { message: 'Invalid interview status' })
     return
   }
-  const nextInterviewStatus = resolveEffectiveInterviewStatus(
+  const statusValidation = validateManualInterviewStatusChange(
     requestedInterviewStatus,
     existing.interviewScheduledAt,
     existing.interviewDurationMinutes
   )
+  if (!statusValidation.valid) {
+    sendJson(res, 400, { message: statusValidation.message })
+    return
+  }
+  const nextInterviewStatus = statusValidation.status
   const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
   const nextRemark = hasRemark ? normalizeApplicationRemark(body.remark) : normalizeApplicationRemark(existing.remark)
 
