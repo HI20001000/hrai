@@ -379,6 +379,41 @@ export const normalizeProjectExperiences = (value) => {
   return groups
 }
 
+const legacyProjectExperienceToProjectGroups = (value) => {
+  const lines = normalizeText(value)
+    .split('\n')
+    .map((line) => normalizeText(line))
+    .filter(Boolean)
+  if (!lines.length) return []
+
+  const projectName =
+    lines.find((line) => !/[：:]$/.test(line) && !/^\d{4}[./-]\d{1,2}/.test(line) && line.length <= 90) || ''
+  const durationText =
+    lines.find((line) =>
+      /\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?\s*(?:-|~|–|—|至|到|to)\s*(至今|現在|现今|目前|present|current|now|\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?|\d{4})/i.test(line)
+    ) || ''
+  const skillsLine = lines.find((line) => /^(技术栈|技術棧|所用技能|技能)\s*[：:]/i.test(line)) || ''
+  const skills = skillsLine
+    ? normalizeProjectSkills(skillsLine.replace(/^(技术栈|技術棧|所用技能|技能)\s*[：:]/i, '').split(/[+、,，;；|/]+/))
+    : []
+
+  return [
+    {
+      groupType: 'project',
+      companyName: PROJECT_GROUP_NAME,
+      projects: [
+        {
+          projectName,
+          skills,
+          durationText,
+          durationMonths: computeProjectDurationMonths(durationText),
+          responsibilities: lines.slice(0, PROJECT_RESPONSIBILITY_LIMIT),
+        },
+      ],
+    },
+  ]
+}
+
 const mergeDurationRanges = (ranges = []) => {
   const sorted = ranges
     .filter((range) => Number.isInteger(range?.startMonth) && Number.isInteger(range?.endMonth))
@@ -531,12 +566,15 @@ export const resolveExtractedPayload = ({
 }
 
 const buildProjectExperienceField = (profile = {}) => {
-  const projectExperiences = mergeProjectExperienceGroups(
+  const legacyText = normalizeText(profile.projectExperience)
+  const structuredProjectExperiences = mergeProjectExperienceGroups(
     profile.projectExperiences,
     legacyExperienceItemsToProjectGroups(profile.workExperiences, 'company'),
     legacyExperienceItemsToProjectGroups(profile.internshipExperiences, 'internship')
   )
-  const legacyText = normalizeText(profile.projectExperience)
+  const projectExperiences = structuredProjectExperiences.length
+    ? structuredProjectExperiences
+    : legacyProjectExperienceToProjectGroups(legacyText)
   const value = hasProjectExperiences(projectExperiences, legacyText)
     ? buildProjectExperiencesSummary(projectExperiences, legacyText)
     : EXTRACTED_EMPTY_TEXT

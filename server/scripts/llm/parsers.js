@@ -2,6 +2,7 @@ import {
   buildProjectExperienceDurationLabels,
   hasProjectExperiences,
   normalizeProjectExperiences,
+  PROJECT_GROUP_NAME,
 } from './project-experiences.js'
 import {
   normalizeExperienceItems,
@@ -252,6 +253,45 @@ const legacyExperienceItemsToProjectGroups = (value, groupType) => {
     groups.set(key, existing)
   }
   return [...groups.values()]
+}
+
+const legacyProjectExperienceToProjectGroups = (value) => {
+  const lines = normalizeLongText(value)
+    .split('\n')
+    .map((line) => normalizeString(line))
+    .filter(Boolean)
+  if (!lines.length) return []
+
+  const projectName =
+    lines.find((line) => !/[：:]$/.test(line) && !/^\d{4}[./-]\d{1,2}/.test(line) && line.length <= 90) || ''
+  const durationText =
+    lines.find((line) =>
+      /\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?\s*(?:-|~|–|—|至|到|to)\s*(至今|現在|现今|目前|present|current|now|\d{4}(?:[./-]\d{1,2}|年\s*\d{1,2}\s*月?)?|\d{4})/i.test(line)
+    ) || ''
+  const skillsLine = lines.find((line) => /^(技术栈|技術棧|所用技能|技能)\s*[：:]/i.test(line)) || ''
+  const skills = skillsLine
+    ? skillsLine
+        .replace(/^(技术栈|技術棧|所用技能|技能)\s*[：:]/i, '')
+        .split(/[+、,，;；|/]+/)
+        .map((item) => normalizeString(item))
+        .filter(Boolean)
+        .slice(0, 20)
+    : []
+
+  return [
+    {
+      groupType: 'project',
+      companyName: PROJECT_GROUP_NAME,
+      projects: [
+        {
+          projectName,
+          skills,
+          durationText,
+          responsibilities: lines.slice(0, 20),
+        },
+      ],
+    },
+  ]
 }
 
 const mergeProjectExperienceGroups = (...values) => {
@@ -521,7 +561,15 @@ const normalizeProfileFields = (raw = {}, options = {}) => {
     (root.roleFit && typeof root.roleFit === 'object' ? root.roleFit : null) ||
     (profile.roleFit && typeof profile.roleFit === 'object' ? profile.roleFit : {})
 
-  const projectExperiences = mergeProjectExperienceGroups(
+  const projectExperience = pickFirstLongText(
+    root.projectExperience,
+    root.projectExperienceText,
+    profile.projectExperience,
+    profile.projectExperienceText,
+    industryExperience.projectExperience,
+    industryExperience.projectExperienceText
+  )
+  const structuredProjectExperiences = mergeProjectExperienceGroups(
     pickFirstProjectExperienceGroups(
       root.projectExperiences,
       profile.projectExperiences,
@@ -536,6 +584,9 @@ const normalizeProfileFields = (raw = {}, options = {}) => {
       'internship'
     )
   )
+  const projectExperiences = structuredProjectExperiences.length
+    ? structuredProjectExperiences
+    : legacyProjectExperienceToProjectGroups(projectExperience)
   const durationLabels = buildProjectExperienceDurationLabels(projectExperiences)
   const workYearsFromProjects = durationLabels.companyExperienceDuration
 
@@ -579,6 +630,7 @@ const normalizeProfileFields = (raw = {}, options = {}) => {
       industryExperience.industry,
       industryExperience.industries
     ),
+    projectExperience,
     projectExperiences,
     targetPosition: mergeStringArrays(
       root.targetPosition,
@@ -649,7 +701,7 @@ export const normalizeExtractedFields = (raw = {}, options = {}) => {
   return { extracted, missingFields, llmJson: null }
 }
 
-const findSectionBlock = (normalized, patterns = []) => {
+const findSectionBlock = (normalized, patterns = [], { maxLines = 12, stopAtColon = true } = {}) => {
   if (!normalized) return ''
   const lines = String(normalized)
     .split('\n')
@@ -659,8 +711,8 @@ const findSectionBlock = (normalized, patterns = []) => {
 
   const matchesHeader = (line) => patterns.some((pattern) => pattern.test(line))
   const looksLikeHeader = (line) =>
-    /[:：]$/.test(line) ||
-    /^(工作经历|工作經歷|教育背景|教育|项目经验|項目經歷|项目经验|專業技能|专业技能|技能|證書|证书|語言能力|语言能力|工作經驗|certifications|languages|education|project experience|professional skills|work experience)$/i.test(
+    (stopAtColon && /[:：]$/.test(line)) ||
+    /^(工作经历|工作經歷|教育背景|教育|项目经历|项目经验|項目經歷|專案經歷|專案經驗|專業技能|专业技能|相關技能|相关技能|技能|證書|证书|語言能力|语言能力|工作經驗|自我评价|自我評價|certifications|languages|education|project experience|professional skills|work experience)$/i.test(
       line
     )
 
@@ -673,7 +725,7 @@ const findSectionBlock = (normalized, patterns = []) => {
     if (matchesHeader(line)) break
     if (looksLikeHeader(line)) break
     collected.push(line)
-    if (collected.length >= 12) break
+    if (collected.length >= maxLines) break
   }
   return collected.join('\n').trim()
 }
@@ -770,11 +822,15 @@ const extractTargetPositionFromText = (normalized) => {
 }
 
 const extractProjectExperienceFromText = (normalized) => {
-  const section = findSectionBlock(normalized, [/^項目經歷/i, /^项目经验/i, /^project experience/i])
-  if (section) return section.split('\n').slice(0, 4).join(' ').trim()
+  const section = findSectionBlock(
+    normalized,
+    [/^項目經歷/i, /^專案經歷/i, /^项目经历/i, /^项目经验/i, /^project experience/i],
+    { maxLines: 30, stopAtColon: false }
+  )
+  if (section) return section.split('\n').slice(0, 24).join('\n').trim()
 
   const workSection = findSectionBlock(normalized, [/^工作經歷/i, /^工作经历/i, /^work experience/i])
-  return workSection.split('\n').slice(0, 4).join(' ').trim()
+  return workSection.split('\n').slice(0, 8).join('\n').trim()
 }
 
 export const extractCandidateInfoByRegexText = (text) => {

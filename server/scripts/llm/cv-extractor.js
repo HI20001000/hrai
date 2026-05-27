@@ -17,17 +17,47 @@ const extractCandidateNameFromFileName = (fileName = '') => {
   return match?.[1]?.trim() || ''
 }
 
+const extractBossMetaFromFileName = (fileName = '') => {
+  const text = String(fileName || '').replace(/\.[^.]+$/, '').trim()
+  const bracketMatch = text.match(/【([^】]+)】/)
+  const bracketText = String(bracketMatch?.[1] || '').trim()
+  if (!bracketText) return { targetPosition: '', expectedSalary: '' }
+
+  const [rolePart = '', ...restParts] = bracketText.split(/[_＿]/)
+  const targetPosition = rolePart.trim()
+  const locationAndSalary = restParts.join('_').trim()
+  const expectedSalary = locationAndSalary.match(/\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?\s*[kK]/)?.[0] || ''
+  return { targetPosition, expectedSalary }
+}
+
 const buildRegexFallbackExtraction = (cvText, fileName) => {
   const fallback = extractCandidateInfoByRegexText(cvText)
   const nameFromFileName = extractCandidateNameFromFileName(fileName)
-  if (!nameFromFileName) return fallback
+  const fileMeta = extractBossMetaFromFileName(fileName)
+  const fallbackExtracted = fallback.extracted || {}
+  const fallbackProfile = fallbackExtracted.profile || {}
+  const nextProfile = {
+    ...fallbackProfile,
+  }
+  if (fileMeta.targetPosition && !(Array.isArray(nextProfile.targetPosition) && nextProfile.targetPosition.length)) {
+    nextProfile.targetPosition = [fileMeta.targetPosition]
+  }
+  if (fileMeta.expectedSalary && !nextProfile.expectedSalary) {
+    nextProfile.expectedSalary = fileMeta.expectedSalary
+  }
 
   const extracted = {
-    ...(fallback.extracted || {}),
-    fullName: nameFromFileName,
+    ...fallbackExtracted,
+    profile: nextProfile,
+    fullName: nameFromFileName || fallbackExtracted.fullName || '',
   }
   const missingFields = Array.isArray(fallback.missingFields)
-    ? fallback.missingFields.filter((field) => field !== 'fullName')
+    ? fallback.missingFields.filter((field) => {
+        if (field === 'fullName' && extracted.fullName) return false
+        if (field === 'targetPosition' && nextProfile.targetPosition?.length) return false
+        if (field === 'expectedSalary' && nextProfile.expectedSalary) return false
+        return true
+      })
     : []
   return {
     ...fallback,
