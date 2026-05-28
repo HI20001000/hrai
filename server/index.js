@@ -4818,14 +4818,22 @@ const listArrangedInterviews = async (pool, req, res) => {
 const updateTemporalInterviewHistoryStatuses = async (pool) => {
   const [rows] = await pool.query(
     `SELECT
-        id,
-        application_id AS applicationId,
-        interview_scheduled_at AS interviewScheduledAt,
-        interview_duration_minutes AS interviewDurationMinutes,
-        interview_status AS interviewStatus
-      FROM job_post_application_status_history
-      WHERE interview_scheduled_at IS NOT NULL
-        AND (interview_status IS NULL OR interview_status NOT IN ('passed', 'failed'))`
+        latest.id,
+        latest.application_id AS applicationId,
+        latest.interview_scheduled_at AS interviewScheduledAt,
+        latest.interview_duration_minutes AS interviewDurationMinutes,
+        latest.interview_status AS interviewStatus
+      FROM job_post_applications app
+      INNER JOIN job_post_application_status_history latest
+        ON latest.id = (
+          SELECT history.id
+          FROM job_post_application_status_history history
+          WHERE history.application_id = app.id
+          ORDER BY history.created_at DESC, history.id DESC
+          LIMIT 1
+        )
+      WHERE latest.interview_scheduled_at IS NOT NULL
+        AND (latest.interview_status IS NULL OR latest.interview_status NOT IN ('passed', 'failed'))`
   )
 
   const now = new Date()
