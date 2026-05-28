@@ -36,6 +36,7 @@ const searchKeyword = ref('')
 const jobFilter = ref('')
 const sourceFilter = ref('')
 const interviewDateFilter = ref('')
+const interviewerFilter = ref('')
 const ownerFilter = ref('')
 const applicationStatusFilter = ref('')
 const interviewResultFilter = ref('')
@@ -179,6 +180,18 @@ const applicationStatusFilterOptions = computed(() => [
 ])
 
 const interviewResultFilterOptions = computed(() => [{ value: '', label: '全部' }, ...INTERVIEW_STATUS_OPTIONS])
+
+const interviewerFilterOptions = computed(() => {
+  const seen = new Set()
+  const options = []
+  for (const row of interviews.value) {
+    const interviewerName = getInterviewUserName(row.interview)
+    if (!interviewerName || interviewerName === '--' || seen.has(interviewerName)) continue
+    seen.add(interviewerName)
+    options.push({ value: interviewerName, label: interviewerName })
+  }
+  return [{ value: '', label: '全部' }, ...options]
+})
 
 const ownerFilterOptions = computed(() => {
   const seen = new Set()
@@ -329,6 +342,7 @@ const filteredInterviews = computed(() => {
   const selectedJob = normalizeFilterText(jobFilter.value)
   const selectedSource = normalizeCvSource(sourceFilter.value)
   const selectedDate = normalizeFilterText(interviewDateFilter.value)
+  const selectedInterviewer = normalizeFilterText(interviewerFilter.value)
   const selectedOwner = normalizeFilterText(ownerFilter.value)
   const selectedApplicationStatus = normalizeCandidateApplicationStatus(applicationStatusFilter.value, '')
   const selectedInterviewResult = normalizeInterviewStatus(interviewResultFilter.value, '')
@@ -337,6 +351,7 @@ const filteredInterviews = computed(() => {
     if (selectedJob && normalizeFilterText(row.jobPostTitle) !== selectedJob) return false
     if (selectedSource && normalizeCvSource(row.source) !== selectedSource) return false
     if (selectedDate && toDateKey(interview.scheduledAt) !== selectedDate) return false
+    if (selectedInterviewer && normalizeFilterText(getInterviewUserName(interview)) !== selectedInterviewer) return false
     if (selectedOwner && normalizeFilterText(getUserName(row.ownerUser)) !== selectedOwner) return false
     if (
       selectedApplicationStatus &&
@@ -477,6 +492,21 @@ const editApplicationStatusHistoryDraft = (history) => {
   fillApplicationStatusDraft(history)
 }
 
+const editCurrentApplicationStatusDraft = (row) => {
+  const history = Array.isArray(row?.statusHistory) ? row.statusHistory : []
+  const currentStatusHistoryId = Number(row?.statusHistoryId || 0) || 0
+  const currentHistory = currentStatusHistoryId
+    ? history.find((item) => Number(item?.id || 0) === currentStatusHistoryId)
+    : null
+  const fallbackHistory = history[0] || null
+  if (currentHistory || fallbackHistory) {
+    editApplicationStatusHistoryDraft(currentHistory || fallbackHistory)
+    return
+  }
+  editingStatusHistoryId.value = 0
+  fillApplicationStatusDraft(row)
+}
+
 const openApplicationStatusModal = async (row) => {
   const applicationId = Number(row?.applicationId || 0)
   if (!applicationId || !canEditInterviewStatus.value) return
@@ -485,7 +515,7 @@ const openApplicationStatusModal = async (row) => {
   isApplicationStatusModalOpen.value = true
   applicationStatusModalError.value = ''
   activeStatusApplication.value = row
-  startNewApplicationStatusDraft()
+  editCurrentApplicationStatusDraft(row)
 
   try {
     const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}`, {
@@ -499,7 +529,7 @@ const openApplicationStatusModal = async (row) => {
       ...(data.application || {}),
       statusHistory: Array.isArray(data.application?.statusHistory) ? data.application.statusHistory : row.statusHistory,
     }
-    startNewApplicationStatusDraft()
+    editCurrentApplicationStatusDraft(activeStatusApplication.value)
   } catch (error) {
     applicationStatusModalError.value = getRequestErrorMessage(error, '讀取候選人狀態失敗')
   }
@@ -758,7 +788,17 @@ onBeforeUnmount(() => {
               </th>
               <th>區間</th>
               <th>時長</th>
-              <th>面試官</th>
+              <th>
+                <div class="column-header">
+                  <span class="column-title">面試官</span>
+                  <CandidateColumnFilter
+                    v-model="interviewerFilter"
+                    filter-key="interviewer"
+                    label="面試官"
+                    :options="interviewerFilterOptions"
+                  />
+                </div>
+              </th>
               <th>地點</th>
               <th>
                 <div class="column-header">
