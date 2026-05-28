@@ -66,8 +66,13 @@ const activeStatusPopoverKey = ref('')
 const activeStatusPopoverRow = ref(null)
 const statusPopoverStyle = ref({})
 let statusPopoverCloseTimer = null
+let interviewRefreshTimer = null
 
 const API_CONNECTION_ERROR_MESSAGE = '後端服務無法連線，請確認 API 位址或服務是否啟動'
+const INTERVIEW_STATUS_REFRESH_INTERVAL_MS = Math.max(
+  60 * 1000,
+  Math.floor(Number(import.meta.env.VITE_INTERVIEW_STATUS_CHECK_INTERVAL_MINUTES || 1) * 60 * 1000)
+)
 
 const getRequestErrorMessage = (error, fallback) => {
   const message = String(error?.message || '')
@@ -381,9 +386,10 @@ const filteredInterviews = computed(() => {
   })
 })
 
-const loadInterviews = async () => {
+const loadInterviews = async ({ silent = false } = {}) => {
+  if (isLoading.value) return
   isLoading.value = true
-  message.value = ''
+  if (!silent) message.value = ''
   try {
     if (!requireAuthToken()) throw new Error('登入已失效，請重新登入')
     const response = await fetch(`${apiBaseUrl}/api/interviews/arranged`, {
@@ -394,10 +400,25 @@ const loadInterviews = async () => {
     if (!response.ok) throw new Error(data.message || '讀取安排面試失敗')
     interviews.value = Array.isArray(data.interviews) ? data.interviews : []
   } catch (error) {
-    message.value = getRequestErrorMessage(error, '讀取安排面試失敗')
+    if (!silent) message.value = getRequestErrorMessage(error, '讀取安排面試失敗')
   } finally {
     isLoading.value = false
   }
+}
+
+const scheduleInterviewStatusRefresh = () => {
+  if (interviewRefreshTimer) window.clearInterval(interviewRefreshTimer)
+  interviewRefreshTimer = window.setInterval(() => {
+    if (
+      isStatusModalOpen.value ||
+      isApplicationStatusModalOpen.value ||
+      isSavingStatusModal.value ||
+      isApplicationStatusSaving.value
+    ) {
+      return
+    }
+    loadInterviews({ silent: true })
+  }, INTERVIEW_STATUS_REFRESH_INTERVAL_MS)
 }
 
 const loadUserOptions = async () => {
@@ -712,9 +733,14 @@ const updateInterviewStatus = async (row, nextValue) => {
 onMounted(() => {
   loadInterviews()
   loadUserOptions()
+  scheduleInterviewStatusRefresh()
 })
 onBeforeUnmount(() => {
   clearStatusPopoverTimer()
+  if (interviewRefreshTimer) {
+    window.clearInterval(interviewRefreshTimer)
+    interviewRefreshTimer = null
+  }
 })
 </script>
 

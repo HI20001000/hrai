@@ -1262,6 +1262,7 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
 }
 
 const getJobPostApplication = async (pool, _req, res, applicationId) => {
+  await runTemporalInterviewStatusRefresh(pool)
   const [rows] = await pool.query(
     `SELECT
         app.id AS applicationId,
@@ -4332,6 +4333,7 @@ const listCandidateCvTable = async (pool, _req, res) => {
 }
 
 const listAllJobPostApplicationsTable = async (pool, _req, res) => {
+  await runTemporalInterviewStatusRefresh(pool)
   const blacklistEntries = await listCandidateBlacklistRows(pool)
   const duplicateApplicationIds = await listDuplicateApplicationIds(pool)
   const [rows] = await pool.query(
@@ -4698,6 +4700,7 @@ const listScheduleInterviews = async (pool, req, res, url) => {
     sendJson(res, 401, { message: 'Unauthorized' })
     return
   }
+  await runTemporalInterviewStatusRefresh(pool)
 
   const requestedUserId = Number(url.searchParams.get('userId') || 0) || 0
   const currentUserId = Number(user.id)
@@ -4772,6 +4775,7 @@ const listArrangedInterviews = async (pool, req, res) => {
     sendJson(res, 401, { message: 'Unauthorized' })
     return
   }
+  await runTemporalInterviewStatusRefresh(pool)
 
   const rows = await listScheduledInterviewHistoryApplicationRows(pool)
   const getStatusHistoryCreatedTime = (row) => {
@@ -4914,20 +4918,25 @@ const refreshTemporalInterviewStatuses = async (pool) => {
   return { historyUpdated, applicationsSynced }
 }
 
+let temporalInterviewRefreshPromise = null
+const runTemporalInterviewStatusRefresh = async (pool) => {
+  if (temporalInterviewRefreshPromise) return temporalInterviewRefreshPromise
+  temporalInterviewRefreshPromise = refreshTemporalInterviewStatuses(pool)
+    .catch((error) => {
+      console.error('Failed to refresh interview statuses:', error)
+      return { historyUpdated: 0, applicationsSynced: 0, error }
+    })
+    .finally(() => {
+      temporalInterviewRefreshPromise = null
+    })
+  return temporalInterviewRefreshPromise
+}
+
 const startInterviewStatusAutoCheck = (pool) => {
   if (INTERVIEW_STATUS_CHECK_INTERVAL_MS <= 0) return null
 
-  let isRunning = false
   const runCheck = async () => {
-    if (isRunning) return
-    isRunning = true
-    try {
-      await refreshTemporalInterviewStatuses(pool)
-    } catch (error) {
-      console.error('Failed to refresh interview statuses:', error)
-    } finally {
-      isRunning = false
-    }
+    await runTemporalInterviewStatusRefresh(pool)
   }
 
   runCheck()

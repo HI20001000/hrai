@@ -43,6 +43,12 @@ const projectTransferCandidate = ref(null)
 const projectTransferForm = ref(createEmptyProjectTransferForm())
 let tableLoadStatusTimer = null
 let availabilityLoadTimer = null
+let applicationRefreshTimer = null
+
+const INTERVIEW_STATUS_REFRESH_INTERVAL_MS = Math.max(
+  60 * 1000,
+  Math.floor(Number(import.meta.env.VITE_INTERVIEW_STATUS_CHECK_INTERVAL_MINUTES || 1) * 60 * 1000)
+)
 
 const pageMode = ref('list')
 const activeApplicationId = ref(null)
@@ -875,6 +881,14 @@ const handleApplicationsUpdated = async () => {
   }
 }
 
+const scheduleApplicationStatusRefresh = () => {
+  if (applicationRefreshTimer) window.clearInterval(applicationRefreshTimer)
+  applicationRefreshTimer = window.setInterval(() => {
+    if (isStatusModalOpen.value || isSavingStatusModal.value || isDetailLoading.value || isLoading.value) return
+    handleApplicationsUpdated()
+  }, INTERVIEW_STATUS_REFRESH_INTERVAL_MS)
+}
+
 const handleTableNotify = ({ message: nextMessage }) => {
   message.value = nextMessage || ''
 }
@@ -1310,11 +1324,16 @@ onMounted(async () => {
   window.addEventListener('focus', handleApplicationsUpdated)
   await loadUserOptions()
   await loadApplicationTable()
+  scheduleApplicationStatusRefresh()
 })
 
 onUnmounted(() => {
   clearTableLoadStatusTimer()
   clearAvailabilityLoadTimer()
+  if (applicationRefreshTimer) {
+    window.clearInterval(applicationRefreshTimer)
+    applicationRefreshTimer = null
+  }
   window.removeEventListener('hrai-applications-updated', handleApplicationsUpdated)
   window.removeEventListener('focus', handleApplicationsUpdated)
 })
