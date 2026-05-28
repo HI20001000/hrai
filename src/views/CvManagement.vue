@@ -556,10 +556,10 @@ const startNewStatusHistoryDraft = () => {
   clearAvailabilityLoadTimer()
 }
 
-const editStatusHistoryDraft = (history) => {
+const editStatusHistoryDraft = (history, { allowToggle = true } = {}) => {
   const historyId = Number(history?.id || 0)
   if (!historyId || isStatusModalBusy.value) return
-  if (Number(editingStatusHistoryId.value || 0) === historyId) {
+  if (allowToggle && Number(editingStatusHistoryId.value || 0) === historyId) {
     startNewStatusHistoryDraft()
     return
   }
@@ -725,10 +725,10 @@ const saveStatusModalChanges = async () => {
     message.value = historyId ? '已更新狀態記錄' : '已新增狀態記錄'
     await loadApplicationTable()
     await loadApplicationDetail(applicationId, 'list')
-    if (historyId && savedHistoryId) {
+    if (savedHistoryId) {
       const savedHistory = activeStatusHistory.value.find((history) => Number(history.id) === savedHistoryId)
       if (savedHistory) {
-        editStatusHistoryDraft(savedHistory)
+        editStatusHistoryDraft(savedHistory, { allowToggle: false })
       } else {
         editingStatusHistoryId.value = savedHistoryId
       }

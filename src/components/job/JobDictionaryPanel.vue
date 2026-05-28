@@ -662,6 +662,16 @@ const parseUploadedJobDocument = (content) => {
   return { jobTitle, job }
 }
 
+const findExistingJobDictionaryKey = (jobTitle) => {
+  const targetTitle = normalizeText(jobTitle)
+  if (!targetTitle) return ''
+  if (Object.prototype.hasOwnProperty.call(jobDictionary.value, targetTitle)) return targetTitle
+  const normalizedTarget = targetTitle.toLocaleLowerCase()
+  return Object.keys(jobDictionary.value || {}).find(
+    (key) => normalizeText(key).toLocaleLowerCase() === normalizedTarget
+  ) || ''
+}
+
 const uploadSelectedJobDocument = () => {
   jobUploadInput.value?.click?.()
 }
@@ -683,9 +693,24 @@ const handleJobDocumentUpload = async (event) => {
   try {
     const content = decodeDocumentBuffer(await file.arrayBuffer())
     const { jobTitle, job } = parseUploadedJobDocument(content)
+    const existingJobKey = findExistingJobDictionaryKey(jobTitle)
+    const targetJobKey = existingJobKey || jobTitle
+    if (existingJobKey) {
+      const shouldOverwrite = window.confirm(
+        `職位「${existingJobKey}」已存在，是否要覆蓋現有的職位字典？`
+      )
+      if (!shouldOverwrite) {
+        jobDictionaryMessage.value = '已取消職位字典上傳'
+        return
+      }
+    }
     const nextDictionary = {
       ...jobDictionary.value,
-      [jobTitle]: job,
+      [targetJobKey]: {
+        ...job,
+        jobKey: normalizeText(job.jobKey) || targetJobKey,
+        title: normalizeText(job.title) || targetJobKey,
+      },
     }
     const response = await fetch(`${apiBaseUrl}/api/job-dictionary`, {
       method: 'PUT',
@@ -699,8 +724,10 @@ const handleJobDocumentUpload = async (event) => {
     }
 
     jobDictionary.value = resolveJobDictionary(data)
-    setSelectedJob(jobTitle)
-    jobDictionaryMessage.value = `已從 Word 檔覆蓋「${jobTitle}」職位字典`
+    setSelectedJob(targetJobKey)
+    jobDictionaryMessage.value = existingJobKey
+      ? `已從 Word 檔覆蓋「${targetJobKey}」職位字典`
+      : `已從 Word 檔新增「${targetJobKey}」職位字典`
     emitUpdated()
   } catch (error) {
     jobDictionaryError.value = error?.message || '上傳職位字典失敗'
