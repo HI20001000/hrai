@@ -91,6 +91,7 @@ const buildJobDocumentHtml = (jobTitle, job) => {
     jobTitle,
     job,
   }
+  const encodedPayload = encodeBase64Utf8(JSON.stringify(exportPayload))
   const weights = WEIGHT_FIELDS.map((field) => ({
     label: field.label,
     value: Math.round(Number(job.weights?.[field.key] || 0) * 1000) / 10,
@@ -168,7 +169,7 @@ const buildJobDocumentHtml = (jobTitle, job) => {
     </table>
   </div>
 
-  <div class="hidden-json">HRAI_JOB_DICTIONARY_JSON_START${escapeHtml(JSON.stringify(exportPayload))}HRAI_JOB_DICTIONARY_JSON_END</div>
+  <div class="hidden-json">HRAI_JOB_DICTIONARY_JSON_BASE64_START${encodedPayload}HRAI_JOB_DICTIONARY_JSON_BASE64_END</div>
 </body>
 </html>`
 }
@@ -177,6 +178,47 @@ const decodeHtmlEntities = (value) => {
   const element = document.createElement('textarea')
   element.innerHTML = String(value || '')
   return element.value
+}
+
+const encodeBase64Utf8 = (value) => {
+  const bytes = new TextEncoder().encode(String(value || ''))
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return window.btoa(binary)
+}
+
+const decodeBase64Utf8 = (value) => {
+  const binary = window.atob(String(value || '').replace(/\s+/g, ''))
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
+}
+
+const extractMarkerPayload = (text, startMarker, endMarker) => {
+  const start = String(text || '').indexOf(startMarker)
+  if (start < 0) return ''
+  const contentStart = start + startMarker.length
+  const end = String(text || '').indexOf(endMarker, contentStart)
+  if (end < 0) return ''
+  return String(text || '').slice(contentStart, end)
+}
+
+const decodeDocumentBuffer = (buffer) => {
+  const bytes = new Uint8Array(buffer)
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes)
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be').decode(bytes)
+
+  const sample = bytes.slice(0, Math.min(bytes.length, 400))
+  let oddNulls = 0
+  let evenNulls = 0
+  for (let index = 0; index < sample.length; index += 1) {
+    if (sample[index] !== 0) continue
+    if (index % 2 === 0) evenNulls += 1
+    else oddNulls += 1
+  }
+  if (oddNulls > sample.length * 0.2) return new TextDecoder('utf-16le').decode(bytes)
+  if (evenNulls > sample.length * 0.2) return new TextDecoder('utf-16be').decode(bytes)
+
+  return new TextDecoder('utf-8').decode(bytes)
 }
 
 const createEmptyJob = (title = '') => ({
@@ -576,25 +618,41 @@ const downloadSelectedJobDocument = () => {
   }
 
   const html = buildJobDocumentHtml(nextTitle, nextJob)
-  const blob = new Blob(['\ufeff', html], { type: 'application/msword;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
-  link.href = url
+  link.href = `data:application/msword;charset=utf-8,${encodeURIComponent(`\ufeff${html}`)}`
   link.download = `${safeFileName(nextTitle)}_職位字典.doc`
   document.body.appendChild(link)
   link.click()
   link.remove()
-  URL.revokeObjectURL(url)
   jobDictionaryMessage.value = `已導出「${nextTitle}」職位字典 Word 檔`
 }
 
 const parseUploadedJobDocument = (content) => {
   const text = String(content || '')
-  const match = text.match(/HRAI_JOB_DICTIONARY_JSON_START([\s\S]*?)HRAI_JOB_DICTIONARY_JSON_END/)
-  if (!match?.[1]) {
-    throw new Error('找不到 HRAI 職位字典標記，請上傳由「職位導出」產生的 Word 檔')
+  const base64Payload = extractMarkerPayload(
+    text,
+    'HRAI_JOB_DICTIONARY_JSON_BASE64_START',
+    'HRAI_JOB_DICTIONARY_JSON_BASE64_END'
+  )
+
+  let payloadText = ''
+  if (base64Payload) {
+    payloadText = decodeBase64Utf8(base64Payload.replace(/<[^>]*>/g, '').replace(/\s+/g, ''))
+  } else {
+    const legacyPayload = extractMarkerPayload(
+      text,
+      'HRAI_JOB_DICTIONARY_JSON_START',
+      'HRAI_JOB_DICTIONARY_JSON_END'
+    )
+    if (!legacyPayload) {
+      throw new Error('找不到 HRAI 職位字典標記，請上傳由「職位導出」產生的 Word 檔')
+    }
+    payloadText = decodeHtmlEntities(legacyPayload)
+      .replace(/<[^>]*>/g, '')
+      .replace(/[\u0000-\u001F]+/g, '')
   }
-  const parsed = JSON.parse(decodeHtmlEntities(match[1]))
+
+  const parsed = JSON.parse(payloadText)
   if (!parsed?.job || typeof parsed.job !== 'object') {
     throw new Error('Word 檔內的職位資料格式不正確')
   }
@@ -623,7 +681,7 @@ const handleJobDocumentUpload = async (event) => {
   jobDictionaryError.value = ''
   jobDictionaryMessage.value = ''
   try {
-    const content = await file.text()
+    const content = decodeDocumentBuffer(await file.arrayBuffer())
     const { jobTitle, job } = parseUploadedJobDocument(content)
     const nextDictionary = {
       ...jobDictionary.value,
