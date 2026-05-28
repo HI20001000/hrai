@@ -1324,6 +1324,7 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
     email: row.email,
   })
   const statusHistory = await listJobPostApplicationStatusHistory(pool, applicationId)
+  const latestStatusHistory = statusHistory[0] || null
   const duplicateApplicationIds = await listDuplicateApplicationIds(pool)
   const matches = await listCandidateCvJobMatches(pool, Number(row.cvId))
   const primaryMatch = matches[0] || null
@@ -1334,10 +1335,14 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
       jobPostId: Number(row.jobPostId),
       candidateId: Number(row.candidateId),
       candidateCvId: Number(row.candidateCvId),
-      applicationStatus: normalizeApplicationStatus(row.applicationStatus),
-      firstInterviewArrangement: normalizeFirstInterviewArrangement(row.firstInterviewArrangement),
-      interview: buildInterviewPayload(row),
-      remark: normalizeText(row.remark),
+      applicationStatus: latestStatusHistory
+        ? latestStatusHistory.applicationStatus
+        : normalizeApplicationStatus(row.applicationStatus),
+      firstInterviewArrangement: latestStatusHistory
+        ? latestStatusHistory.firstInterviewArrangement
+        : normalizeFirstInterviewArrangement(row.firstInterviewArrangement),
+      interview: latestStatusHistory ? latestStatusHistory.interview : buildInterviewPayload(row),
+      remark: latestStatusHistory ? normalizeText(latestStatusHistory.remark) : normalizeText(row.remark),
       matchedScore: Number(row.matchedScore || 0),
       matchedLevel: normalizeText(row.matchedLevel),
       matchedPosition: normalizeText(row.matchedPosition),
@@ -4804,20 +4809,22 @@ const listArrangedInterviews = async (pool, req, res) => {
   })
 }
 
-const updateTemporalInterviewStatusesForTable = async (pool, tableName) => {
+const updateTemporalInterviewHistoryStatuses = async (pool) => {
   const [rows] = await pool.query(
     `SELECT
         id,
+        application_id AS applicationId,
         interview_scheduled_at AS interviewScheduledAt,
         interview_duration_minutes AS interviewDurationMinutes,
         interview_status AS interviewStatus
-      FROM ${tableName}
+      FROM job_post_application_status_history
       WHERE interview_scheduled_at IS NOT NULL
         AND (interview_status IS NULL OR interview_status NOT IN ('passed', 'failed'))`
   )
 
   const now = new Date()
   const groupedIds = new Map()
+  const affectedApplicationIds = new Set()
   for (const row of rows) {
     const currentStatus = normalizeInterviewStatus(row.interviewStatus, '')
     const nextStatus = resolveEffectiveInterviewStatus(
@@ -4828,6 +4835,8 @@ const updateTemporalInterviewStatusesForTable = async (pool, tableName) => {
     )
     if (!nextStatus || nextStatus === currentStatus) continue
     groupedIds.set(nextStatus, [...(groupedIds.get(nextStatus) || []), Number(row.id)])
+    const applicationId = Number(row.applicationId || 0)
+    if (Number.isInteger(applicationId) && applicationId > 0) affectedApplicationIds.add(applicationId)
   }
 
   let updatedCount = 0
@@ -4836,7 +4845,7 @@ const updateTemporalInterviewStatusesForTable = async (pool, tableName) => {
       const chunk = ids.slice(index, index + 500)
       const placeholders = chunk.map(() => '?').join(', ')
       const [result] = await pool.query(
-        `UPDATE ${tableName}
+        `UPDATE job_post_application_status_history
           SET interview_status = ?,
               updated_at = CURRENT_TIMESTAMP
          WHERE id IN (${placeholders})`,
@@ -4846,15 +4855,61 @@ const updateTemporalInterviewStatusesForTable = async (pool, tableName) => {
     }
   }
 
-  return updatedCount
+  return { updatedCount, affectedApplicationIds: [...affectedApplicationIds] }
+}
+
+const listApplicationIdsWithLatestStatusHistoryMismatch = async (pool, applicationIds = []) => {
+  const ids = [...new Set(applicationIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
+  const params = []
+  const applicationFilter = ids.length ? `AND app.id IN (${ids.map(() => '?').join(', ')})` : ''
+  if (ids.length) params.push(...ids)
+
+  const [rows] = await pool.query(
+    `SELECT app.id AS applicationId
+      FROM job_post_applications app
+      INNER JOIN job_post_application_status_history latest
+        ON latest.id = (
+          SELECT history.id
+          FROM job_post_application_status_history history
+          WHERE history.application_id = app.id
+          ORDER BY history.created_at DESC, history.id DESC
+          LIMIT 1
+        )
+      WHERE latest.interview_scheduled_at IS NOT NULL
+        ${applicationFilter}
+        AND (
+          COALESCE(app.application_status, '') <> COALESCE(latest.application_status, '')
+          OR COALESCE(app.first_interview_arrangement, '') <> COALESCE(latest.first_interview_arrangement, '')
+          OR COALESCE(app.interview_status, '') <> COALESCE(latest.interview_status, '')
+          OR COALESCE(app.interview_scheduled_at, '1000-01-01 00:00:00') <> COALESCE(latest.interview_scheduled_at, '1000-01-01 00:00:00')
+          OR COALESCE(app.interview_duration_minutes, 0) <> COALESCE(latest.interview_duration_minutes, 0)
+          OR COALESCE(app.interviewer_user_id, 0) <> COALESCE(latest.interviewer_user_id, 0)
+          OR COALESCE(app.interview_location, '') <> COALESCE(latest.interview_location, '')
+          OR COALESCE(app.remark, '') <> COALESCE(latest.remark, '')
+        )`,
+    params
+  )
+  return rows.map((row) => Number(row.applicationId || 0)).filter((id) => Number.isInteger(id) && id > 0)
+}
+
+const syncApplicationsFromLatestStatusHistories = async (pool, applicationIds = []) => {
+  const ids = [...new Set(applicationIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
+  let syncedCount = 0
+  for (const applicationId of ids) {
+    const latest = await syncApplicationFromLatestStatusHistory(pool, applicationId)
+    if (latest) syncedCount += 1
+  }
+  return syncedCount
 }
 
 const refreshTemporalInterviewStatuses = async (pool) => {
-  const [historyUpdated, applicationsUpdated] = await Promise.all([
-    updateTemporalInterviewStatusesForTable(pool, 'job_post_application_status_history'),
-    updateTemporalInterviewStatusesForTable(pool, 'job_post_applications'),
+  const { updatedCount: historyUpdated, affectedApplicationIds } = await updateTemporalInterviewHistoryStatuses(pool)
+  const staleApplicationIds = await listApplicationIdsWithLatestStatusHistoryMismatch(pool)
+  const applicationsSynced = await syncApplicationsFromLatestStatusHistories(pool, [
+    ...affectedApplicationIds,
+    ...staleApplicationIds,
   ])
-  return { historyUpdated, applicationsUpdated }
+  return { historyUpdated, applicationsSynced }
 }
 
 const startInterviewStatusAutoCheck = (pool) => {
