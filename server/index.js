@@ -55,6 +55,9 @@ const loadEnvFile = (filePath) => {
 loadEnvFile(path.resolve(__dirname, '../.env'))
 loadEnvFile(path.resolve(__dirname, '.env'))
 
+const APP_TIME_ZONE = process.env.HRAI_TIMEZONE || process.env.APP_TIMEZONE || 'Asia/Hong_Kong'
+process.env.TZ = APP_TIME_ZONE
+
 const PERMANENT_AUTH_EXPIRES_AT = new Date('9999-12-31T23:59:59.000Z')
 
 const resolveTokenTtlConfig = () => {
@@ -2453,6 +2456,11 @@ const formatInterviewValidationDateTime = (date) => {
 }
 
 const normalizeInterviewScheduledAt = (value, fallback = null) => {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return fallback
+    const pad = (number) => String(number).padStart(2, '0')
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())} ${pad(value.getHours())}:${pad(value.getMinutes())}:00`
+  }
   const text = String(value || '').trim()
   if (!text) return null
   const normalized = text.replace('T', ' ').slice(0, 16)
@@ -6248,7 +6256,8 @@ const start = async () => {
     const logContextUser = await resolveRequestLogUser(pool, req, { includeParsedBody: false })
     let routeError = null
 
-    return runWithLogContext({ requestId, user: logContextUser, method: req.method, path: url.pathname }, async () => {
+    try {
+      return await runWithLogContext({ requestId, user: logContextUser, method: req.method, path: url.pathname }, async () => {
       try {
       if (!(await enforceRoleAccess(pool, req, res, url))) return
       if (url.pathname === '/api/auth/request-code' && req.method === 'POST') return requestCode(req, res)
@@ -6362,32 +6371,32 @@ const start = async () => {
 
       const applicationMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)$/)
       if (applicationMatch && req.method === 'GET') {
-        return getJobPostApplication(pool, req, res, Number(applicationMatch[1]))
+        return await getJobPostApplication(pool, req, res, Number(applicationMatch[1]))
       }
       if (applicationMatch && req.method === 'PATCH') {
-        return updateJobPostApplicationStatus(pool, req, res, Number(applicationMatch[1]))
+        return await updateJobPostApplicationStatus(pool, req, res, Number(applicationMatch[1]))
       }
 
       const applicationStatusMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)\/status$/)
       if (applicationStatusMatch && req.method === 'PATCH') {
-        return updateJobPostApplicationStatus(pool, req, res, Number(applicationStatusMatch[1]))
+        return await updateJobPostApplicationStatus(pool, req, res, Number(applicationStatusMatch[1]))
       }
 
       const applicationInterviewStatusMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)\/interview-status$/)
       if (applicationInterviewStatusMatch && req.method === 'PATCH') {
-        return updateJobPostApplicationInterviewStatus(pool, req, res, Number(applicationInterviewStatusMatch[1]))
+        return await updateJobPostApplicationInterviewStatus(pool, req, res, Number(applicationInterviewStatusMatch[1]))
       }
 
       const applicationStatusHistoryMatch = url.pathname.match(/^\/api\/job-post-applications\/(\d+)\/status-history$/)
       if (applicationStatusHistoryMatch && req.method === 'POST') {
-        return createJobPostApplicationStatusHistory(pool, req, res, Number(applicationStatusHistoryMatch[1]))
+        return await createJobPostApplicationStatusHistory(pool, req, res, Number(applicationStatusHistoryMatch[1]))
       }
 
       const applicationStatusHistoryItemMatch = url.pathname.match(
         /^\/api\/job-post-applications\/(\d+)\/status-history\/(\d+)$/
       )
       if (applicationStatusHistoryItemMatch && req.method === 'PATCH') {
-        return updateJobPostApplicationStatusHistory(
+        return await updateJobPostApplicationStatusHistory(
           pool,
           req,
           res,
@@ -6396,7 +6405,7 @@ const start = async () => {
         )
       }
       if (applicationStatusHistoryItemMatch && req.method === 'DELETE') {
-        return deleteJobPostApplicationStatusHistory(
+        return await deleteJobPostApplicationStatusHistory(
           pool,
           req,
           res,
@@ -6494,7 +6503,21 @@ const start = async () => {
       } finally {
         await writeDatabaseOperationLog(pool, req, res, databaseOperationType, requestStartedAt, routeError, url)
       }
-    })
+      })
+    } catch (error) {
+      routeError = error
+      console.error(error)
+      if (!res.headersSent) {
+        const statusCode = getErrorStatusCode(error)
+        const message = error instanceof HttpError
+          ? error.message
+          : String(error?.message || 'Internal server error')
+        sendJson(res, statusCode, { message })
+      } else if (!res.writableEnded) {
+        res.end()
+      }
+      await writeDatabaseOperationLog(pool, req, res, databaseOperationType, requestStartedAt, routeError, url)
+    }
   })
 
   server.listen(port, () => {
