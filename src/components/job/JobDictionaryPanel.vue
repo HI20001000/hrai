@@ -28,6 +28,8 @@ const newJobTitle = ref('')
 const jobDraft = ref(null)
 const isSuggestingJobDefinition = ref(false)
 const isSuggestingRubrics = ref(false)
+const jobUploadInput = ref(null)
+const isUploadingJobDocument = ref(false)
 
 const WEIGHT_FIELDS = SCORING_DIMENSIONS
 const LEVEL_FIELDS = SCORING_LEVELS
@@ -54,6 +56,128 @@ const normalizeListText = (value) =>
     .split(/[\n,，;；、|/]+/)
     .map((item) => item.trim())
     .filter(Boolean)
+
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
+const safeFileName = (value) =>
+  normalizeText(value)
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, '_')
+    .slice(0, 80) || 'job-dictionary'
+
+const listToHtml = (items = []) => {
+  const values = Array.isArray(items) ? items : normalizeListText(items)
+  if (!values.length) return '<p class="empty">未填寫</p>'
+  return `<ul>${values.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+}
+
+const fieldRowHtml = (label, value) => `
+  <tr>
+    <th>${escapeHtml(label)}</th>
+    <td>${escapeHtml(value || '未填寫')}</td>
+  </tr>
+`
+
+const buildJobDocumentHtml = (jobTitle, job) => {
+  const exportPayload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    jobTitle,
+    job,
+  }
+  const weights = WEIGHT_FIELDS.map((field) => ({
+    label: field.label,
+    value: Math.round(Number(job.weights?.[field.key] || 0) * 1000) / 10,
+  }))
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(jobTitle)} 職位字典</title>
+  <style>
+    body { font-family: "Microsoft JhengHei", "PingFang TC", Arial, sans-serif; color: #1f2937; line-height: 1.55; }
+    .cover { padding: 24px 0 18px; border-bottom: 4px solid #2563eb; margin-bottom: 18px; }
+    h1 { margin: 0; color: #0f172a; font-size: 28px; }
+    h2 { margin: 22px 0 8px; color: #1d4ed8; font-size: 18px; }
+    .meta { color: #64748b; margin-top: 6px; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; }
+    th { width: 28%; background: #eff6ff; color: #1e40af; text-align: left; }
+    th, td { border: 1px solid #cbd5e1; padding: 8px 10px; vertical-align: top; }
+    ul { margin: 6px 0 6px 20px; padding: 0; }
+    .section { page-break-inside: avoid; }
+    .empty { color: #94a3b8; margin: 0; }
+    .rubric th { width: auto; }
+    .hidden-json { display: none; color: #fff; font-size: 1px; }
+  </style>
+</head>
+<body>
+  <div class="cover">
+    <h1>${escapeHtml(jobTitle)} 職位字典</h1>
+    <p class="meta">由 HRAI 匯出｜${escapeHtml(new Date().toLocaleString())}</p>
+  </div>
+
+  <div class="section">
+    <h2>基本資料</h2>
+    <table>
+      ${fieldRowHtml('職位名稱', job.title)}
+      ${fieldRowHtml('職位編號 / jobKey', job.jobKey)}
+      ${fieldRowHtml('職位描述', job.description)}
+      ${fieldRowHtml('最低工作年資', `${job.minWorkYears} 年`)}
+      ${fieldRowHtml('空窗期上限', `${job.employmentGapLimitMonths} 個月`)}
+      ${fieldRowHtml('薪資範圍', `${job.salaryRange?.min || 0} - ${job.salaryRange?.max || 0} MOP / 月`)}
+    </table>
+  </div>
+
+  <div class="section"><h2>行業背景</h2>${listToHtml(job.industry)}</div>
+  <div class="section"><h2>職位關鍵字</h2>${listToHtml(job.roleKeywords)}</div>
+  <div class="section"><h2>核心職責</h2>${listToHtml(job.coreResponsibilities)}</div>
+  <div class="section"><h2>必備技能</h2>${listToHtml(job.requiredSkills)}</div>
+  <div class="section"><h2>專案經驗</h2>${listToHtml(job.projectExperience)}</div>
+  <div class="section"><h2>加分技能</h2>${listToHtml(job.preferredSkills)}</div>
+  <div class="section"><h2>證照</h2>${listToHtml(job.certifications)}</div>
+  <div class="section"><h2>候選人偏好</h2>${listToHtml(job.candidatePreference)}</div>
+
+  <div class="section">
+    <h2>匹配權重</h2>
+    <table>
+      <tr>${weights.map((item) => `<th>${escapeHtml(item.label)}</th>`).join('')}</tr>
+      <tr>${weights.map((item) => `<td>${escapeHtml(item.value)}%</td>`).join('')}</tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>量化評分標準</h2>
+    <table class="rubric">
+      <tr><th>維度</th><th>高</th><th>中</th><th>低</th></tr>
+      ${WEIGHT_FIELDS.map((field) => {
+        const rubric = job.scoringRubrics?.[field.key] || {}
+        return `<tr>
+          <th>${escapeHtml(field.label)}</th>
+          ${LEVEL_FIELDS.map((level) => {
+            const item = rubric[level.key] || {}
+            return `<td><strong>${escapeHtml(Number(item.score || level.defaultScore))} 分</strong><br>${escapeHtml(item.criteria || '')}</td>`
+          }).join('')}
+        </tr>`
+      }).join('')}
+    </table>
+  </div>
+
+  <div class="hidden-json">HRAI_JOB_DICTIONARY_JSON_START${escapeHtml(JSON.stringify(exportPayload))}HRAI_JOB_DICTIONARY_JSON_END</div>
+</body>
+</html>`
+}
+
+const decodeHtmlEntities = (value) => {
+  const element = document.createElement('textarea')
+  element.innerHTML = String(value || '')
+  return element.value
+}
 
 const createEmptyJob = (title = '') => ({
   jobKey: normalizeText(title),
@@ -433,6 +557,100 @@ const saveJobDictionaryConfig = async () => {
   }
 }
 
+const downloadSelectedJobDocument = () => {
+  jobDictionaryError.value = ''
+  jobDictionaryMessage.value = ''
+  if (!selectedJobTitle.value || !jobDraft.value) {
+    jobDictionaryError.value = '請先選擇職位'
+    return
+  }
+
+  let nextJob = null
+  const nextTitle = normalizeText(jobDraft.value.title || selectedJobTitle.value)
+  try {
+    nextJob = draftToJob(jobDraft.value)
+    validateJobDraft(nextTitle, nextJob)
+  } catch (error) {
+    jobDictionaryError.value = error?.message || '職位資料驗證失敗，暫不能導出'
+    return
+  }
+
+  const html = buildJobDocumentHtml(nextTitle, nextJob)
+  const blob = new Blob(['\ufeff', html], { type: 'application/msword;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${safeFileName(nextTitle)}_職位字典.doc`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+  jobDictionaryMessage.value = `已導出「${nextTitle}」職位字典 Word 檔`
+}
+
+const parseUploadedJobDocument = (content) => {
+  const text = String(content || '')
+  const match = text.match(/HRAI_JOB_DICTIONARY_JSON_START([\s\S]*?)HRAI_JOB_DICTIONARY_JSON_END/)
+  if (!match?.[1]) {
+    throw new Error('找不到 HRAI 職位字典標記，請上傳由「職位導出」產生的 Word 檔')
+  }
+  const parsed = JSON.parse(decodeHtmlEntities(match[1]))
+  if (!parsed?.job || typeof parsed.job !== 'object') {
+    throw new Error('Word 檔內的職位資料格式不正確')
+  }
+  const jobTitle = normalizeText(parsed.jobTitle || parsed.job.title)
+  const job = parsed.job
+  validateJobDraft(jobTitle, job)
+  return { jobTitle, job }
+}
+
+const uploadSelectedJobDocument = () => {
+  jobUploadInput.value?.click?.()
+}
+
+const handleJobDocumentUpload = async (event) => {
+  const file = event?.target?.files?.[0]
+  if (event?.target) event.target.value = ''
+  if (!file || isUploadingJobDocument.value) return
+
+  const auth = getAuthContext()
+  if (!auth.ok) {
+    jobDictionaryError.value = auth.message
+    return
+  }
+
+  isUploadingJobDocument.value = true
+  jobDictionaryError.value = ''
+  jobDictionaryMessage.value = ''
+  try {
+    const content = await file.text()
+    const { jobTitle, job } = parseUploadedJobDocument(content)
+    const nextDictionary = {
+      ...jobDictionary.value,
+      [jobTitle]: job,
+    }
+    const response = await fetch(`${apiBaseUrl}/api/job-dictionary`, {
+      method: 'PUT',
+      headers: auth.headers,
+      body: JSON.stringify({ dictionary: nextDictionary }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      jobDictionaryError.value = data.message || '上傳職位字典失敗'
+      return
+    }
+
+    jobDictionary.value = resolveJobDictionary(data)
+    setSelectedJob(jobTitle)
+    jobDictionaryMessage.value = `已從 Word 檔覆蓋「${jobTitle}」職位字典`
+    emitUpdated()
+  } catch (error) {
+    jobDictionaryError.value = error?.message || '上傳職位字典失敗'
+  } finally {
+    isUploadingJobDocument.value = false
+  }
+}
+
 const applyRubricSuggestions = async () => {
   if (!jobDraft.value || isSuggestingRubrics.value) return
   const auth = getAuthContext()
@@ -598,6 +816,29 @@ onMounted(() => {
               <h4>{{ activeJobTitle }}</h4>
             </div>
             <div class="editor-actions">
+              <button
+                type="button"
+                class="secondary-btn"
+                :disabled="jobDictionaryLoading || jobDictionarySaving || isUploadingJobDocument"
+                @click="downloadSelectedJobDocument"
+              >
+                職位導出
+              </button>
+              <button
+                type="button"
+                class="secondary-btn"
+                :disabled="jobDictionaryLoading || jobDictionarySaving || isUploadingJobDocument"
+                @click="uploadSelectedJobDocument"
+              >
+                {{ isUploadingJobDocument ? '上傳中...' : '職位上傳' }}
+              </button>
+              <input
+                ref="jobUploadInput"
+                class="sr-only"
+                type="file"
+                accept=".doc,.html,.htm,application/msword,text/html"
+                @change="handleJobDocumentUpload"
+              />
               <button
                 type="button"
                 class="secondary-btn"
@@ -892,6 +1133,18 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .editor-grid {

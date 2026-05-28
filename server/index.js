@@ -4769,14 +4769,36 @@ const listArrangedInterviews = async (pool, req, res) => {
   }
 
   const rows = await listScheduledInterviewHistoryApplicationRows(pool)
+  const latestRowsByCandidate = new Map()
+  for (const row of rows) {
+    const candidateId = Number(row.candidateId || 0)
+    if (!candidateId) continue
+    const current = latestRowsByCandidate.get(candidateId)
+    const currentTime = current
+      ? new Date(current.statusUpdatedAt || current.statusCreatedAt || current.interviewScheduledAt || 0).getTime()
+      : -1
+    const nextTime = new Date(row.statusUpdatedAt || row.statusCreatedAt || row.interviewScheduledAt || 0).getTime()
+    if (
+      !current ||
+      nextTime > currentTime ||
+      (nextTime === currentTime && Number(row.statusHistoryId || 0) > Number(current.statusHistoryId || 0))
+    ) {
+      latestRowsByCandidate.set(candidateId, row)
+    }
+  }
+  const latestRows = [...latestRowsByCandidate.values()].sort((a, b) => {
+    const aTime = new Date(a.interviewScheduledAt || a.statusUpdatedAt || a.statusCreatedAt || 0).getTime()
+    const bTime = new Date(b.interviewScheduledAt || b.statusUpdatedAt || b.statusCreatedAt || 0).getTime()
+    return aTime - bTime || Number(a.statusHistoryId || 0) - Number(b.statusHistoryId || 0)
+  })
 
   const statusHistories = await listJobPostApplicationStatusHistories(
     pool,
-    rows.map((row) => row.applicationId)
+    latestRows.map((row) => row.applicationId)
   )
 
   sendJson(res, 200, {
-    interviews: rows.map((row) =>
+    interviews: latestRows.map((row) =>
       buildScheduleApplicationPayload(row, statusHistories.get(Number(row.applicationId)) || [])
     ),
   })
