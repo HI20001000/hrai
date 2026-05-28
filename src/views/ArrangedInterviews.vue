@@ -36,6 +36,7 @@ const searchKeyword = ref('')
 const jobFilter = ref('')
 const sourceFilter = ref('')
 const interviewDateFilter = ref('')
+const ownerFilter = ref('')
 const applicationStatusFilter = ref('')
 const interviewResultFilter = ref('')
 const savingIds = ref([])
@@ -179,6 +180,18 @@ const applicationStatusFilterOptions = computed(() => [
 
 const interviewResultFilterOptions = computed(() => [{ value: '', label: '全部' }, ...INTERVIEW_STATUS_OPTIONS])
 
+const ownerFilterOptions = computed(() => {
+  const seen = new Set()
+  const options = []
+  for (const row of interviews.value) {
+    const ownerName = getUserName(row.ownerUser)
+    if (!ownerName || ownerName === '--' || seen.has(ownerName)) continue
+    seen.add(ownerName)
+    options.push({ value: ownerName, label: ownerName })
+  }
+  return [{ value: '', label: '全部' }, ...options]
+})
+
 const activeStatusHistory = computed(() => {
   const history = Array.isArray(activeApplication.value?.statusHistory)
     ? activeApplication.value.statusHistory
@@ -316,6 +329,7 @@ const filteredInterviews = computed(() => {
   const selectedJob = normalizeFilterText(jobFilter.value)
   const selectedSource = normalizeCvSource(sourceFilter.value)
   const selectedDate = normalizeFilterText(interviewDateFilter.value)
+  const selectedOwner = normalizeFilterText(ownerFilter.value)
   const selectedApplicationStatus = normalizeCandidateApplicationStatus(applicationStatusFilter.value, '')
   const selectedInterviewResult = normalizeInterviewStatus(interviewResultFilter.value, '')
   return interviews.value.filter((row) => {
@@ -323,6 +337,7 @@ const filteredInterviews = computed(() => {
     if (selectedJob && normalizeFilterText(row.jobPostTitle) !== selectedJob) return false
     if (selectedSource && normalizeCvSource(row.source) !== selectedSource) return false
     if (selectedDate && toDateKey(interview.scheduledAt) !== selectedDate) return false
+    if (selectedOwner && normalizeFilterText(getUserName(row.ownerUser)) !== selectedOwner) return false
     if (
       selectedApplicationStatus &&
       normalizeCandidateApplicationStatus(row.applicationStatus, '') !== selectedApplicationStatus
@@ -745,7 +760,17 @@ onBeforeUnmount(() => {
               <th>時長</th>
               <th>面試官</th>
               <th>地點</th>
-              <th>對接人</th>
+              <th>
+                <div class="column-header">
+                  <span class="column-title">對接人</span>
+                  <CandidateColumnFilter
+                    v-model="ownerFilter"
+                    filter-key="owner"
+                    label="對接人"
+                    :options="ownerFilterOptions"
+                  />
+                </div>
+              </th>
               <th>
                 <div class="column-header">
                   <span class="column-title">候選人狀態</span>

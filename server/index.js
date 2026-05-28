@@ -4774,15 +4774,17 @@ const listArrangedInterviews = async (pool, req, res) => {
   }
 
   const rows = await listScheduledInterviewHistoryApplicationRows(pool)
+  const getStatusHistoryCreatedTime = (row) => {
+    const time = new Date(row?.statusCreatedAt || row?.createdAt || 0).getTime()
+    return Number.isNaN(time) ? 0 : time
+  }
   const latestRowsByCandidate = new Map()
   for (const row of rows) {
     const candidateId = Number(row.candidateId || 0)
     if (!candidateId) continue
     const current = latestRowsByCandidate.get(candidateId)
-    const currentTime = current
-      ? new Date(current.statusUpdatedAt || current.statusCreatedAt || current.interviewScheduledAt || 0).getTime()
-      : -1
-    const nextTime = new Date(row.statusUpdatedAt || row.statusCreatedAt || row.interviewScheduledAt || 0).getTime()
+    const currentTime = current ? getStatusHistoryCreatedTime(current) : -1
+    const nextTime = getStatusHistoryCreatedTime(row)
     if (
       !current ||
       nextTime > currentTime ||
