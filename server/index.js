@@ -1502,7 +1502,7 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
   )
 
   sendJson(res, 200, {
-    message: 'Candidate application updated',
+    message: interviewResult.statusRule?.message || 'Candidate application updated',
     application: {
       applicationId,
       applicationStatus: nextStatus,
@@ -1510,6 +1510,7 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
       interview: interviewResult.value,
       remark: nextRemark || '',
     },
+    statusRule: interviewResult.statusRule || null,
   })
 }
 
@@ -1569,9 +1570,10 @@ const createJobPostApplicationStatusHistory = async (pool, req, res, application
   const history = statusHistory.find((item) => Number(item.id) === Number(result.insertId)) || statusHistory[0] || null
 
   sendJson(res, 201, {
-    message: 'Candidate application status history created',
+    message: interviewResult.statusRule?.message || 'Candidate application status history created',
     history,
     statusHistory,
+    statusRule: interviewResult.statusRule || null,
   })
 }
 
@@ -1676,9 +1678,10 @@ const updateJobPostApplicationStatusHistory = async (pool, req, res, application
   const history = statusHistory.find((item) => Number(item.id) === Number(historyId)) || null
 
   sendJson(res, 200, {
-    message: 'Candidate application status history updated',
+    message: interviewResult.statusRule?.message || 'Candidate application status history updated',
     history,
     statusHistory,
+    statusRule: interviewResult.statusRule || null,
   })
 }
 
@@ -2481,7 +2484,7 @@ const getInterviewTemporalStatus = (
   return 'ended'
 }
 
-const validateManualInterviewStatusChange = (
+const resolveStoredInterviewStatus = (
   status,
   scheduledAt,
   durationMinutes = DEFAULT_INTERVIEW_DURATION_MINUTES,
@@ -2489,43 +2492,48 @@ const validateManualInterviewStatusChange = (
 ) => {
   const requestedStatus = normalizeInterviewStatus(status, '')
   if (!requestedStatus) {
-    return { valid: false, message: 'Invalid interview status' }
+    return { valid: false, status: '', requestedStatus: '', expectedStatus: '', changed: false, message: 'Invalid interview status' }
   }
   if (isTerminalInterviewStatus(requestedStatus)) {
-    return { valid: true, status: requestedStatus, expectedStatus: requestedStatus }
+    return {
+      valid: true,
+      status: requestedStatus,
+      requestedStatus,
+      expectedStatus: requestedStatus,
+      changed: false,
+      message: '',
+    }
   }
 
   const start = parseInterviewDateTime(scheduledAt)
   if (!start) {
-    return { valid: false, message: 'Interview is not scheduled' }
+    const expectedStatus = 'not_started'
+    return {
+      valid: true,
+      status: expectedStatus,
+      requestedStatus,
+      expectedStatus,
+      changed: requestedStatus !== expectedStatus,
+      message: '',
+    }
   }
 
   const minutes = normalizeInterviewDurationMinutes(durationMinutes, DEFAULT_INTERVIEW_DURATION_MINUTES)
   const end = new Date(start.getTime() + minutes * 60 * 1000)
   const expectedStatus = getInterviewTemporalStatus(start, minutes, now)
-  if (requestedStatus === expectedStatus) {
-    return { valid: true, status: requestedStatus, expectedStatus }
-  }
-
+  const changed = requestedStatus !== expectedStatus
   const requestedLabel = INTERVIEW_STATUS_LABELS[requestedStatus] || requestedStatus
   const expectedLabel = INTERVIEW_STATUS_LABELS[expectedStatus] || expectedStatus
   return {
-    valid: false,
-    status: requestedStatus,
+    valid: true,
+    status: expectedStatus,
+    requestedStatus,
     expectedStatus,
-    message: `目前本機時間為 ${formatInterviewValidationDateTime(now)}，面試時段為 ${formatInterviewValidationDateTime(start)}-${formatInterviewValidationDateTime(end)}，不可更新為「${requestedLabel}」。請改選「${expectedLabel}」，或選擇「通過 / 不通過」。`,
+    changed,
+    message: changed
+      ? `目前本機時間為 ${formatInterviewValidationDateTime(now)}，面試時段為 ${formatInterviewValidationDateTime(start)}-${formatInterviewValidationDateTime(end)}，已依時間規則將「${requestedLabel}」套用為「${expectedLabel}」。`
+      : '',
   }
-}
-
-const resolveEffectiveInterviewStatus = (
-  status,
-  scheduledAt,
-  durationMinutes = DEFAULT_INTERVIEW_DURATION_MINUTES,
-  now = new Date()
-) => {
-  const normalized = normalizeInterviewStatus(status, '')
-  if (isTerminalInterviewStatus(normalized)) return normalized
-  return getInterviewTemporalStatus(scheduledAt, durationMinutes, now)
 }
 
 const formatDateTimeForPayload = (value) => {
@@ -2553,16 +2561,23 @@ const resolveInterviewInput = (value = {}, fallback = {}) => {
   const durationMinutes = Object.prototype.hasOwnProperty.call(source, 'durationMinutes')
     ? normalizeInterviewDurationMinutes(source.durationMinutes, undefined)
     : normalizeInterviewDurationMinutes(fallback.durationMinutes, DEFAULT_INTERVIEW_DURATION_MINUTES)
+  const statusResult = resolveStoredInterviewStatus(inputStatus, scheduledAt, durationMinutes)
 
   return {
-    valid: scheduledAt !== undefined && location !== undefined && inputStatus !== undefined && durationMinutes !== undefined,
+    valid:
+      scheduledAt !== undefined &&
+      location !== undefined &&
+      inputStatus !== undefined &&
+      durationMinutes !== undefined &&
+      statusResult.valid,
     value: {
       scheduledAt: scheduledAt || null,
       interviewerUserId,
       durationMinutes,
       location: location || null,
-      status: resolveEffectiveInterviewStatus(inputStatus, scheduledAt, durationMinutes),
+      status: statusResult.status,
     },
+    statusRule: statusResult,
   }
 }
 
@@ -2579,7 +2594,7 @@ const buildInterviewPayload = (row = {}) => ({
       })
     : null,
   location: normalizeInterviewLocation(row.interviewLocation),
-  status: resolveEffectiveInterviewStatus(row.interviewStatus, row.interviewScheduledAt, row.interviewDurationMinutes),
+  status: normalizeInterviewStatus(row.interviewStatus),
 })
 
 const buildInterviewFallback = (row = {}) => ({
@@ -4544,11 +4559,7 @@ const listInterviewerInterviewHistorySlots = async (pool, interviewerUserId, dat
           fullName: normalizeText(row.fullName),
           jobPostTitle: normalizeText(row.jobPostTitle),
           applicationStatus: normalizeApplicationStatus(row.applicationStatus),
-          interviewStatus: resolveEffectiveInterviewStatus(
-            row.interviewStatus,
-            row.interviewScheduledAt,
-            row.interviewDurationMinutes
-          ),
+          interviewStatus: normalizeInterviewStatus(row.interviewStatus),
         },
       }
     })
@@ -4841,12 +4852,9 @@ const updateTemporalInterviewHistoryStatuses = async (pool) => {
   const affectedApplicationIds = new Set()
   for (const row of rows) {
     const currentStatus = normalizeInterviewStatus(row.interviewStatus, '')
-    const nextStatus = resolveEffectiveInterviewStatus(
-      currentStatus,
-      row.interviewScheduledAt,
-      row.interviewDurationMinutes,
-      now
-    )
+    const statusResult = resolveStoredInterviewStatus(currentStatus, row.interviewScheduledAt, row.interviewDurationMinutes, now)
+    if (!statusResult.valid) continue
+    const nextStatus = statusResult.status
     if (!nextStatus || nextStatus === currentStatus) continue
     groupedIds.set(nextStatus, [...(groupedIds.get(nextStatus) || []), Number(row.id)])
     const applicationId = Number(row.applicationId || 0)
@@ -5011,11 +5019,16 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
       sendJson(res, 400, { message: 'Invalid interview status' })
       return
     }
-    const nextInterviewStatus = resolveEffectiveInterviewStatus(
+    const statusResult = resolveStoredInterviewStatus(
       requestedInterviewStatus,
       history.interviewScheduledAt,
       history.interviewDurationMinutes
     )
+    if (!statusResult.valid) {
+      sendJson(res, 400, { message: statusResult.message || 'Invalid interview status' })
+      return
+    }
+    const nextInterviewStatus = statusResult.status
     const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
     const nextRemark = hasRemark ? normalizeApplicationRemark(body.remark) : normalizeApplicationRemark(history.remark)
     const operatorUserId = await getRequestOperatorUserId(pool, req)
@@ -5032,10 +5045,16 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
     await syncApplicationFromLatestStatusHistory(pool, applicationId)
 
     sendJson(res, 200, {
-      message: 'Interview status updated',
+      message: statusResult.message || 'Interview status updated',
       applicationId,
       statusHistoryId,
       remark: nextRemark,
+      statusRule: {
+        requestedStatus: statusResult.requestedStatus,
+        appliedStatus: nextInterviewStatus,
+        changed: statusResult.changed,
+        message: statusResult.message,
+      },
       interview: buildInterviewPayload({
         interviewScheduledAt: history.interviewScheduledAt,
         interviewDurationMinutes: history.interviewDurationMinutes,
@@ -5057,11 +5076,16 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
     sendJson(res, 400, { message: 'Invalid interview status' })
     return
   }
-  const nextInterviewStatus = resolveEffectiveInterviewStatus(
+  const statusResult = resolveStoredInterviewStatus(
     requestedInterviewStatus,
     existing.interviewScheduledAt,
     existing.interviewDurationMinutes
   )
+  if (!statusResult.valid) {
+    sendJson(res, 400, { message: statusResult.message || 'Invalid interview status' })
+    return
+  }
+  const nextInterviewStatus = statusResult.status
   const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
   const nextRemark = hasRemark ? normalizeApplicationRemark(body.remark) : normalizeApplicationRemark(existing.remark)
 
@@ -5096,9 +5120,15 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
   await syncApplicationFromLatestStatusHistory(pool, applicationId)
 
   sendJson(res, 200, {
-    message: 'Interview status updated',
+    message: statusResult.message || 'Interview status updated',
     applicationId,
     remark: nextRemark,
+    statusRule: {
+      requestedStatus: statusResult.requestedStatus,
+      appliedStatus: nextInterviewStatus,
+      changed: statusResult.changed,
+      message: statusResult.message,
+    },
     interview: buildInterviewPayload({
       interviewScheduledAt: existing.interviewScheduledAt,
       interviewDurationMinutes: existing.interviewDurationMinutes,

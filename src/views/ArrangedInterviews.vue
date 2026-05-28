@@ -19,7 +19,6 @@ import {
   normalizeInterviewDurationMinutes,
   normalizeInterviewLocation,
   normalizeInterviewStatus,
-  validateInterviewStatusAgainstTime,
 } from '../scripts/candidateApplicationStatus.js'
 
 const props = defineProps({
@@ -629,7 +628,7 @@ const saveApplicationStatusHistory = async () => {
     await loadInterviews()
     window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
     window.dispatchEvent(new CustomEvent('hrai-interviews-updated'))
-    message.value = historyId ? '已更新狀態記錄' : '已新增狀態記錄'
+    message.value = data.statusRule?.message || (historyId ? '已更新狀態記錄' : '已新增狀態記錄')
     closeApplicationStatusModal()
   } catch (error) {
     applicationStatusModalError.value = getRequestErrorMessage(error, '保存狀態記錄失敗')
@@ -644,19 +643,6 @@ const saveInterviewStatusModal = async () => {
   const nextStatus = normalizeInterviewStatus(interviewStatusDraft.value, '')
   if (!applicationId || !nextStatus || isSaving(applicationId)) return
 
-  const validation = validateInterviewStatusAgainstTime(nextStatus, activeApplication.value?.interview || {})
-  if (!validation.valid) {
-    statusModalError.value = validation.message
-    message.value = validation.message
-    window.alert(validation.message)
-    return
-  }
-  const effectiveStatus = normalizeInterviewStatus(validation.status || nextStatus, nextStatus)
-  if (validation.message) {
-    statusModalError.value = validation.message
-    message.value = validation.message
-  }
-
   savingIds.value = [...savingIds.value, applicationId]
   isSavingStatusModal.value = true
   try {
@@ -664,7 +650,7 @@ const saveInterviewStatusModal = async () => {
       method: 'PATCH',
       headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
-        status: effectiveStatus,
+        status: nextStatus,
         remark: String(remarkDraft.value || '').trim(),
         statusHistoryId: statusHistoryId || undefined,
       }),
@@ -676,56 +662,13 @@ const saveInterviewStatusModal = async () => {
     await loadInterviews()
     window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
     window.dispatchEvent(new CustomEvent('hrai-interviews-updated'))
-    message.value = `已更新 ${activeApplication.value?.fullName || '候選人'} 的面試結果`
+    message.value = data.statusRule?.message || `已更新 ${activeApplication.value?.fullName || '候選人'} 的面試結果`
     closeInterviewStatusModal()
   } catch (error) {
     statusModalError.value = getRequestErrorMessage(error, '更新面試結果失敗')
     message.value = statusModalError.value
   } finally {
     isSavingStatusModal.value = false
-    savingIds.value = savingIds.value.filter((id) => id !== applicationId)
-  }
-}
-
-const updateInterviewStatus = async (row, nextValue) => {
-  const applicationId = Number(row?.applicationId || 0)
-  const statusHistoryId = Number(row?.statusHistoryId || 0) || 0
-  const nextStatus = normalizeInterviewStatus(nextValue, '')
-  const currentStatus = normalizeInterviewStatus(row?.interview?.status, '')
-  if (!applicationId || !nextStatus || nextStatus === currentStatus || isSaving(applicationId)) return
-
-  const validation = validateInterviewStatusAgainstTime(nextStatus, row?.interview || {})
-  if (!validation.valid) {
-    message.value = validation.message
-    window.alert(validation.message)
-    return
-  }
-  const effectiveStatus = normalizeInterviewStatus(validation.status || nextStatus, nextStatus)
-  if (validation.message) message.value = validation.message
-
-  savingIds.value = [...savingIds.value, applicationId]
-  try {
-    const response = await fetch(`${apiBaseUrl}/api/job-post-applications/${applicationId}/interview-status`, {
-      method: 'PATCH',
-      headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ status: effectiveStatus, statusHistoryId: statusHistoryId || undefined }),
-    })
-    const data = await response.json().catch(() => ({}))
-    if (handleUnauthorizedResponse(response)) throw new Error('登入已失效，請重新登入')
-    if (!response.ok) throw new Error(data.message || '更新面試結果失敗')
-
-    interviews.value = interviews.value.map((item) =>
-      (statusHistoryId && Number(item.statusHistoryId || 0) === statusHistoryId) ||
-      (!statusHistoryId && Number(item.applicationId) === applicationId)
-        ? { ...item, interview: { ...(item.interview || {}), status: effectiveStatus } }
-        : item
-    )
-    window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
-    window.dispatchEvent(new CustomEvent('hrai-interviews-updated'))
-    message.value = `已更新 ${row.fullName || '候選人'} 的面試結果`
-  } catch (error) {
-    message.value = getRequestErrorMessage(error, '更新面試結果失敗')
-  } finally {
     savingIds.value = savingIds.value.filter((id) => id !== applicationId)
   }
 }

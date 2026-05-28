@@ -728,7 +728,7 @@ const saveStatusModalChanges = async () => {
       }
     )
     const savedHistoryId = Number(data?.history?.id || historyId || 0)
-    message.value = historyId ? '已更新狀態記錄' : '已新增狀態記錄'
+    message.value = data?.statusRule?.message || (historyId ? '已更新狀態記錄' : '已新增狀態記錄')
     await loadApplicationTable()
     await loadApplicationDetail(applicationId, 'list')
     if (savedHistoryId) {
