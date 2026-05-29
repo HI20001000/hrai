@@ -110,7 +110,7 @@ const activeStatusHistory = computed(() => {
       interview: activeApplication.value.interview,
       remark: activeApplication.value.remark,
       createdAt: activeApplication.value.createdAt,
-      updatedAt: activeApplication.value.createdAt,
+      updatedAt: activeApplication.value.updatedAt || activeApplication.value.createdAt,
     },
   ]
 })

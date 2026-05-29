@@ -256,7 +256,7 @@ const buildFallbackStatusHistory = (row) => ({
   interview: row?.interview,
   remark: row?.remark,
   createdAt: row?.createdAt,
-  updatedAt: row?.createdAt,
+  updatedAt: row?.updatedAt || row?.createdAt,
 })
 
 const getRowStatusHistory = (row) => {

@@ -1486,17 +1486,21 @@ onMounted(() => {
 
 .sidebar-header {
   flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  max-height: 178px;
   margin-bottom: 0.9rem;
+  overflow: auto;
 }
 
 .dictionary-create-row input {
   flex: 1;
-  min-width: 180px;
+  min-width: 220px;
 }
 
 .dictionary-layout {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
   gap: 1rem;
   min-height: 0;
   overflow: hidden;
@@ -1507,6 +1511,10 @@ onMounted(() => {
   padding: 0.9rem;
   min-height: 0;
   overflow: hidden;
+}
+
+.dictionary-sidebar {
+  min-width: 0;
 }
 
 .job-list {

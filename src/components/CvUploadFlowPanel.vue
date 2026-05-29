@@ -1472,7 +1472,7 @@ const clearBatchQueueLegacy = () => {
           <li v-for="(gap, index) in singleMatchResult.match.employmentGap.gaps" :key="`${gap.startMonth}-${gap.endMonth}-${index}`">
             <strong>{{ gap.startMonth }} - {{ gap.endMonth }}</strong>
             <span>{{ gap.durationLabel || `${gap.months || 0}個月` }}</span>
-            <em>{{ gap.previousCompanyName || gap.previousProjectName || '上一段經歷' }} → {{ gap.nextCompanyName || gap.nextProjectName || '下一段經歷' }}</em>
+            <em>{{ gap.note || `${gap.previousCompanyName || gap.previousProjectName || '上一段經歷'} → ${gap.nextCompanyName || gap.nextProjectName || '下一段經歷'}` }}</em>
           </li>
         </ul>
         <p><strong>投遞編號：</strong>{{ singleMatchResult?.application?.id || '--' }}</p>

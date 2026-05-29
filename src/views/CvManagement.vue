@@ -461,7 +461,7 @@ const activeStatusHistory = computed(() => {
       interview: activeApplication.value.interview,
       remark: activeApplication.value.remark,
       createdAt: activeApplication.value.createdAt,
-      updatedAt: activeApplication.value.createdAt,
+      updatedAt: activeApplication.value.updatedAt || activeApplication.value.createdAt,
     },
   ]
 })
@@ -1520,7 +1520,8 @@ onUnmounted(() => {
               <li v-for="(gap, index) in activeApplication.match.employmentGap.gaps" :key="`${gap.startMonth}-${gap.endMonth}-${index}`">
                 <strong>{{ gap.startMonth }} - {{ gap.endMonth }}</strong>
                 <span>{{ gap.durationLabel || `${gap.months || 0}個月` }}</span>
-                <em>
+                <em v-if="gap.note">{{ gap.note }}</em>
+                <em v-else>
                   {{ gap.previousCompanyName || gap.previousProjectName || '上一段經歷' }}
                   →
                   {{ gap.nextCompanyName || gap.nextProjectName || '下一段經歷' }}

@@ -40,6 +40,7 @@ const normalizeList = (value, limit = 20) => {
 const normalizeScore = (value) => Math.max(0, Math.min(100, Math.round(Number(value || 0))))
 const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value)
 const DEFAULT_EMPLOYMENT_GAP_LIMIT_MONTHS = 5
+const EMPLOYMENT_GAP_ABNORMAL_THRESHOLD_MONTHS = 3
 
 const getJobOutputKey = (dictionaryKey, job = {}) => normalizeText(job?.jobKey) || normalizeText(dictionaryKey)
 const getJobTitle = (dictionaryKey, job = {}) => normalizeText(job?.title) || normalizeText(dictionaryKey)
@@ -177,7 +178,8 @@ const findLatestCompanyEmploymentEndMonth = (extracted = {}) => {
 }
 
 const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) => {
-  const limitMonths = normalizeEmploymentGapLimitMonths(job?.employmentGapLimitMonths)
+  const dictionaryLimitMonths = normalizeEmploymentGapLimitMonths(job?.employmentGapLimitMonths)
+  const limitMonths = EMPLOYMENT_GAP_ABNORMAL_THRESHOLD_MONTHS
   const currentMonth = getCurrentMonthIndex(now)
   const threeYearsAgoMonth = currentMonth - 35
   const employmentRanges = findCompanyEmploymentRanges(extracted)
@@ -191,11 +193,27 @@ const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) =>
       exceeded: false,
       months: null,
       limitMonths,
+      dictionaryLimitMonths,
       latestEmploymentEnd: '',
       currentSystemMonth: formatYearMonthLabel(currentMonth),
       durationLabel: '',
       gaps: [],
       summary: `未能從 CV 中識別近三年內的正式工作經歷區間，暫無法列明經歷之間的空窗期。`,
+    }
+  }
+
+  if (relevantRanges.length < 2) {
+    return {
+      status: 'insufficient_experience',
+      exceeded: false,
+      months: 0,
+      limitMonths,
+      dictionaryLimitMonths,
+      latestEmploymentEnd: formatYearMonthLabel(findLatestCompanyEmploymentEndMonth(extracted)?.endMonth || relevantRanges[0].endMonth),
+      currentSystemMonth: formatYearMonthLabel(currentMonth),
+      durationLabel: '',
+      gaps: [],
+      summary: `近三年內僅識別到 1 段正式工作經歷，未進行工作經歷之間的空窗期計算。`,
     }
   }
 
@@ -210,7 +228,7 @@ const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) =>
     const gapStartMonth = Math.max(previous.endMonth + 1, threeYearsAgoMonth)
     const gapEndMonth = Math.min(current.startMonth - 1, currentMonth)
     const gapMonths = gapEndMonth >= gapStartMonth ? gapEndMonth - gapStartMonth + 1 : 0
-    if (gapMonths > 0) {
+    if (gapMonths > EMPLOYMENT_GAP_ABNORMAL_THRESHOLD_MONTHS) {
       gaps.push({
         startMonth: formatYearMonthLabel(gapStartMonth),
         endMonth: formatYearMonthLabel(gapEndMonth),
@@ -222,7 +240,8 @@ const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) =>
         nextCompanyName: current.companyName,
         nextProjectName: current.projectName,
         nextDurationText: current.durationText,
-        exceeded: gapMonths > limitMonths,
+        exceeded: true,
+        note: `在${previous.companyName || previous.projectName || '上一段經歷'}離職後有${gapMonths}個月空窗期，建議面試確認原因`,
       })
     }
     previous = current
@@ -238,6 +257,7 @@ const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) =>
     exceeded,
     months: gapMonths,
     limitMonths,
+    dictionaryLimitMonths,
     latestEmploymentEnd: formatYearMonthLabel(findLatestCompanyEmploymentEndMonth(extracted)?.endMonth || relevantRanges[relevantRanges.length - 1].endMonth),
     currentSystemMonth,
     durationLabel,
@@ -247,15 +267,13 @@ const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) =>
   if (!gaps.length) {
     return {
       ...base,
-      summary: `近三年內未識別到正式工作經歷之間的空窗期。`,
+      summary: `近三年內未識別到超過 ${EMPLOYMENT_GAP_ABNORMAL_THRESHOLD_MONTHS} 個月的正式工作經歷間隔。`,
     }
   }
 
   return {
     ...base,
-    summary: exceeded
-      ? `近三年內識別到 ${gaps.length} 段工作經歷之間的空窗期，最長為 ${durationLabel}，超過職位字典設定的 ${limitMonths} 個月上限，建議面試中確認原因與期間安排。`
-      : `近三年內識別到 ${gaps.length} 段工作經歷之間的空窗期，最長為 ${durationLabel}，未超過職位字典設定的 ${limitMonths} 個月上限。`,
+    summary: `近三年內識別到 ${gaps.length} 段超過 ${EMPLOYMENT_GAP_ABNORMAL_THRESHOLD_MONTHS} 個月的工作經歷間隔，最長為 ${durationLabel}，建議面試中確認原因與期間安排。`,
   }
 }
 

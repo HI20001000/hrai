@@ -2359,8 +2359,8 @@ const buildApplicationStatusHistoryPayload = (row = {}) => ({
         avatarBgColor: row.operatorAvatarBgColor,
       })
     : null,
-  createdAt: row.createdAt,
-  updatedAt: row.updatedAt,
+  createdAt: formatDateTimeForPayload(row.createdAt),
+  updatedAt: formatDateTimeForPayload(row.updatedAt || row.createdAt),
 })
 
 const listJobPostApplicationStatusHistory = async (pool, applicationId) => {
