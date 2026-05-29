@@ -187,10 +187,9 @@ const applicationStatusFilterOptions = computed(() => [
 
 const interviewResultFilterOptions = computed(() => [{ value: '', label: '全部' }, ...INTERVIEW_STATUS_OPTIONS])
 
-const interviewTimeSortOptions = [
-  { value: 'asc', label: '面試時間升序' },
-  { value: 'desc', label: '面試時間降序' },
-]
+const toggleInterviewTimeSort = (direction) => {
+  interviewTimeSort.value = interviewTimeSort.value === direction ? '' : direction
+}
 
 const interviewerFilterOptions = computed(() => {
   const seen = new Set()
@@ -776,12 +775,26 @@ onBeforeUnmount(() => {
                     label="面試日期"
                     mode="date"
                   />
-                  <CandidateColumnFilter
-                    v-model="interviewTimeSort"
-                    filter-key="interview-time-sort"
-                    label="面試時間排序"
-                    :options="interviewTimeSortOptions"
-                  />
+                  <span class="time-sort-controls" aria-label="面試時間排序">
+                    <button
+                      type="button"
+                      class="time-sort-btn"
+                      :class="{ active: interviewTimeSort === 'asc' }"
+                      title="面試時間升序"
+                      @click="toggleInterviewTimeSort('asc')"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      class="time-sort-btn"
+                      :class="{ active: interviewTimeSort === 'desc' }"
+                      title="面試時間降序"
+                      @click="toggleInterviewTimeSort('desc')"
+                    >
+                      ↓
+                    </button>
+                  </span>
                 </div>
               </th>
               <th>區間</th>
@@ -1280,6 +1293,32 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
+}
+
+.time-sort-controls {
+  display: inline-flex;
+  gap: 0.2rem;
+}
+
+.time-sort-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.78);
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.time-sort-btn:hover,
+.time-sort-btn.active {
+  border-color: rgba(47, 111, 237, 0.26);
+  color: var(--accent);
+  background: rgba(47, 111, 237, 0.1);
 }
 
 .column-title {
