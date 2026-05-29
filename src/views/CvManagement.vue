@@ -1683,7 +1683,6 @@ onUnmounted(() => {
       v-model="isStatusModalOpen"
       :application="activeApplication"
       :user-options="userOptions"
-      initial-edit-mode="new"
       @saved="handleApplicationStatusModalSaved"
       @notify="message = $event"
     />

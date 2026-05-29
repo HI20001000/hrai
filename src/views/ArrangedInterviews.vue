@@ -943,7 +943,6 @@ onBeforeUnmount(() => {
       v-model="isApplicationStatusModalOpen"
       :application="activeStatusApplication"
       :user-options="userOptions"
-      initial-edit-mode="current"
       @saved="handleApplicationStatusSaved"
       @notify="message = $event"
     />

@@ -22,7 +22,6 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },
   application: { type: Object, default: null },
   userOptions: { type: Array, default: () => [] },
-  initialEditMode: { type: String, default: 'current' },
 })
 
 const emit = defineEmits(['update:modelValue', 'saved', 'notify'])
@@ -228,16 +227,12 @@ const editStatusHistoryDraft = (history, { allowToggle = true } = {}) => {
 }
 
 const editCurrentStatusHistoryDraft = () => {
-  const currentId = Number(props.application?.statusHistoryId || activeApplication.value?.statusHistoryId || 0)
-  const currentHistory = currentId
-    ? activeStatusHistory.value.find((history) => Number(history.id || 0) === currentId)
-    : null
-  const fallbackHistory = activeStatusHistory.value[0] || null
-  if (props.initialEditMode === 'new' || !(currentHistory || fallbackHistory)?.id) {
+  const latestHistory = activeStatusHistory.value[0] || null
+  if (!latestHistory?.id) {
     startNewStatusHistoryDraft()
     return
   }
-  editStatusHistoryDraft(currentHistory || fallbackHistory, { allowToggle: false })
+  editStatusHistoryDraft(latestHistory, { allowToggle: false })
 }
 
 const loadApplicationDetail = async () => {
