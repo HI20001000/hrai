@@ -1553,9 +1553,11 @@ onMounted(() => {
 }
 
 .dictionary-editor {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
+  max-height: 100%;
+  overflow: auto;
 }
 
 .editor-header {
@@ -1590,7 +1592,12 @@ onMounted(() => {
   align-content: start;
   gap: 0.85rem;
   min-height: 0;
-  overflow: auto;
+  overflow: visible;
+}
+
+.weight-section,
+.dictionary-editor > .actions {
+  flex: 0 0 auto;
 }
 
 .editor-grid {
