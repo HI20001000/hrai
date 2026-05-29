@@ -78,7 +78,7 @@ const normalizeStringArray = (value) =>
 
 export const normalizeEmploymentGapLimitMonths = (value) => {
   const numericValue = Number(value)
-  if (!Number.isFinite(numericValue) || numericValue < 0) return DEFAULT_EMPLOYMENT_GAP_LIMIT_MONTHS
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return DEFAULT_EMPLOYMENT_GAP_LIMIT_MONTHS
   return Math.round(numericValue)
 }
 

@@ -177,7 +177,7 @@ const findLatestCompanyEmploymentEndMonth = (extracted = {}) => {
   return latest
 }
 
-const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) => {
+export const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) => {
   const limitMonths = normalizeEmploymentGapLimitMonths(job?.employmentGapLimitMonths)
   const gapThresholdMonths = EMPLOYMENT_GAP_LIST_THRESHOLD_MONTHS
   const currentMonth = getCurrentMonthIndex(now)

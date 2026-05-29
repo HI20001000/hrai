@@ -24,11 +24,18 @@ export const getStoredAuth = () => {
 
 export const getAuthToken = () => getStoredAuth()?.token || ''
 
+const getClientLocalDateTimeHeader = () => {
+  const date = new Date()
+  const pad = (value) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
 export const withAuthHeaders = (headers = {}) => {
   const token = getAuthToken()
+  const baseHeaders = { ...headers, 'X-HRAI-Client-Time': getClientLocalDateTimeHeader() }
   return token
-    ? { ...headers, Authorization: `Bearer ${token}`, 'X-InnerAI-Auth-Token': token }
-    : { ...headers }
+    ? { ...baseHeaders, Authorization: `Bearer ${token}`, 'X-InnerAI-Auth-Token': token }
+    : baseHeaders
 }
 
 export const redirectToLogin = () => {

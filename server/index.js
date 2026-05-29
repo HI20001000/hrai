@@ -26,7 +26,7 @@ import {
   normalizeEmploymentGapLimitMonths,
   saveJobDictionary,
 } from './scripts/jobs/dictionary.js'
-import { matchCandidateToJobPost, matchCandidateToJobs } from './scripts/llm/job-matcher.js'
+import { buildEmploymentGapReport, matchCandidateToJobPost, matchCandidateToJobs } from './scripts/llm/job-matcher.js'
 import { suggestJobDictionaryDefinition } from './scripts/llm/job-dictionary-suggester.js'
 import { suggestJobScoringRubrics } from './scripts/llm/rubric-suggester.js'
 import { normalizeScoringRubrics, normalizeScoringWeights } from './scripts/jobs/scoring.js'
@@ -1094,7 +1094,7 @@ const updateJobPost = async (pool, req, res, jobPostId) => {
     return
   }
 
-  const snapshot = isJobKeyChanged
+  const snapshot = dictionaryJob
     ? buildJobSnapshot(jobKey, dictionaryJob)
     : existing.jobSnapshot || buildJobSnapshot(jobKey, { jobKey, title })
 
@@ -1205,6 +1205,7 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
         owner_user.avatar_text AS ownerAvatarText,
         owner_user.avatar_bg_color AS ownerAvatarBgColor,
         app.created_at AS createdAt,
+        app.updated_at AS updatedAt,
         c.id AS candidateId,
         c.full_name AS fullName,
         c.email AS email,
@@ -1266,6 +1267,7 @@ const listJobPostApplications = async (pool, _req, res, jobPostId) => {
         hasCvPreview: Number(row.hasCvPreview || 0) === 1,
         hasExtractedPreview: Number(row.hasExtractedPreview || 0) === 1,
         createdAt: row.createdAt,
+        updatedAt: formatDateTimeForPayload(row.updatedAt || row.createdAt),
         ...buildCandidateBlacklistFlags(match, {
           phone: row.phone,
           email: row.email,
@@ -1304,6 +1306,7 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
         owner_user.avatar_text AS ownerAvatarText,
         owner_user.avatar_bg_color AS ownerAvatarBgColor,
         app.created_at AS createdAt,
+        app.updated_at AS updatedAt,
         jp.title AS jobPostTitle,
         c.full_name AS fullName,
         c.email AS email,
@@ -1381,6 +1384,7 @@ const getJobPostApplication = async (pool, _req, res, applicationId) => {
       hasCvPreview: Number(row.hasCvPreview || 0) === 1,
       hasExtractedPreview: Number(row.hasExtractedPreview || 0) === 1,
       createdAt: row.createdAt,
+      updatedAt: formatDateTimeForPayload(row.updatedAt || row.createdAt),
       ...buildCandidateBlacklistFlags(blacklistMatch, {
         phone: row.phone,
         email: row.email,
@@ -1476,6 +1480,7 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
     })
   }
   const operatorUserId = await getRequestOperatorUserId(pool, req)
+  const requestUpdatedAt = getRequestLocalDateTime(req)
 
   await pool.query(
     `UPDATE job_post_applications
@@ -1488,7 +1493,7 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
           interview_status = ?,
           remark = ?,
           owner_user_id = COALESCE(?, owner_user_id),
-          updated_at = CURRENT_TIMESTAMP
+          updated_at = ?
      WHERE id = ?`,
     [
       nextStatus,
@@ -1500,6 +1505,7 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
       interviewResult.value.status,
       nextRemark,
       operatorUserId,
+      requestUpdatedAt,
       applicationId,
     ]
   )
@@ -1512,7 +1518,7 @@ const updateJobPostApplicationStatus = async (pool, req, res, applicationId) => 
       interview: interviewResult.value,
       remark: nextRemark,
     },
-    { append: willAppendStatusHistory, operatorUserId }
+    { append: willAppendStatusHistory, operatorUserId, updatedAtSql: requestUpdatedAt }
   )
 
   sendJson(res, 200, {
@@ -1562,10 +1568,11 @@ const createJobPostApplicationStatusHistory = async (pool, req, res, application
     interview: interviewResult.value,
   })
   const operatorUserId = await getRequestOperatorUserId(pool, req)
+  const requestUpdatedAt = getRequestLocalDateTime(req)
   const [result] = await pool.query(
     `INSERT INTO job_post_application_status_history
-      (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interview_duration_minutes, interviewer_user_id, interview_location, interview_status, remark, operator_user_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interview_duration_minutes, interviewer_user_id, interview_location, interview_status, remark, operator_user_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       applicationId,
       nextStatus,
@@ -1577,6 +1584,8 @@ const createJobPostApplicationStatusHistory = async (pool, req, res, application
       interviewResult.value.status,
       nextRemark,
       operatorUserId,
+      requestUpdatedAt,
+      requestUpdatedAt,
     ]
   )
   await syncApplicationFromLatestStatusHistory(pool, applicationId)
@@ -1665,13 +1674,14 @@ const updateJobPostApplicationStatusHistory = async (pool, req, res, application
     })
   }
   const operatorUserId = await getRequestOperatorUserId(pool, req)
+  const requestUpdatedAt = getRequestLocalDateTime(req)
   await pool.query(
     `UPDATE job_post_application_status_history
       SET application_status = ?, first_interview_arrangement = ?,
           interview_scheduled_at = ?, interview_duration_minutes = ?, interviewer_user_id = ?, interview_location = ?, interview_status = ?,
           remark = ?,
           operator_user_id = COALESCE(?, operator_user_id),
-          updated_at = CURRENT_TIMESTAMP
+          updated_at = ?
      WHERE id = ? AND application_id = ?`,
     [
       nextStatus,
@@ -1683,6 +1693,7 @@ const updateJobPostApplicationStatusHistory = async (pool, req, res, application
       interviewResult.value.status,
       nextRemark,
       operatorUserId,
+      requestUpdatedAt,
       historyId,
       applicationId,
     ]
@@ -2391,7 +2402,7 @@ const listJobPostApplicationStatusHistory = async (pool, applicationId) => {
       LEFT JOIN users operator_user ON operator_user.id = history.operator_user_id
       LEFT JOIN users interviewer_user ON interviewer_user.id = history.interviewer_user_id
       WHERE history.application_id = ?
-      ORDER BY history.created_at DESC, history.id DESC`,
+      ORDER BY history.updated_at DESC, history.id DESC`,
     [applicationId]
   )
   return rows.map((row) => buildApplicationStatusHistoryPayload(row))
@@ -2429,7 +2440,7 @@ const listJobPostApplicationStatusHistories = async (pool, applicationIds = []) 
       LEFT JOIN users operator_user ON operator_user.id = history.operator_user_id
       LEFT JOIN users interviewer_user ON interviewer_user.id = history.interviewer_user_id
       WHERE history.application_id IN (${placeholders})
-      ORDER BY history.application_id ASC, history.created_at DESC, history.id DESC`,
+      ORDER BY history.application_id ASC, history.updated_at DESC, history.id DESC`,
     ids
   )
 
@@ -2564,6 +2575,39 @@ const formatDateTimeForPayload = (value) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:00`
 }
 
+const normalizeClientLocalDateTime = (value) => {
+  const text = normalizeText(value)
+  if (!text) return ''
+  const match = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/)
+  if (!match) return ''
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const hours = Number(match[4])
+  const minutes = Number(match[5])
+  const seconds = Number(match[6] || 0)
+  if (
+    !Number.isInteger(year) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59 ||
+    seconds < 0 ||
+    seconds > 59
+  ) {
+    return ''
+  }
+  const pad = (number) => String(number).padStart(2, '0')
+  return `${year}-${pad(month)}-${pad(day)} ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+}
+
+const getRequestLocalDateTime = (req) =>
+  normalizeClientLocalDateTime(req?.headers?.['x-hrai-client-time']) || formatDateTimeForPayload(new Date())
+
 const resolveInterviewInput = (value = {}, fallback = {}) => {
   const source = value && typeof value === 'object' ? value : {}
   const scheduledAt = Object.prototype.hasOwnProperty.call(source, 'scheduledAt')
@@ -2660,7 +2704,7 @@ const getLatestJobPostApplicationStatusHistory = async (pool, applicationId) => 
       LEFT JOIN users operator_user ON operator_user.id = history.operator_user_id
       LEFT JOIN users interviewer_user ON interviewer_user.id = history.interviewer_user_id
       WHERE history.application_id = ?
-      ORDER BY history.created_at DESC, history.id DESC
+      ORDER BY history.updated_at DESC, history.id DESC
       LIMIT 1`,
     [applicationId]
   )
@@ -2684,7 +2728,7 @@ const syncApplicationFromLatestStatusHistory = async (pool, applicationId) => {
           interview_status = ?,
           remark = ?,
           owner_user_id = COALESCE(?, owner_user_id),
-          updated_at = CURRENT_TIMESTAMP
+          updated_at = ?
      WHERE id = ?`,
     [
       latest.applicationStatus,
@@ -2696,6 +2740,7 @@ const syncApplicationFromLatestStatusHistory = async (pool, applicationId) => {
       latest.interview.status || 'not_started',
       normalizeApplicationRemark(latest.remark),
       latestOperatorUserId,
+      latest.updatedAt || formatDateTimeForPayload(new Date()),
       applicationId,
     ]
   )
@@ -2706,7 +2751,7 @@ const syncJobPostApplicationStatusHistory = async (
   pool,
   applicationId,
   { applicationStatus, firstInterviewArrangement = '', interview = {}, remark = '' } = {},
-  { append = false, operatorUserId = null } = {}
+  { append = false, operatorUserId = null, updatedAtSql = '' } = {}
 ) => {
   const nextStatus = normalizeApplicationStatus(applicationStatus)
   const nextFirstInterviewArrangement = normalizeFirstInterviewArrangement(firstInterviewArrangement)
@@ -2714,12 +2759,13 @@ const syncJobPostApplicationStatusHistory = async (
   const nextInterview = interviewResult.value
   const nextRemark = normalizeApplicationRemark(remark)
   const normalizedOperatorUserId = Number(operatorUserId || 0) || null
+  const statusTimestamp = normalizeClientLocalDateTime(updatedAtSql) || formatDateTimeForPayload(new Date())
 
   if (append) {
     await pool.query(
       `INSERT INTO job_post_application_status_history
-        (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interview_duration_minutes, interviewer_user_id, interview_location, interview_status, remark, operator_user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interview_duration_minutes, interviewer_user_id, interview_location, interview_status, remark, operator_user_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         applicationId,
         nextStatus,
@@ -2731,6 +2777,8 @@ const syncJobPostApplicationStatusHistory = async (
         nextInterview.status,
         nextRemark,
         normalizedOperatorUserId,
+        statusTimestamp,
+        statusTimestamp,
       ]
     )
     return
@@ -2740,7 +2788,7 @@ const syncJobPostApplicationStatusHistory = async (
     `SELECT id
       FROM job_post_application_status_history
       WHERE application_id = ?
-      ORDER BY created_at DESC, id DESC
+      ORDER BY updated_at DESC, id DESC
       LIMIT 1`,
     [applicationId]
   )
@@ -2748,8 +2796,8 @@ const syncJobPostApplicationStatusHistory = async (
   if (!rows[0]) {
     await pool.query(
       `INSERT INTO job_post_application_status_history
-        (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interview_duration_minutes, interviewer_user_id, interview_location, interview_status, remark, operator_user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (application_id, application_status, first_interview_arrangement, interview_scheduled_at, interview_duration_minutes, interviewer_user_id, interview_location, interview_status, remark, operator_user_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         applicationId,
         nextStatus,
@@ -2761,6 +2809,8 @@ const syncJobPostApplicationStatusHistory = async (
         nextInterview.status,
         nextRemark,
         normalizedOperatorUserId,
+        statusTimestamp,
+        statusTimestamp,
       ]
     )
     return
@@ -2772,7 +2822,7 @@ const syncJobPostApplicationStatusHistory = async (
           interview_scheduled_at = ?, interview_duration_minutes = ?, interviewer_user_id = ?, interview_location = ?, interview_status = ?,
           remark = ?,
           operator_user_id = COALESCE(?, operator_user_id),
-          updated_at = CURRENT_TIMESTAMP
+          updated_at = ?
      WHERE id = ?`,
     [
       nextStatus,
@@ -2784,6 +2834,7 @@ const syncJobPostApplicationStatusHistory = async (
       nextInterview.status,
       nextRemark,
       normalizedOperatorUserId,
+      statusTimestamp,
       Number(rows[0].id),
     ]
   )
@@ -2817,6 +2868,40 @@ const buildJobSnapshot = (jobKey, dictionaryJob = {}) => ({
   weights: normalizeScoringWeights(dictionaryJob?.weights),
   scoringRubrics: normalizeScoringRubrics(dictionaryJob?.scoringRubrics),
 })
+
+const findCurrentDictionaryJobEntry = (identity = {}) => {
+  const dictionary = getJobDictionary()
+  const identifiers = [
+    identity.jobKey,
+    identity.title,
+    identity.jobTitle,
+    identity.matchedPosition,
+  ].map(normalizeText).filter(Boolean)
+
+  for (const identifier of identifiers) {
+    if (dictionary?.[identifier]) return [identifier, dictionary[identifier]]
+  }
+
+  for (const [dictionaryKey, job] of Object.entries(dictionary || {})) {
+    const jobIdentifiers = [
+      dictionaryKey,
+      job?.jobKey,
+      job?.title,
+    ].map(normalizeText).filter(Boolean)
+    if (identifiers.some((identifier) => jobIdentifiers.includes(identifier))) {
+      return [dictionaryKey, job]
+    }
+  }
+
+  return null
+}
+
+const resolveCurrentJobSnapshot = (jobSnapshot = {}) => {
+  const entry = findCurrentDictionaryJobEntry(jobSnapshot)
+  if (!entry) return jobSnapshot
+  const [jobKey, dictionaryJob] = entry
+  return buildJobSnapshot(jobKey, dictionaryJob)
+}
 
 const getJobPostById = async (pool, jobPostId) => {
   const [rows] = await pool.query(
@@ -3629,22 +3714,55 @@ const normalizeEmploymentGapReport = (value) => {
   const status = normalizeText(value.status)
   const summary = normalizeText(value.summary)
   const limitMonths = normalizeEmploymentGapLimitMonths(value.limitMonths)
+  const thresholdValue = Number(value.gapThresholdMonths)
+  const gapThresholdMonths = Number.isFinite(thresholdValue) ? Math.max(0, Math.round(thresholdValue)) : null
   const monthsValue = Number(value.months)
   const months = Number.isFinite(monthsValue) ? Math.max(0, Math.round(monthsValue)) : null
+  const gaps = Array.isArray(value.gaps)
+    ? value.gaps
+        .filter((gap) => gap && typeof gap === 'object' && !Array.isArray(gap))
+        .map((gap) => ({
+          startMonth: normalizeText(gap.startMonth),
+          endMonth: normalizeText(gap.endMonth),
+          months: Number.isFinite(Number(gap.months)) ? Math.max(0, Math.round(Number(gap.months))) : 0,
+          durationLabel: normalizeText(gap.durationLabel),
+          previousCompanyName: normalizeText(gap.previousCompanyName),
+          previousProjectName: normalizeText(gap.previousProjectName),
+          previousDurationText: normalizeText(gap.previousDurationText),
+          nextCompanyName: normalizeText(gap.nextCompanyName),
+          nextProjectName: normalizeText(gap.nextProjectName),
+          nextDurationText: normalizeText(gap.nextDurationText),
+          exceeded: Boolean(gap.exceeded),
+          note: normalizeText(gap.note),
+        }))
+        .filter((gap) => gap.startMonth || gap.endMonth || gap.months > 0)
+    : []
   const normalized = {
-    status: ['exceeded', 'within_limit', 'unknown'].includes(status) ? status : '',
+    status: ['exceeded', 'within_limit', 'unknown', 'insufficient_experience', 'no_gap'].includes(status) ? status : '',
     exceeded: Boolean(value.exceeded),
     months,
     limitMonths,
+    gapThresholdMonths,
+    lookbackStartMonth: normalizeText(value.lookbackStartMonth),
     latestEmploymentEnd: normalizeText(value.latestEmploymentEnd),
     currentSystemMonth: normalizeText(value.currentSystemMonth),
     durationLabel: normalizeText(value.durationLabel),
+    gaps,
     summary,
   }
-  return normalized.summary || normalized.status || normalized.months !== null ? normalized : null
+  return normalized.summary || normalized.status || normalized.months !== null || normalized.gaps.length ? normalized : null
 }
 
 const listCandidateCvJobMatches = async (pool, candidateCvId) => {
+  const [extractionRows] = await pool.query(
+    'SELECT extracted_text AS extractedText FROM candidate_cv_extractions WHERE candidate_cv_id = ? LIMIT 1',
+    [candidateCvId]
+  )
+  const extractedPayload = parseJsonObject(extractionRows[0]?.extractedText) || {}
+  const extracted = extractedPayload.extracted && typeof extractedPayload.extracted === 'object'
+    ? extractedPayload.extracted
+    : null
+
   const [rows] = await pool.query(
     `SELECT
         job_key AS jobKey,
@@ -3665,6 +3783,15 @@ const listCandidateCvJobMatches = async (pool, candidateCvId) => {
 
   return rows.map((row) => {
     const rawLlm = parseJsonObject(row.rawLlmJson) || {}
+    const currentJobEntry = findCurrentDictionaryJobEntry({
+      jobKey: row.jobKey,
+      jobTitle: row.jobTitle,
+      matchedPosition: rawLlm.matchedPosition,
+    })
+    if (extracted && currentJobEntry) {
+      const [jobKey, dictionaryJob] = currentJobEntry
+      rawLlm.employmentGap = buildEmploymentGapReport(extracted, buildJobSnapshot(jobKey, dictionaryJob))
+    }
     return {
       jobKey: normalizeText(row.jobKey),
       jobTitle: normalizeText(row.jobTitle),
@@ -3724,7 +3851,7 @@ const runCandidateCvMatching = async (pool, candidateId, candidateCvId, extracte
 }
 
 const runJobPostApplicationMatching = async (pool, { applicationId = null, candidateId, candidateCvId, extracted, jobSnapshot }) => {
-  const match = await matchCandidateToJobPost(extracted, jobSnapshot)
+  const match = await matchCandidateToJobPost(extracted, resolveCurrentJobSnapshot(jobSnapshot))
   const matches = match ? [{ ...match, rankNo: 1 }] : []
   await replaceCandidateCvJobMatches(pool, candidateId, candidateCvId, matches)
   if (applicationId) {
@@ -4395,6 +4522,7 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
         owner_user.avatar_text AS ownerAvatarText,
         owner_user.avatar_bg_color AS ownerAvatarBgColor,
         app.created_at AS createdAt,
+        app.updated_at AS updatedAt,
         jp.id AS jobPostId,
         jp.title AS jobPostTitle,
         c.id AS candidateId,
@@ -4443,6 +4571,7 @@ const listAllJobPostApplicationsTable = async (pool, _req, res) => {
         ownerUser: buildOwnerUserPayload(row),
         isDuplicateApplication: duplicateApplicationIds.has(applicationId),
         createdAt: row.createdAt,
+        updatedAt: formatDateTimeForPayload(row.updatedAt || row.createdAt),
         jobPostId: Number(row.jobPostId),
         jobPostTitle: normalizeText(row.jobPostTitle),
         candidateId: Number(row.candidateId),
@@ -4810,7 +4939,7 @@ const listArrangedInterviews = async (pool, req, res) => {
 
   const rows = await listScheduledInterviewHistoryApplicationRows(pool)
   const getStatusHistoryCreatedTime = (row) => {
-    const time = new Date(row?.statusCreatedAt || row?.createdAt || 0).getTime()
+    const time = new Date(row?.statusUpdatedAt || row?.statusCreatedAt || row?.updatedAt || row?.createdAt || 0).getTime()
     return Number.isNaN(time) ? 0 : time
   }
   const latestRowsByCandidate = new Map()
@@ -4860,7 +4989,7 @@ const updateTemporalInterviewHistoryStatuses = async (pool) => {
           SELECT history.id
           FROM job_post_application_status_history history
           WHERE history.application_id = app.id
-          ORDER BY history.created_at DESC, history.id DESC
+          ORDER BY history.updated_at DESC, history.id DESC
           LIMIT 1
         )
       WHERE latest.interview_scheduled_at IS NOT NULL
@@ -4882,6 +5011,7 @@ const updateTemporalInterviewHistoryStatuses = async (pool) => {
   }
 
   let updatedCount = 0
+  const refreshUpdatedAt = formatDateTimeForPayload(new Date())
   for (const [status, ids] of groupedIds.entries()) {
     for (let index = 0; index < ids.length; index += 500) {
       const chunk = ids.slice(index, index + 500)
@@ -4889,9 +5019,9 @@ const updateTemporalInterviewHistoryStatuses = async (pool) => {
       const [result] = await pool.query(
         `UPDATE job_post_application_status_history
           SET interview_status = ?,
-              updated_at = CURRENT_TIMESTAMP
+              updated_at = ?
          WHERE id IN (${placeholders})`,
-        [status, ...chunk]
+        [status, refreshUpdatedAt, ...chunk]
       )
       updatedCount += Number(result?.affectedRows || 0)
     }
@@ -4914,7 +5044,7 @@ const listApplicationIdsWithLatestStatusHistoryMismatch = async (pool, applicati
           SELECT history.id
           FROM job_post_application_status_history history
           WHERE history.application_id = app.id
-          ORDER BY history.created_at DESC, history.id DESC
+          ORDER BY history.updated_at DESC, history.id DESC
           LIMIT 1
         )
       WHERE latest.interview_scheduled_at IS NOT NULL
@@ -5052,15 +5182,16 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
     const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
     const nextRemark = hasRemark ? normalizeApplicationRemark(body.remark) : normalizeApplicationRemark(history.remark)
     const operatorUserId = await getRequestOperatorUserId(pool, req)
+    const requestUpdatedAt = getRequestLocalDateTime(req)
 
     await pool.query(
       `UPDATE job_post_application_status_history
         SET interview_status = ?,
             remark = ?,
             operator_user_id = COALESCE(?, operator_user_id),
-            updated_at = CURRENT_TIMESTAMP
+            updated_at = ?
        WHERE id = ? AND application_id = ?`,
-      [nextInterviewStatus, nextRemark, operatorUserId, statusHistoryId, applicationId]
+      [nextInterviewStatus, nextRemark, operatorUserId, requestUpdatedAt, statusHistoryId, applicationId]
     )
     await syncApplicationFromLatestStatusHistory(pool, applicationId)
 
@@ -5108,14 +5239,15 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
   const nextInterviewStatus = statusResult.status
   const hasRemark = body && Object.prototype.hasOwnProperty.call(body, 'remark')
   const nextRemark = hasRemark ? normalizeApplicationRemark(body.remark) : normalizeApplicationRemark(existing.remark)
+  const requestUpdatedAt = getRequestLocalDateTime(req)
 
   await pool.query(
     `UPDATE job_post_applications
       SET interview_status = ?,
           remark = ?,
-          updated_at = CURRENT_TIMESTAMP
+          updated_at = ?
      WHERE id = ?`,
-    [nextInterviewStatus, nextRemark, applicationId]
+    [nextInterviewStatus, nextRemark, requestUpdatedAt, applicationId]
   )
 
   const operatorUserId = await getRequestOperatorUserId(pool, req)
@@ -5135,7 +5267,7 @@ const updateJobPostApplicationInterviewStatus = async (pool, req, res, applicati
       interview: nextInterview,
       remark: nextRemark,
     },
-    { append: false, operatorUserId }
+    { append: false, operatorUserId, updatedAtSql: requestUpdatedAt }
   )
   await syncApplicationFromLatestStatusHistory(pool, applicationId)
 

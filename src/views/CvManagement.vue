@@ -151,7 +151,11 @@ const parseJsonSafe = (value) => {
 const withAuthHeaders = (headers = {}) => {
   const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
   const token = String(auth?.token || '').trim()
-  return token ? { ...headers, Authorization: `Bearer ${token}` } : { ...headers }
+  const date = new Date()
+  const pad = (value) => String(value).padStart(2, '0')
+  const clientTime = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  const baseHeaders = { ...headers, 'X-HRAI-Client-Time': clientTime }
+  return token ? { ...baseHeaders, Authorization: `Bearer ${token}` } : baseHeaders
 }
 
 const withAuthOptions = (options = {}) => ({

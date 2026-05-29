@@ -23,6 +23,8 @@ const REMOVED_SELECTABLE_STATUS_VALUES = new Set([
   'screening_hr_rejected',
   'screening_department_approved',
   'screening_department_rejected',
+  'hr_interview_rejected',
+  'department_interview_rejected',
 ])
 
 export const CANDIDATE_APPLICATION_STATUS_OPTIONS = CANDIDATE_APPLICATION_STATUS_LABEL_OPTIONS.filter(

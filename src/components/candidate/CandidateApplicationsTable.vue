@@ -376,7 +376,11 @@ const attachPreviewSource = (text, source) => {
 const withAuthHeaders = (headers = {}) => {
   const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
   const token = String(auth?.token || '').trim()
-  return token ? { ...headers, Authorization: `Bearer ${token}` } : { ...headers }
+  const date = new Date()
+  const pad = (value) => String(value).padStart(2, '0')
+  const clientTime = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  const baseHeaders = { ...headers, 'X-HRAI-Client-Time': clientTime }
+  return token ? { ...baseHeaders, Authorization: `Bearer ${token}` } : baseHeaders
 }
 
 const getStatusHistoryOperator = (history) => history?.operatorUser || history?.operator || null
@@ -1159,7 +1163,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="card applications-card">
     <div class="card-header">
-      <div>
+      <div class="table-title-block">
         <h3>{{ title }}</h3>
         <p v-if="subtitle" class="subtle">{{ subtitle }}</p>
       </div>
@@ -1668,6 +1672,20 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.table-title-block {
+  flex: 0 0 auto;
+  max-width: min(280px, 100%);
+}
+
+.table-title-block h3 {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.table-title-block .subtle {
+  margin-top: 0.25rem;
+}
+
 .table-search-wrap {
   flex: 0 1 340px;
   width: min(340px, 100%);
@@ -1684,6 +1702,7 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   gap: 0.75rem;
   flex-wrap: wrap;
+  margin-left: auto;
   min-width: 0;
 }
 
@@ -1780,6 +1799,25 @@ onBeforeUnmount(() => {
   }
   100% {
     transform: scale(1);
+  }
+}
+
+@media (max-width: 720px) {
+  .card-header {
+    align-items: stretch;
+  }
+
+  .table-title-block,
+  .table-search-wrap,
+  .table-actions {
+    flex: 1 1 100%;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .table-actions {
+    margin-left: 0;
+    justify-content: flex-start;
   }
 }
 
