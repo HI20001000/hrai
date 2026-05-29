@@ -58,7 +58,15 @@ loadEnvFile(path.resolve(__dirname, '.env'))
 const APP_TIME_ZONE = process.env.HRAI_TIMEZONE || process.env.APP_TIMEZONE || 'Asia/Hong_Kong'
 process.env.TZ = APP_TIME_ZONE
 
-const PERMANENT_AUTH_EXPIRES_AT = new Date('9999-12-31T23:59:59.000Z')
+const MYSQL_MAX_DATETIME = '9999-12-31 23:59:59'
+const PERMANENT_AUTH_EXPIRES_AT = `${MYSQL_MAX_DATETIME.replace(' ', 'T')}+08:00`
+
+const formatSqlDateTime = (date) => {
+  const value = date instanceof Date ? date : new Date(date)
+  if (Number.isNaN(value.getTime())) return MYSQL_MAX_DATETIME
+  const pad = (number) => String(number).padStart(2, '0')
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())} ${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`
+}
 
 const resolveTokenTtlConfig = () => {
   const asMs = Number(process.env.AUTH_AUTO_LOGIN_TTL_MS || '')
@@ -597,17 +605,20 @@ const loginUser = async (pool, req, res) => {
   const token = createAuthToken()
   const expiresAt = TOKEN_TTL_CONFIG.permanent
     ? PERMANENT_AUTH_EXPIRES_AT
-    : new Date(Date.now() + TOKEN_TTL_CONFIG.ttlMs)
+    : new Date(Date.now() + TOKEN_TTL_CONFIG.ttlMs).toISOString()
+  const expiresAtSql = TOKEN_TTL_CONFIG.permanent
+    ? MYSQL_MAX_DATETIME
+    : formatSqlDateTime(expiresAt)
   await pool.query('DELETE FROM auth_tokens WHERE user_id = ? OR expires_at <= NOW()', [user.id])
   await pool.query('INSERT INTO auth_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)', [
     user.id,
     tokenDigest(token),
-    expiresAt,
+    expiresAtSql,
   ])
 
   sendJson(res, 200, {
     token,
-    expiresAt: expiresAt.toISOString(),
+    expiresAt,
     user: buildUserPayload(user),
   })
 }
@@ -6260,9 +6271,9 @@ const start = async () => {
       return await runWithLogContext({ requestId, user: logContextUser, method: req.method, path: url.pathname }, async () => {
       try {
       if (!(await enforceRoleAccess(pool, req, res, url))) return
-      if (url.pathname === '/api/auth/request-code' && req.method === 'POST') return requestCode(req, res)
-      if (url.pathname === '/api/auth/register' && req.method === 'POST') return registerUser(pool, req, res)
-      if (url.pathname === '/api/auth/login' && req.method === 'POST') return loginUser(pool, req, res)
+      if (url.pathname === '/api/auth/request-code' && req.method === 'POST') return await requestCode(req, res)
+      if (url.pathname === '/api/auth/register' && req.method === 'POST') return await registerUser(pool, req, res)
+      if (url.pathname === '/api/auth/login' && req.method === 'POST') return await loginUser(pool, req, res)
       if (url.pathname === '/api/auth/profile' && req.method === 'GET') return getMyProfile(pool, req, res)
       if (url.pathname === '/api/auth/profile' && req.method === 'POST') return updateMyProfile(pool, req, res)
       if (url.pathname === '/api/auth/change-password' && req.method === 'POST') return changeMyPassword(pool, req, res)

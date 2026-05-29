@@ -1,47 +1,25 @@
 import { h, shallowRef } from 'vue'
+import { getStoredAuth } from '../scripts/authState.js'
 import LoginView from '../views/Login.vue'
 import MainView from '../views/Main.vue'
 
 const routeRecords = [
-  { path: '/', name: 'login', component: LoginView },
-  { path: '/main', name: 'main', component: MainView },
+  { path: '/', name: 'login', component: LoginView, meta: { public: true } },
+  { path: '/main', name: 'main', component: MainView, meta: { requiresAuth: true } },
 ]
 
 const routes = new Map(routeRecords.map((route) => [route.path, route.component]))
 
 const resolveRoute = (path) => routeRecords.find((route) => route.path === path) || routeRecords[0]
 
-const parseJsonSafe = (value) => {
-  try {
-    return JSON.parse(String(value || '{}'))
-  } catch {
-    return null
-  }
-}
-
-const clearAuthState = () => {
-  window.localStorage.removeItem('innerai_auth')
-  window.localStorage.removeItem('innerai_user')
-}
-
 const isAuthValid = () => {
-  const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
-  const token = String(auth?.token || '').trim()
-  if (!token) return false
-
-  const expiresAtMs = Date.parse(String(auth?.expiresAt || ''))
-  if (!Number.isFinite(expiresAtMs)) return false
-  if (Date.now() >= expiresAtMs) {
-    clearAuthState()
-    return false
-  }
-
-  return true
+  return !!getStoredAuth()
 }
 
 const normalizePath = (path) => {
   const nextPath = routes.has(path) ? path : '/'
-  if (nextPath === '/main' && !isAuthValid()) return '/'
+  const route = resolveRoute(nextPath)
+  if (!route.meta?.public && !isAuthValid()) return '/'
   return nextPath
 }
 
@@ -66,6 +44,16 @@ const setRoute = (path, { replace = false } = {}) => {
   }
 }
 
+const syncCurrentRouteWithAuth = () => {
+  const normalizedPath = normalizePath(window.location.pathname || '/')
+  if (normalizedPath !== (window.location.pathname || '/')) {
+    window.history.replaceState({}, '', normalizedPath)
+  }
+  if (normalizedPath === currentPath.value) return
+  currentPath.value = normalizedPath
+  currentRoute.value = { path: normalizedPath, matched: [resolveRoute(normalizedPath)] }
+}
+
 const RouterView = {
   name: 'RouterView',
   setup() {
@@ -86,20 +74,20 @@ const router = {
     app.component('RouterView', RouterView)
     app.config.globalProperties.$router = router
     app.config.globalProperties.$route = currentRoute
-    window.addEventListener('popstate', () => {
-      const path = normalizePath(window.location.pathname || '/')
-      if (path !== (window.location.pathname || '/')) {
-        window.history.replaceState({}, '', path)
-      }
-      currentPath.value = path
-      currentRoute.value = { path, matched: [resolveRoute(path)] }
+    window.addEventListener('popstate', syncCurrentRouteWithAuth)
+    window.addEventListener('storage', (event) => {
+      if (event.key === 'innerai_auth' || event.key === 'innerai_user') syncCurrentRouteWithAuth()
     })
+    window.addEventListener('focus', syncCurrentRouteWithAuth)
   },
   getRoutes() {
     return routeRecords.map((route) => ({ ...route }))
   },
   push(path) {
     setRoute(path)
+  },
+  replace(path) {
+    setRoute(path, { replace: true })
   },
 }
 

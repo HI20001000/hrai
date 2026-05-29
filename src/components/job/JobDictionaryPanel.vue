@@ -221,6 +221,323 @@ const decodeDocumentBuffer = (buffer) => {
   return new TextDecoder('utf-8').decode(bytes)
 }
 
+const htmlToPlainText = (value) =>
+  decodeHtmlEntities(
+    String(value || '')
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+  )
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s+/g, '\n')
+    .trim()
+
+const normalizeTemplateText = (value) =>
+  normalizeText(value)
+    .replace(/\s+/g, '')
+    .replace(/[：:]/g, '')
+
+const isTemplateEmptyText = (value) => {
+  const text = normalizeTemplateText(value)
+  return !text || ['未填寫', '未填写', '-', '無', '无', 'N/A', 'NA'].includes(text.toUpperCase())
+}
+
+const extractHtmlTableRows = (html) => {
+  const rows = []
+  const rowRegex = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi
+  let rowMatch = null
+  while ((rowMatch = rowRegex.exec(String(html || '')))) {
+    const cells = []
+    const cellRegex = /<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/gi
+    let cellMatch = null
+    while ((cellMatch = cellRegex.exec(rowMatch[1]))) {
+      cells.push(htmlToPlainText(cellMatch[1]))
+    }
+    if (cells.length) rows.push(cells)
+  }
+  return rows
+}
+
+const extractHtmlSections = (html) => {
+  const sections = new Map()
+  const headingRegex = /<h2\b[^>]*>([\s\S]*?)<\/h2>/gi
+  const headings = []
+  let match = null
+  while ((match = headingRegex.exec(String(html || '')))) {
+    headings.push({
+      title: htmlToPlainText(match[1]),
+      contentStart: headingRegex.lastIndex,
+      headingStart: match.index,
+    })
+  }
+
+  headings.forEach((heading, index) => {
+    const contentEnd = headings[index + 1]?.headingStart ?? String(html || '').length
+    const key = normalizeTemplateText(heading.title)
+    if (key) sections.set(key, String(html || '').slice(heading.contentStart, contentEnd))
+  })
+  return sections
+}
+
+const findSectionHtml = (sections, labels) => {
+  const normalizedLabels = labels.map((label) => normalizeTemplateText(label)).filter(Boolean)
+  for (const [sectionTitle, sectionHtml] of sections.entries()) {
+    if (normalizedLabels.some((label) => sectionTitle.includes(label) || label.includes(sectionTitle))) {
+      return sectionHtml
+    }
+  }
+  return ''
+}
+
+const extractListItemsFromHtml = (html) => {
+  const items = []
+  const itemRegex = /<li\b[^>]*>([\s\S]*?)<\/li>/gi
+  let match = null
+  while ((match = itemRegex.exec(String(html || '')))) {
+    const item = htmlToPlainText(match[1])
+    if (!isTemplateEmptyText(item)) items.push(item)
+  }
+  if (items.length) return items
+
+  return htmlToPlainText(html)
+    .split(/[\n,，;；、|/]+/)
+    .map((item) => normalizeText(item))
+    .filter((item) => !isTemplateEmptyText(item))
+}
+
+const findTableValue = (rows, labels) => {
+  const normalizedLabels = labels.map((label) => normalizeTemplateText(label)).filter(Boolean)
+  for (const row of rows) {
+    const label = normalizeTemplateText(row[0])
+    if (!label) continue
+    if (normalizedLabels.some((item) => label.includes(item) || item.includes(label))) {
+      return normalizeText(row.slice(1).join(' '))
+    }
+  }
+  return ''
+}
+
+const extractFirstNumber = (value) => {
+  const match = String(value || '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)
+  return match ? Number(match[0]) : null
+}
+
+const extractSalaryRange = (value) => {
+  const numbers = Array.from(String(value || '').replace(/,/g, '').matchAll(/\d+(?:\.\d+)?/g))
+    .map((match) => Number(match[0]))
+    .filter((number) => Number.isFinite(number))
+  return {
+    min: numbers[0] ?? 0,
+    max: numbers[1] ?? numbers[0] ?? 0,
+  }
+}
+
+const normalizeDocumentJobTitle = (value) =>
+  normalizeText(value)
+    .replace(/\s*職位字典\s*$/i, '')
+    .replace(/\s*职位字典\s*$/i, '')
+    .trim()
+
+const extractFirstHeadingText = (html, tagName) => {
+  const match = String(html || '').match(new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i'))
+  return match ? htmlToPlainText(match[1]) : ''
+}
+
+const findWeightField = (label) => {
+  const target = normalizeTemplateText(label)
+  return WEIGHT_FIELDS.find((field) => {
+    const fieldLabel = normalizeTemplateText(field.label)
+    return target === fieldLabel || target.includes(fieldLabel) || fieldLabel.includes(target)
+  })
+}
+
+const findLevelField = (label) => {
+  const target = normalizeTemplateText(label)
+  return LEVEL_FIELDS.find((level) => {
+    const levelLabel = normalizeTemplateText(level.label)
+    return target === levelLabel || target.includes(levelLabel) || levelLabel.includes(target)
+  })
+}
+
+const parseRubricCell = (value, level) => {
+  const text = normalizeText(value)
+  const scoreMatch = text.match(/(\d+(?:\.\d+)?)\s*分?/)
+  const score = scoreMatch ? Number(scoreMatch[1]) : level.defaultScore
+  const criteria = normalizeText(
+    text
+      .replace(/^\s*\d+(?:\.\d+)?\s*分\s*/i, '')
+      .replace(/^\s*\d+(?:\.\d+)?\s*/i, '')
+  )
+  return {
+    score: Number.isFinite(score) ? score : level.defaultScore,
+    criteria,
+  }
+}
+
+const parseVisibleJobDocument = (content) => {
+  const html = String(content || '')
+  const sections = extractHtmlSections(html)
+  const rows = extractHtmlTableRows(findSectionHtml(sections, ['基本資料', '基本资料'])) || []
+  const allRows = extractHtmlTableRows(html)
+
+  const titleFromTable = findTableValue(rows.length ? rows : allRows, ['職位名稱', '职位名称', '職位', '职位'])
+  const titleFromHeading = normalizeDocumentJobTitle(extractFirstHeadingText(html, 'h1') || extractFirstHeadingText(html, 'title'))
+  const jobTitle = normalizeText(titleFromTable) || titleFromHeading
+  if (!jobTitle) return null
+
+  const job = createEmptyJob(jobTitle)
+  job.title = jobTitle
+  job.jobKey = normalizeText(findTableValue(rows.length ? rows : allRows, ['職位編號 / jobKey', '職位編號', '职位编号', 'jobKey'])) || jobTitle
+  job.description = normalizeText(findTableValue(rows.length ? rows : allRows, ['職位描述', '职位描述', '描述']))
+
+  const workYears = extractFirstNumber(findTableValue(rows.length ? rows : allRows, ['最低工作年資', '最低工作年资', '工作年資', '工作年资']))
+  if (workYears !== null) {
+    job.minWorkYears = workYears
+    job.workYears = workYears
+  }
+
+  const gapLimit = extractFirstNumber(findTableValue(rows.length ? rows : allRows, ['空窗期上限', '空窗期']))
+  if (gapLimit !== null) job.employmentGapLimitMonths = normalizeEmploymentGapLimitMonths(gapLimit)
+
+  const salaryText = findTableValue(rows.length ? rows : allRows, ['薪資範圍', '薪资范围', '薪資', '薪资'])
+  if (salaryText) job.salaryRange = extractSalaryRange(salaryText)
+
+  const listSections = [
+    ['industry', ['行業背景', '行业背景']],
+    ['roleKeywords', ['職位關鍵字', '职位关键字', '關鍵字', '关键字']],
+    ['coreResponsibilities', ['核心職責', '核心职责']],
+    ['requiredSkills', ['必備技能', '必备技能']],
+    ['projectExperience', ['專案經驗', '專案經歷', '项目经验', '项目经历']],
+    ['preferredSkills', ['加分技能']],
+    ['certifications', ['證照', '证照']],
+    ['candidatePreference', ['候選人偏好', '候选人偏好']],
+  ]
+  for (const [fieldKey, labels] of listSections) {
+    const items = extractListItemsFromHtml(findSectionHtml(sections, labels))
+    if (items.length) job[fieldKey] = items
+  }
+
+  const weightRows = extractHtmlTableRows(findSectionHtml(sections, ['匹配權重', '匹配权重']))
+  const parsedWeights = {}
+  if (weightRows.length >= 2) {
+    const labels = weightRows[0]
+    const values = weightRows[1]
+    labels.forEach((label, index) => {
+      const field = findWeightField(label)
+      const percent = extractFirstNumber(values[index])
+      if (field && percent !== null) parsedWeights[field.key] = percent / 100
+    })
+  }
+  if (Object.keys(parsedWeights).length) {
+    job.weights = normalizeScoringWeightsForUi(parsedWeights)
+    job.weights = Object.fromEntries(
+      WEIGHT_FIELDS.map((field) => [field.key, Number(job.weights[field.key] || 0) / 100])
+    )
+  }
+
+  const rubricRows = extractHtmlTableRows(findSectionHtml(sections, ['量化評分標準', '量化评分标准', '評分標準', '评分标准']))
+  const parsedRubrics = {}
+  if (rubricRows.length >= 2) {
+    const header = rubricRows[0]
+    const levelByIndex = header.map((label) => findLevelField(label))
+    for (const row of rubricRows.slice(1)) {
+      const field = findWeightField(row[0])
+      if (!field) continue
+      parsedRubrics[field.key] = {}
+      row.slice(1).forEach((cell, cellIndex) => {
+        const level = levelByIndex[cellIndex + 1]
+        if (!level) return
+        parsedRubrics[field.key][level.key] = parseRubricCell(cell, level)
+      })
+    }
+  }
+  if (Object.keys(parsedRubrics).length) job.scoringRubrics = normalizeScoringRubricsForUi(parsedRubrics)
+
+  return {
+    jobTitle,
+    job,
+    hasWeights: Object.keys(parsedWeights).length > 0,
+    hasRubrics: Object.keys(parsedRubrics).length > 0,
+  }
+}
+
+const getNonEmptyList = (preferred, fallback) =>
+  Array.isArray(preferred) && preferred.length ? preferred : Array.isArray(fallback) ? fallback : []
+
+const mergeParsedJobDocument = (baseParsed, visibleParsed) => {
+  if (!baseParsed) return visibleParsed
+  if (!visibleParsed) return baseParsed
+
+  const baseJob = baseParsed.job || {}
+  const visibleJob = visibleParsed.job || {}
+  const jobTitle = normalizeText(visibleParsed.jobTitle || visibleJob.title || baseParsed.jobTitle || baseJob.title)
+  const mergedJob = {
+    ...createEmptyJob(jobTitle),
+    ...baseJob,
+    ...visibleJob,
+    jobKey: normalizeText(visibleJob.jobKey) || normalizeText(baseJob.jobKey) || jobTitle,
+    title: normalizeText(visibleJob.title) || normalizeText(baseJob.title) || jobTitle,
+    description: normalizeText(visibleJob.description) || normalizeText(baseJob.description),
+    industry: getNonEmptyList(visibleJob.industry, baseJob.industry),
+    roleKeywords: getNonEmptyList(visibleJob.roleKeywords, baseJob.roleKeywords),
+    coreResponsibilities: getNonEmptyList(visibleJob.coreResponsibilities, baseJob.coreResponsibilities),
+    requiredSkills: getNonEmptyList(visibleJob.requiredSkills, baseJob.requiredSkills),
+    projectExperience: getNonEmptyList(visibleJob.projectExperience, baseJob.projectExperience),
+    preferredSkills: getNonEmptyList(visibleJob.preferredSkills, baseJob.preferredSkills),
+    certifications: getNonEmptyList(visibleJob.certifications, baseJob.certifications),
+    candidatePreference: getNonEmptyList(visibleJob.candidatePreference, baseJob.candidatePreference),
+    salaryRange: {
+      min: Number(visibleJob.salaryRange?.min ?? baseJob.salaryRange?.min ?? 0),
+      max: Number(visibleJob.salaryRange?.max ?? baseJob.salaryRange?.max ?? 0),
+    },
+    weights: visibleParsed.hasWeights ? visibleJob.weights : baseJob.weights,
+    scoringRubrics: visibleParsed.hasRubrics ? visibleJob.scoringRubrics : baseJob.scoringRubrics,
+  }
+  mergedJob.minWorkYears = Number.isFinite(Number(visibleJob.minWorkYears))
+    ? Number(visibleJob.minWorkYears)
+    : Number(baseJob.minWorkYears || baseJob.workYears || 1)
+  mergedJob.workYears = mergedJob.minWorkYears
+  mergedJob.employmentGapLimitMonths = normalizeEmploymentGapLimitMonths(
+    visibleJob.employmentGapLimitMonths ?? baseJob.employmentGapLimitMonths
+  )
+
+  return { jobTitle, job: mergedJob }
+}
+
+const parseHiddenJobDocumentPayload = (text) => {
+  const base64Payload = extractMarkerPayload(
+    text,
+    'HRAI_JOB_DICTIONARY_JSON_BASE64_START',
+    'HRAI_JOB_DICTIONARY_JSON_BASE64_END'
+  )
+  let payloadText = ''
+  if (base64Payload) {
+    payloadText = decodeBase64Utf8(base64Payload.replace(/<[^>]*>/g, '').replace(/\s+/g, ''))
+  } else {
+    const legacyPayload = extractMarkerPayload(
+      text,
+      'HRAI_JOB_DICTIONARY_JSON_START',
+      'HRAI_JOB_DICTIONARY_JSON_END'
+    )
+    if (!legacyPayload) return null
+    payloadText = decodeHtmlEntities(legacyPayload)
+      .replace(/<[^>]*>/g, '')
+      .replace(/[\u0000-\u001F]+/g, '')
+  }
+
+  const parsed = JSON.parse(payloadText)
+  if (!parsed?.job || typeof parsed.job !== 'object') {
+    throw new Error('Word 檔內的職位資料格式不正確')
+  }
+  return {
+    jobTitle: normalizeText(parsed.jobTitle || parsed.job.title),
+    job: parsed.job,
+  }
+}
+
 const createEmptyJob = (title = '') => ({
   jobKey: normalizeText(title),
   title: normalizeText(title),
@@ -634,6 +951,23 @@ const parseUploadedJobDocument = (content) => {
     'HRAI_JOB_DICTIONARY_JSON_BASE64_START',
     'HRAI_JOB_DICTIONARY_JSON_BASE64_END'
   )
+
+  let baseParsed = null
+  let hiddenPayloadError = null
+  try {
+    baseParsed = parseHiddenJobDocumentPayload(text)
+  } catch (error) {
+    hiddenPayloadError = error
+  }
+  const visibleParsed = parseVisibleJobDocument(text)
+  const mergedParsed = mergeParsedJobDocument(baseParsed, visibleParsed)
+  if (mergedParsed?.job) {
+    const jobTitle = normalizeText(mergedParsed.jobTitle || mergedParsed.job.title)
+    const job = mergedParsed.job
+    validateJobDraft(jobTitle, job)
+    return { jobTitle, job }
+  }
+  if (hiddenPayloadError) throw hiddenPayloadError
 
   let payloadText = ''
   if (base64Payload) {
