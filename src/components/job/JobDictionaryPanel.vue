@@ -1591,6 +1591,7 @@ onMounted(() => {
   display: grid;
   align-content: start;
   gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   min-height: 0;
   overflow: visible;
 }
@@ -1600,8 +1601,29 @@ onMounted(() => {
   flex: 0 0 auto;
 }
 
-.editor-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.editor-grid .field {
+  min-width: 0;
+  align-content: start;
+}
+
+.editor-grid .field span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.editor-grid .field input,
+.editor-grid .field textarea {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.editor-grid .field input {
+  min-height: 46px;
+}
+
+.editor-grid .field textarea {
+  min-height: 96px;
+  max-height: 220px;
 }
 
 .full-width {
