@@ -1471,6 +1471,11 @@ onMounted(() => {
   color: var(--text-muted);
 }
 
+.dictionary-card {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
 .sidebar-header,
 .dictionary-create-row,
 .actions {
@@ -1493,17 +1498,22 @@ onMounted(() => {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   gap: 1rem;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .dictionary-sidebar,
 .dictionary-editor {
   padding: 0.9rem;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .job-list {
   display: grid;
+  align-content: start;
   gap: 0.55rem;
-  max-height: 460px;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -1536,6 +1546,7 @@ onMounted(() => {
 
 .dictionary-editor {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 1rem;
 }
 
@@ -1568,7 +1579,10 @@ onMounted(() => {
 
 .editor-grid {
   display: grid;
+  align-content: start;
   gap: 0.85rem;
+  min-height: 0;
+  overflow: auto;
 }
 
 .editor-grid {
@@ -1588,6 +1602,7 @@ onMounted(() => {
 }
 
 .rubric-table-wrap {
+  min-height: 0;
   overflow: auto;
   border: 1px solid var(--border-subtle);
   border-radius: 10px;

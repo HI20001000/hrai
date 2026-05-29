@@ -494,9 +494,12 @@ onUnmounted(() => {
 
 <style scoped>
 .job-post-page {
+  grid-template-rows: auto minmax(0, 1fr);
   color: var(--text-base);
   width: 100%;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .header-main,
@@ -517,6 +520,8 @@ onUnmounted(() => {
   gap: 1rem;
   grid-template-columns: minmax(290px, 360px) minmax(0, 1fr);
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .top-grid > * {
@@ -527,11 +532,15 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .job-post-list {
   display: grid;
   gap: 0.8rem;
+  min-height: 0;
+  overflow: auto;
 }
 
 .job-post-item {
@@ -577,6 +586,13 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 1rem;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.job-post-form-card :deep(.applications-card) {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .job-post-form-card > .card-header {
@@ -606,6 +622,13 @@ onUnmounted(() => {
 }
 
 @media (max-width: 1100px) {
+  .job-post-page,
+  .top-grid,
+  .job-post-list-card,
+  .job-post-form-card {
+    overflow: visible;
+  }
+
   .top-grid,
   .form-grid {
     grid-template-columns: 1fr;

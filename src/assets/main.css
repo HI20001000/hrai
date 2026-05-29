@@ -12,6 +12,7 @@
 .cv-page {
   display: grid;
   gap: var(--space-6);
+  min-height: 0;
 }
 
 .page-header,
@@ -37,6 +38,8 @@
   display: grid;
   align-self: start;
   gap: var(--space-4);
+  min-height: max-content;
+  overflow: visible;
 }
 
 .page-header h2 {
@@ -58,6 +61,7 @@
 .card {
   display: grid;
   gap: var(--space-4);
+  min-height: 0;
 }
 
 .card-header {
@@ -324,6 +328,7 @@
 
 .table-wrap {
   overflow: auto;
+  min-height: 0;
   border: 1px solid var(--border-subtle);
   border-radius: calc(var(--radius-md) - 4px);
   background: rgba(255, 255, 255, 0.72);

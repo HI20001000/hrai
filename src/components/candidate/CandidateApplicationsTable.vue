@@ -1649,7 +1649,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .applications-card {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  align-content: stretch;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .card-header {
@@ -1782,11 +1787,12 @@ onBeforeUnmount(() => {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  min-height: 0;
   overflow: auto;
 }
 
 .table-wrap-paginated {
-  max-height: var(--application-table-max-height);
+  max-height: min(var(--application-table-max-height), 100%);
 }
 
 .application-table {

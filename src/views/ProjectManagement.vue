@@ -964,7 +964,10 @@ onUnmounted(() => {
 
 <style scoped>
 .project-page {
+  grid-template-rows: auto minmax(0, 1fr);
   color: var(--text-base);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .header-main,
@@ -1013,10 +1016,18 @@ onUnmounted(() => {
   grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
+  min-height: 0;
+  overflow: auto;
 }
 
 .project-list-card {
   align-self: start;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.project-list-card .table-wrap {
+  min-height: 0;
 }
 
 .project-filters {

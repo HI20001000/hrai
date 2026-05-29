@@ -120,8 +120,10 @@ onUnmounted(() => {
 
 <style scoped>
 .main-layout {
+  height: 100dvh;
   min-height: 100vh;
   padding: 1rem;
+  overflow: hidden;
 }
 
 .layout-grid {
@@ -129,13 +131,15 @@ onUnmounted(() => {
   grid-template-columns: minmax(240px, 272px) minmax(0, 1fr);
   gap: 1rem;
   width: 100%;
-  min-height: calc(100vh - 2rem);
+  height: calc(100dvh - 2rem);
+  min-height: 0;
   margin: 0 auto;
+  overflow: hidden;
 }
 
 .nav-column {
   min-width: 0;
-  min-height: 100%;
+  min-height: 0;
   display: flex;
   align-self: stretch;
 }
@@ -144,7 +148,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .content-frame {
@@ -153,17 +158,58 @@ onUnmounted(() => {
   flex: 1 1 auto;
   gap: 1rem;
   min-width: 0;
-  min-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-dictionary-page {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 1rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-dictionary-page :deep(.dictionary-card) {
+  min-height: 0;
+}
+
+.content-frame :deep(.app-page),
+.content-frame :deep(.settings-page),
+.content-frame :deep(.job-post-page),
+.content-frame :deep(.job-apply-page),
+.content-frame :deep(.cv-page),
+.content-frame :deep(.candidate-page),
+.content-frame :deep(.schedule-page),
+.content-frame :deep(.arranged-page),
+.content-frame :deep(.project-page),
+.content-frame :deep(.blacklist-page),
+.content-frame :deep(.directory-page),
+.content-frame :deep(.personnel-page),
+.content-frame :deep(.user-role-page),
+.content-frame :deep(.settings-dictionary-page) {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 @media (max-width: 1024px) {
   .main-layout {
     padding: 0.9rem;
+    overflow: auto;
   }
 
   .layout-grid {
     grid-template-columns: minmax(0, 1fr);
-    min-height: calc(100vh - 1.8rem);
+    height: auto;
+    min-height: calc(100dvh - 1.8rem);
+    overflow: visible;
+  }
+
+  .main-content,
+  .content-frame {
+    overflow: visible;
   }
 }
 
@@ -173,7 +219,7 @@ onUnmounted(() => {
   }
 
   .layout-grid {
-    min-height: calc(100vh - 1.5rem);
+    min-height: calc(100dvh - 1.5rem);
   }
 }
 </style>

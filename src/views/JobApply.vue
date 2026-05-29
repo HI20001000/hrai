@@ -204,8 +204,11 @@ onMounted(async () => {
 
 <style scoped>
 .job-apply-page {
+  grid-template-rows: auto minmax(0, 1fr);
   color: var(--text-base);
   gap: 0.8rem;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .page-header,
@@ -221,12 +224,16 @@ onMounted(async () => {
   display: grid;
   gap: 1rem;
   grid-template-columns: minmax(290px, 360px) minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .list-card {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .search-input {
@@ -237,6 +244,8 @@ onMounted(async () => {
 .snapshot-sections {
   display: grid;
   gap: 0.8rem;
+  min-height: 0;
+  overflow: auto;
 }
 
 .job-post-item {

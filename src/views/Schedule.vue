@@ -436,7 +436,10 @@ watch(selectedUserId, async (next, previous) => {
 <style scoped>
 .schedule-page {
   display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 1rem;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .page-header,
@@ -550,22 +553,31 @@ watch(selectedUserId, async (next, previous) => {
   display: grid;
   grid-template-columns: minmax(300px, 0.95fr) minmax(420px, 1.05fr);
   gap: 1rem;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .task-panel,
 .calendar-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
+  min-height: 0;
   padding: 1.1rem;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.88);
   box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
 .task-list {
   display: grid;
+  align-content: start;
   gap: 0.75rem;
+  min-height: 0;
   margin-top: 1rem;
+  overflow: auto;
 }
 
 .task-item {
@@ -656,8 +668,11 @@ watch(selectedUserId, async (next, previous) => {
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-auto-rows: minmax(66px, 1fr);
   gap: 0.45rem;
+  min-height: 0;
   margin-top: 1rem;
+  overflow: auto;
 }
 
 .weekday {
@@ -746,6 +761,13 @@ watch(selectedUserId, async (next, previous) => {
 }
 
 @media (max-width: 1180px) {
+  .schedule-page,
+  .schedule-layout,
+  .task-panel,
+  .calendar-panel {
+    overflow: visible;
+  }
+
   .status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

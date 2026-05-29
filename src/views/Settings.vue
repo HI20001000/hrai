@@ -401,7 +401,15 @@ onMounted(() => {
 
 <style scoped>
 .settings-page {
+  grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
   color: var(--text-base);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-page > .card {
+  min-height: 0;
+  overflow: auto;
 }
 
 .settings-hero {

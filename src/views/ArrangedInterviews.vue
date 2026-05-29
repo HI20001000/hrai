@@ -1177,7 +1177,10 @@ onBeforeUnmount(() => {
 <style scoped>
 .arranged-page {
   display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 1rem;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .page-header,
@@ -1209,13 +1212,16 @@ onBeforeUnmount(() => {
 
 .interview-card {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 1rem;
   min-width: 0;
+  min-height: 0;
   padding: 1rem;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.9);
   box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
 .tool-controls {
@@ -1240,6 +1246,7 @@ onBeforeUnmount(() => {
 }
 
 .table-wrap {
+  min-height: 0;
   overflow: auto;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 14px;
@@ -1658,6 +1665,11 @@ li.current .history-main strong {
 }
 
 @media (max-width: 900px) {
+  .arranged-page,
+  .interview-card {
+    overflow: visible;
+  }
+
   .page-header,
   .table-tools,
   .tool-controls {

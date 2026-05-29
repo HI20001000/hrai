@@ -309,7 +309,10 @@ onMounted(async () => {
 
 <style scoped>
 .directory-page {
+  grid-template-rows: auto minmax(0, 1fr);
   color: var(--text-base);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .header-main,
@@ -324,6 +327,17 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.95fr);
   gap: 1rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.directory-grid > .card {
+  min-height: 0;
+  overflow: auto;
+}
+
+.directory-grid .table-wrap {
+  min-height: 0;
 }
 
 .directory-actions {

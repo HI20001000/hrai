@@ -1987,8 +1987,20 @@ onUnmounted(() => {
 .candidate-page,
 .candidate-detail-stack {
   display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 0.9rem;
+  min-height: 0;
   color: var(--text-base);
+  overflow: hidden;
+}
+
+.candidate-page :deep(.applications-card) {
+  min-height: 0;
+}
+
+.candidate-detail-stack {
+  overflow: auto;
+  align-content: start;
 }
 
 .header-main,

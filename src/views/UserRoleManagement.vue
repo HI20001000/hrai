@@ -267,8 +267,11 @@ onMounted(() => {
 <style scoped>
 .user-role-page {
   display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: var(--space-6);
   color: var(--text-base);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .user-role-hero {
@@ -283,6 +286,16 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.8rem;
+  min-height: 0;
+}
+
+.user-role-page > .card {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.user-role-page .table-wrap {
+  min-height: 0;
 }
 
 .role-card {
