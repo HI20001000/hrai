@@ -40,13 +40,13 @@ const normalizeList = (value, limit = 20) => {
 const normalizeScore = (value) => Math.max(0, Math.min(100, Math.round(Number(value || 0))))
 const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value)
 const DEFAULT_EMPLOYMENT_GAP_LIMIT_MONTHS = 5
-const EMPLOYMENT_GAP_ABNORMAL_THRESHOLD_MONTHS = 3
+const EMPLOYMENT_GAP_LIST_THRESHOLD_MONTHS = 1
 
 const getJobOutputKey = (dictionaryKey, job = {}) => normalizeText(job?.jobKey) || normalizeText(dictionaryKey)
 const getJobTitle = (dictionaryKey, job = {}) => normalizeText(job?.title) || normalizeText(dictionaryKey)
 const normalizeEmploymentGapLimitMonths = (value) => {
   const numericValue = Number(value)
-  if (!Number.isFinite(numericValue) || numericValue < 0) return DEFAULT_EMPLOYMENT_GAP_LIMIT_MONTHS
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return DEFAULT_EMPLOYMENT_GAP_LIMIT_MONTHS
   return Math.round(numericValue)
 }
 
@@ -178,13 +178,13 @@ const findLatestCompanyEmploymentEndMonth = (extracted = {}) => {
 }
 
 const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) => {
-  const dictionaryLimitMonths = normalizeEmploymentGapLimitMonths(job?.employmentGapLimitMonths)
-  const limitMonths = EMPLOYMENT_GAP_ABNORMAL_THRESHOLD_MONTHS
+  const limitMonths = normalizeEmploymentGapLimitMonths(job?.employmentGapLimitMonths)
+  const gapThresholdMonths = EMPLOYMENT_GAP_LIST_THRESHOLD_MONTHS
   const currentMonth = getCurrentMonthIndex(now)
-  const threeYearsAgoMonth = currentMonth - 35
+  const lookbackStartMonth = currentMonth - Math.max(limitMonths - 1, 0)
   const employmentRanges = findCompanyEmploymentRanges(extracted)
   const relevantRanges = employmentRanges
-    .filter((range) => range.endMonth >= threeYearsAgoMonth && range.startMonth <= currentMonth)
+    .filter((range) => range.endMonth >= lookbackStartMonth && range.startMonth <= currentMonth)
     .sort((a, b) => a.startMonth - b.startMonth || a.endMonth - b.endMonth)
 
   if (!relevantRanges.length) {
@@ -193,12 +193,13 @@ const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) =>
       exceeded: false,
       months: null,
       limitMonths,
-      dictionaryLimitMonths,
+      gapThresholdMonths,
+      lookbackStartMonth: formatYearMonthLabel(lookbackStartMonth),
       latestEmploymentEnd: '',
       currentSystemMonth: formatYearMonthLabel(currentMonth),
       durationLabel: '',
       gaps: [],
-      summary: `未能從 CV 中識別近三年內的正式工作經歷區間，暫無法列明經歷之間的空窗期。`,
+      summary: `未能從 CV 中識別近 ${limitMonths} 個月內的正式工作經歷區間，暫無法列明經歷之間的空窗期。`,
     }
   }
 
@@ -208,12 +209,13 @@ const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) =>
       exceeded: false,
       months: 0,
       limitMonths,
-      dictionaryLimitMonths,
+      gapThresholdMonths,
+      lookbackStartMonth: formatYearMonthLabel(lookbackStartMonth),
       latestEmploymentEnd: formatYearMonthLabel(findLatestCompanyEmploymentEndMonth(extracted)?.endMonth || relevantRanges[0].endMonth),
       currentSystemMonth: formatYearMonthLabel(currentMonth),
       durationLabel: '',
       gaps: [],
-      summary: `近三年內僅識別到 1 段正式工作經歷，未進行工作經歷之間的空窗期計算。`,
+      summary: `近 ${limitMonths} 個月內僅識別到 1 段正式工作經歷，未進行工作經歷之間的空窗期計算。`,
     }
   }
 
@@ -225,10 +227,10 @@ const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) =>
       continue
     }
 
-    const gapStartMonth = Math.max(previous.endMonth + 1, threeYearsAgoMonth)
+    const gapStartMonth = Math.max(previous.endMonth + 1, lookbackStartMonth)
     const gapEndMonth = Math.min(current.startMonth - 1, currentMonth)
     const gapMonths = gapEndMonth >= gapStartMonth ? gapEndMonth - gapStartMonth + 1 : 0
-    if (gapMonths > EMPLOYMENT_GAP_ABNORMAL_THRESHOLD_MONTHS) {
+    if (gapMonths > EMPLOYMENT_GAP_LIST_THRESHOLD_MONTHS) {
       gaps.push({
         startMonth: formatYearMonthLabel(gapStartMonth),
         endMonth: formatYearMonthLabel(gapEndMonth),
@@ -257,7 +259,8 @@ const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) =>
     exceeded,
     months: gapMonths,
     limitMonths,
-    dictionaryLimitMonths,
+    gapThresholdMonths,
+    lookbackStartMonth: formatYearMonthLabel(lookbackStartMonth),
     latestEmploymentEnd: formatYearMonthLabel(findLatestCompanyEmploymentEndMonth(extracted)?.endMonth || relevantRanges[relevantRanges.length - 1].endMonth),
     currentSystemMonth,
     durationLabel,
@@ -267,13 +270,13 @@ const buildEmploymentGapReport = (extracted = {}, job = {}, now = new Date()) =>
   if (!gaps.length) {
     return {
       ...base,
-      summary: `近三年內未識別到超過 ${EMPLOYMENT_GAP_ABNORMAL_THRESHOLD_MONTHS} 個月的正式工作經歷間隔。`,
+      summary: `近 ${limitMonths} 個月內未識別到超過 ${EMPLOYMENT_GAP_LIST_THRESHOLD_MONTHS} 個月的正式工作經歷間隔。`,
     }
   }
 
   return {
     ...base,
-    summary: `近三年內識別到 ${gaps.length} 段超過 ${EMPLOYMENT_GAP_ABNORMAL_THRESHOLD_MONTHS} 個月的工作經歷間隔，最長為 ${durationLabel}，建議面試中確認原因與期間安排。`,
+    summary: `近 ${limitMonths} 個月內識別到 ${gaps.length} 段超過 ${EMPLOYMENT_GAP_LIST_THRESHOLD_MONTHS} 個月的工作經歷間隔，最長為 ${durationLabel}，建議面試中確認原因與期間安排。`,
   }
 }
 
