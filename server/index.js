@@ -116,7 +116,7 @@ const DB_NAME = getDatabaseName()
 const withCors = (res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-InnerAI-Auth-Token')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-InnerAI-Auth-Token, X-HRAI-Client-Time')
 }
 
 const sendJson = (res, status, payload) => {
