@@ -1553,11 +1553,12 @@ onMounted(() => {
 }
 
 .dictionary-editor {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 0.9fr) minmax(0, 1.1fr) auto;
   gap: 1rem;
-  max-height: 100%;
-  overflow: auto;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .editor-header {
@@ -1593,12 +1594,22 @@ onMounted(() => {
   gap: 0.85rem;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   min-height: 0;
-  overflow: visible;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.25rem;
 }
 
-.weight-section,
+.weight-section {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
 .dictionary-editor > .actions {
-  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 0;
 }
 
 .editor-grid .field {
@@ -1641,6 +1652,7 @@ onMounted(() => {
 .rubric-table-wrap {
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
   background: #ffffff;
