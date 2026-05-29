@@ -4,6 +4,7 @@ import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import AppSelect from '../components/AppSelect.vue'
 import MatchDimensionBreakdown from '../components/MatchDimensionBreakdown.vue'
 import CandidateApplicationsTable from '../components/candidate/CandidateApplicationsTable.vue'
+import CandidateApplicationStatusModal from '../components/candidate/CandidateApplicationStatusModal.vue'
 import CandidateCvUploadModal from '../components/candidate/CandidateCvUploadModal.vue'
 import {
   CANDIDATE_APPLICATION_STATUS_OPTIONS,
@@ -657,6 +658,16 @@ const openApplicationStatusModal = async (row) => {
   isStatusModalOpen.value = true
   await loadApplicationDetail(applicationId, 'list')
   startNewStatusHistoryDraft()
+}
+
+const handleApplicationStatusModalSaved = async (payload = {}) => {
+  message.value = payload?.message || '已更新狀態記錄'
+  await loadApplicationTable()
+  if (activeApplicationId.value) {
+    await loadApplicationDetail(activeApplicationId.value, 'list')
+  }
+  window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
+  window.dispatchEvent(new CustomEvent('hrai-interviews-updated'))
 }
 
 const closeApplicationStatusModal = () => {
@@ -1668,7 +1679,16 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="isStatusModalOpen" class="modal-backdrop" @click.self="closeApplicationStatusModal">
+    <CandidateApplicationStatusModal
+      v-model="isStatusModalOpen"
+      :application="activeApplication"
+      :user-options="userOptions"
+      initial-edit-mode="new"
+      @saved="handleApplicationStatusModalSaved"
+      @notify="message = $event"
+    />
+
+    <div v-if="false && isStatusModalOpen" class="modal-backdrop" @click.self="closeApplicationStatusModal">
       <div class="modal-panel status-modal">
         <header class="modal-header">
           <div>

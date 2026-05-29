@@ -1997,6 +1997,7 @@ const normalizeCvSource = (value) => {
 const detectCvSourceFromFileName = (fileName = '') => {
   const text = normalizeText(fileName)
   if (!text) return ''
+  if (/boss/i.test(text)) return 'BOSS'
   if (/(智联简历|智聯簡歷)/.test(text)) return '智聯'
   if (/(内推|內推)/.test(text)) return '內推'
   if (/^[A-Za-z]?\s*【[^】]+[_＿][^】]+】\s*[^\\/]+?\.(pdf|docx?|txt)$/i.test(text)) return 'BOSS'

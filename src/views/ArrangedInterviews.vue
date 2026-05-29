@@ -5,6 +5,7 @@ import { handleUnauthorizedResponse, requireAuthToken, withAuthHeaders } from '.
 import { normalizeSearchText } from '../scripts/searchNormalize.js'
 import AppSelect from '../components/AppSelect.vue'
 import CandidateColumnFilter from '../components/candidate/CandidateColumnFilter.vue'
+import CandidateApplicationStatusModal from '../components/candidate/CandidateApplicationStatusModal.vue'
 import { CV_SOURCE_OPTIONS, normalizeCvSource } from '../scripts/cvSource.js'
 import {
   CANDIDATE_APPLICATION_STATUS_OPTIONS,
@@ -35,6 +36,7 @@ const searchKeyword = ref('')
 const jobFilter = ref('')
 const sourceFilter = ref('')
 const interviewDateFilter = ref('')
+const interviewTimeSort = ref('')
 const interviewerFilter = ref('')
 const ownerFilter = ref('')
 const applicationStatusFilter = ref('')
@@ -184,6 +186,11 @@ const applicationStatusFilterOptions = computed(() => [
 ])
 
 const interviewResultFilterOptions = computed(() => [{ value: '', label: '全部' }, ...INTERVIEW_STATUS_OPTIONS])
+
+const interviewTimeSortOptions = [
+  { value: 'asc', label: '面試時間升序' },
+  { value: 'desc', label: '面試時間降序' },
+]
 
 const interviewerFilterOptions = computed(() => {
   const seen = new Set()
@@ -350,7 +357,8 @@ const filteredInterviews = computed(() => {
   const selectedOwner = normalizeFilterText(ownerFilter.value)
   const selectedApplicationStatus = normalizeCandidateApplicationStatus(applicationStatusFilter.value, '')
   const selectedInterviewResult = normalizeInterviewStatus(interviewResultFilter.value, '')
-  return interviews.value.filter((row) => {
+  const selectedTimeSort = normalizeFilterText(interviewTimeSort.value)
+  const rows = interviews.value.filter((row) => {
     const interview = row.interview || {}
     if (selectedJob && normalizeFilterText(row.jobPostTitle) !== selectedJob) return false
     if (selectedSource && normalizeCvSource(row.source) !== selectedSource) return false
@@ -382,6 +390,14 @@ const filteredInterviews = computed(() => {
       formatTimeRange(interview),
     ].join(' '))
     return haystack.includes(keyword)
+  })
+  if (!selectedTimeSort) return rows
+
+  return [...rows].sort((a, b) => {
+    const aTime = parseDateTime(a.interview?.scheduledAt)?.getTime() ?? Number.MAX_SAFE_INTEGER
+    const bTime = parseDateTime(b.interview?.scheduledAt)?.getTime() ?? Number.MAX_SAFE_INTEGER
+    const result = aTime - bTime || Number(a.statusHistoryId || 0) - Number(b.statusHistoryId || 0)
+    return selectedTimeSort === 'desc' ? -result : result
   })
 })
 
@@ -561,6 +577,13 @@ const closeApplicationStatusModal = () => {
   applicationStatusModalError.value = ''
   activeStatusApplication.value = null
   editingStatusHistoryId.value = 0
+}
+
+const handleApplicationStatusSaved = async (payload = {}) => {
+  await loadInterviews()
+  window.dispatchEvent(new CustomEvent('hrai-applications-updated'))
+  window.dispatchEvent(new CustomEvent('hrai-interviews-updated'))
+  message.value = payload?.message || '已更新候選人狀態'
 }
 
 const handleDurationModeChange = (value) => {
@@ -753,6 +776,12 @@ onBeforeUnmount(() => {
                     label="面試日期"
                     mode="date"
                   />
+                  <CandidateColumnFilter
+                    v-model="interviewTimeSort"
+                    filter-key="interview-time-sort"
+                    label="面試時間排序"
+                    :options="interviewTimeSortOptions"
+                  />
                 </div>
               </th>
               <th>區間</th>
@@ -897,7 +926,16 @@ onBeforeUnmount(() => {
       </div>
     </Teleport>
 
-    <div v-if="isApplicationStatusModalOpen" class="modal-backdrop" @click.self="closeApplicationStatusModal">
+    <CandidateApplicationStatusModal
+      v-model="isApplicationStatusModalOpen"
+      :application="activeStatusApplication"
+      :user-options="userOptions"
+      initial-edit-mode="current"
+      @saved="handleApplicationStatusSaved"
+      @notify="message = $event"
+    />
+
+    <div v-if="false && isApplicationStatusModalOpen" class="modal-backdrop" @click.self="closeApplicationStatusModal">
       <section class="modal-panel interview-status-modal">
         <header class="modal-header">
           <div>
