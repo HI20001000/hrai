@@ -502,8 +502,11 @@ watch(selectedUserId, async (next, previous) => {
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
   gap: 0.9rem;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
 }
 
 .status-card {
@@ -781,10 +784,6 @@ watch(selectedUserId, async (next, previous) => {
     overflow: visible;
   }
 
-  .status-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .schedule-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -792,7 +791,7 @@ watch(selectedUserId, async (next, previous) => {
 
 @media (max-width: 720px) {
   .status-grid {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(6, minmax(118px, 1fr));
   }
 
   .task-item {

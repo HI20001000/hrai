@@ -77,7 +77,7 @@
 
 html {
   color-scheme: light;
-  font-size: clamp(10px, calc(9px + 0.12vw), 12px);
+  font-size: clamp(11px, calc(10.2px + 0.136vw), 13.6px);
 }
 
 body {
@@ -89,7 +89,7 @@ body {
     radial-gradient(circle at top right, var(--bg-glow-cyan), transparent 22%),
     linear-gradient(180deg, #f8fafc 0%, var(--bg-canvas) 100%);
   font-family: var(--font-sans);
-  font-size: 0.9375rem;
+  font-size: 1.125rem;
   line-height: 1.6;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
