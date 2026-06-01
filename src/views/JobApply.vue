@@ -245,6 +245,13 @@ onMounted(async () => {
   overflow: hidden;
 }
 
+.detail-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+}
+
 .search-input {
   width: min(260px, 100%);
 }
