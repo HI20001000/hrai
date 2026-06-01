@@ -32,7 +32,7 @@ const isSaving = ref(false)
 const deletingHistoryIds = ref([])
 const errorMessage = ref('')
 const editingStatusHistoryId = ref(0)
-const statusDraft = ref('screening')
+const statusDraft = ref('')
 const remarkDraft = ref('')
 const interviewScheduledAtDraft = ref('')
 const interviewDurationModeDraft = ref('30')
@@ -101,18 +101,16 @@ const activeStatusHistory = computed(() => {
   const history = Array.isArray(activeApplication.value?.statusHistory)
     ? activeApplication.value.statusHistory
     : []
-  if (history.length) return history
-  if (!activeApplication.value) return []
-  return [
-    {
-      id: 0,
-      applicationStatus: activeApplication.value.applicationStatus,
-      interview: activeApplication.value.interview,
-      remark: activeApplication.value.remark,
-      createdAt: activeApplication.value.createdAt,
-      updatedAt: activeApplication.value.updatedAt || activeApplication.value.createdAt,
-    },
-  ]
+  return history
+    .filter((item) => normalizeCandidateApplicationStatus(item?.applicationStatus, ''))
+    .sort((left, right) => {
+      const leftTime = Date.parse(String(left?.updatedAt || left?.createdAt || ''))
+      const rightTime = Date.parse(String(right?.updatedAt || right?.createdAt || ''))
+      const normalizedLeftTime = Number.isFinite(leftTime) ? leftTime : 0
+      const normalizedRightTime = Number.isFinite(rightTime) ? rightTime : 0
+      if (normalizedRightTime !== normalizedLeftTime) return normalizedRightTime - normalizedLeftTime
+      return Number(right?.id || 0) - Number(left?.id || 0)
+    })
 })
 
 const selectedStatusHistory = computed(() =>
@@ -195,9 +193,19 @@ const applyInterviewDurationDraft = (minutes) => {
   interviewDurationModeDraft.value = getDurationMode(normalized)
 }
 
+const resetStatusDraftFields = () => {
+  statusDraft.value = ''
+  remarkDraft.value = ''
+  interviewScheduledAtDraft.value = ''
+  applyInterviewDurationDraft(30)
+  interviewerUserIdDraft.value = ''
+  interviewLocationDraft.value = ''
+  interviewStatusDraft.value = 'not_started'
+}
+
 const fillDraftFromSource = (source = {}) => {
   const interview = source?.interview || {}
-  statusDraft.value = normalizeCandidateApplicationStatus(source?.applicationStatus)
+  statusDraft.value = normalizeCandidateApplicationStatus(source?.applicationStatus, '')
   remarkDraft.value = String(source?.remark || '')
   interviewScheduledAtDraft.value = toDateTimeLocalValue(interview.scheduledAt) || getCurrentInterviewDateTimeMin()
   applyInterviewDurationDraft(interview.durationMinutes || 30)
@@ -208,11 +216,7 @@ const fillDraftFromSource = (source = {}) => {
 
 const startNewStatusHistoryDraft = () => {
   editingStatusHistoryId.value = 0
-  fillDraftFromSource({
-    applicationStatus: 'screening',
-    interview: { scheduledAt: getCurrentInterviewDateTimeMin(), durationMinutes: 30, status: 'not_started' },
-    remark: '',
-  })
+  resetStatusDraftFields()
 }
 
 const editStatusHistoryDraft = (history, { allowToggle = true } = {}) => {
@@ -229,7 +233,7 @@ const editStatusHistoryDraft = (history, { allowToggle = true } = {}) => {
 const editCurrentStatusHistoryDraft = () => {
   const latestHistory = activeStatusHistory.value[0] || null
   if (!latestHistory?.id) {
-    startNewStatusHistoryDraft()
+    resetStatusDraftFields()
     return
   }
   editStatusHistoryDraft(latestHistory, { allowToggle: false })
@@ -237,6 +241,7 @@ const editCurrentStatusHistoryDraft = () => {
 
 const loadApplicationDetail = async () => {
   const applicationId = Number(props.application?.applicationId || 0)
+  resetStatusDraftFields()
   if (!applicationId) return
   isLoading.value = true
   errorMessage.value = ''
@@ -268,6 +273,7 @@ const resetModalState = () => {
   activeApplication.value = null
   errorMessage.value = ''
   editingStatusHistoryId.value = 0
+  resetStatusDraftFields()
   interviewerAvailability.value = null
   interviewerAvailabilityStatus.value = ''
   interviewerAvailabilityMessage.value = ''
