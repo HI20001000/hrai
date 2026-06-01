@@ -38,6 +38,15 @@ const getStatusLabel = (status) => {
   return status || '--'
 }
 
+const fetchJobPostDetail = async (jobPost) => {
+  if (!jobPost?.id) return jobPost || null
+
+  const response = await fetch(`${apiBaseUrl}/api/job-posts/${jobPost.id}`)
+  const data = await response.json()
+  if (!response.ok) throw new Error(data.message || '讀取職位詳情失敗')
+  return data.jobPost || jobPost
+}
+
 const loadOpenJobPosts = async () => {
   isLoading.value = true
   try {
@@ -46,12 +55,15 @@ const loadOpenJobPosts = async () => {
     if (!response.ok) throw new Error(data.message || '讀取開放中的職位失敗')
 
     jobPosts.value = Array.isArray(data.jobPosts) ? data.jobPosts : []
+    const previousSelectedId = Number(selectedJobPost.value?.id || 0)
+    const nextSelected = previousSelectedId
+      ? jobPosts.value.find((item) => Number(item.id) === previousSelectedId)
+      : jobPosts.value[0]
+
+    selectedJobPost.value = nextSelected || jobPosts.value[0] || null
     if (selectedJobPost.value?.id) {
-      const nextSelected = jobPosts.value.find((item) => Number(item.id) === Number(selectedJobPost.value.id))
-      selectedJobPost.value = nextSelected || jobPosts.value[0] || null
-      return
+      selectedJobPost.value = await fetchJobPostDetail(selectedJobPost.value)
     }
-    selectedJobPost.value = jobPosts.value[0] || null
   } catch {
     message.value = '讀取開放中的職位失敗'
   } finally {
@@ -65,10 +77,7 @@ const selectJobPost = async (jobPost) => {
   if (!selectedJobPost.value?.id) return
 
   try {
-    const response = await fetch(`${apiBaseUrl}/api/job-posts/${selectedJobPost.value.id}`)
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.message || '讀取職位詳情失敗')
-    selectedJobPost.value = data.jobPost || selectedJobPost.value
+    selectedJobPost.value = await fetchJobPostDetail(selectedJobPost.value)
   } catch {
     message.value = '讀取職位詳情失敗'
   }
