@@ -610,8 +610,9 @@ onMounted(async () => {
 
 .directory-filters {
   display: grid;
-  grid-template-columns: minmax(220px, 0.78fr) minmax(168px, 180px) 72px;
-  align-items: stretch;
+  grid-template-columns: minmax(220px, 1fr) minmax(168px, 200px) minmax(92px, auto);
+  align-items: center;
+  grid-auto-rows: max-content;
   gap: 0.75rem;
   padding: 0.85rem;
   border: 1px solid var(--border-subtle);
@@ -623,19 +624,22 @@ onMounted(async () => {
 .directory-filters :deep(.app-select),
 .directory-filters .secondary-btn {
   min-width: 0;
+  width: 100%;
+  align-self: stretch;
 }
 
 .directory-filters .search-input,
 .directory-filters :deep(.app-select-trigger),
 .directory-filters .secondary-btn {
   min-height: 50px;
-  height: 50px;
+  height: auto;
 }
 
 .directory-filters .secondary-btn {
-  width: 72px;
   justify-content: center;
-  padding-inline: 0.7rem;
+  padding-inline: 0.9rem;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .directory-row {

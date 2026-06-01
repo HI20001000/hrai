@@ -349,7 +349,8 @@ onMounted(async () => {
 .directory-filters {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) minmax(168px, 200px) minmax(92px, auto);
-  align-items: stretch;
+  align-items: center;
+  grid-auto-rows: max-content;
   gap: 0.75rem;
   padding: 0.85rem;
   border: 1px solid var(--border-subtle);
@@ -361,12 +362,21 @@ onMounted(async () => {
 .directory-filters :deep(.app-select),
 .directory-filters .secondary-btn {
   min-width: 0;
+  width: 100%;
+  align-self: stretch;
 }
 
 .directory-filters .search-input,
 .directory-filters :deep(.app-select-trigger),
 .directory-filters .secondary-btn {
   min-height: 48px;
+  height: auto;
+}
+
+.directory-filters .secondary-btn {
+  padding-inline: 0.9rem;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .directory-row {
