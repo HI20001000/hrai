@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
+import { handleUnauthorizedResponse, withAuthHeaders } from '../scripts/authState.js'
 import AppSelect from '../components/AppSelect.vue'
 
 const pageMessage = ref('')
@@ -62,8 +63,12 @@ const toQueryString = (params) => {
 }
 
 const fetchJson = async (endpoint, options = {}) => {
-  const response = await fetch(endpoint, options)
+  const response = await fetch(endpoint, {
+    ...options,
+    headers: withAuthHeaders(options.headers || {}),
+  })
   const data = await response.json().catch(() => ({}))
+  if (handleUnauthorizedResponse(response)) throw new Error('登入已失效，請重新登入')
   if (!response.ok) throw new Error(data.message || 'Request failed')
   return data
 }
