@@ -260,6 +260,9 @@ const getInterviewSummaryText = (row) => {
   return '--'
 }
 
+const shouldShowStatusHistoryInterview = (history = {}) =>
+  isInterviewApplicationStatus(history?.applicationStatus) && getInterviewSummaryParts(history).length > 0
+
 const getRowStatusHistory = (row) => {
   const history = Array.isArray(row?.statusHistory) ? row.statusHistory : []
   if (history.length) return history
@@ -1611,7 +1614,7 @@ onBeforeUnmount(() => {
             <span class="history-dot" aria-hidden="true"></span>
             <span class="history-main">
               <strong>{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</strong>
-              <em v-if="getInterviewSummaryParts(history).length">
+              <em v-if="shouldShowStatusHistoryInterview(history)">
                 面試資訊：{{ getInterviewSummaryText(history) }}
               </em>
               <span v-if="String(history.remark || '').trim()" class="history-remark">{{ history.remark }}</span>
@@ -1653,9 +1656,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .applications-card {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  align-content: stretch;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1822,6 +1824,7 @@ onBeforeUnmount(() => {
 }
 
 .table-wrap {
+  flex: 1 1 auto;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -2769,12 +2772,14 @@ th.status-col {
 }
 
 .table-pagination {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
-  padding-top: 0.15rem;
+  min-height: 48px;
+  padding: 0.45rem 0 0;
 }
 
 .pagination-summary {

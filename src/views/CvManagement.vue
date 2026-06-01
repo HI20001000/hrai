@@ -204,6 +204,9 @@ const getInterviewSummaryParts = (interview) => {
 
 const getInterviewSummaryText = (interview) => getInterviewSummaryParts(interview).join('｜')
 
+const shouldShowStatusHistoryInterview = (history = {}) =>
+  isInterviewApplicationStatus(history?.applicationStatus) && Boolean(getInterviewSummaryText(history?.interview))
+
 const interviewerOptions = computed(() => [
   { value: '', label: '未指定' },
   ...userOptions.value.map((user) => ({
@@ -1608,7 +1611,7 @@ onUnmounted(() => {
               </div>
               <div class="timeline-content">
                 <p v-if="String(history.remark || '').trim()" class="timeline-remark">{{ history.remark }}</p>
-                <p v-if="getInterviewSummaryText(history.interview)" class="timeline-extra">
+                <p v-if="shouldShowStatusHistoryInterview(history)" class="timeline-extra">
                   面試資訊：{{ getInterviewSummaryText(history.interview) }}
                 </p>
                 <div class="timeline-meta-row">
@@ -1871,7 +1874,7 @@ onUnmounted(() => {
                 </div>
                 <div class="timeline-content">
                   <p v-if="String(history.remark || '').trim()" class="timeline-remark">{{ history.remark }}</p>
-                  <p v-if="getInterviewSummaryText(history.interview)" class="timeline-extra">
+                  <p v-if="shouldShowStatusHistoryInterview(history)" class="timeline-extra">
                     面試資訊：{{ getInterviewSummaryText(history.interview) }}
                   </p>
                   <div class="timeline-meta-row">

@@ -161,6 +161,12 @@ const getInterviewSummaryText = (interview = {}) => {
   return parts.filter(Boolean).join('｜')
 }
 
+const isInterviewApplicationStatus = (value) =>
+  ['hr_interview', 'department_interview'].includes(normalizeCandidateApplicationStatus(value, ''))
+
+const shouldShowStatusHistoryInterview = (history = {}) =>
+  isInterviewApplicationStatus(history?.applicationStatus) && Boolean(getInterviewSummaryText(history?.interview))
+
 const getStatusHistoryOperator = (history) => history?.operatorUser || history?.operator || null
 const getStatusHistoryOperatorName = (history) => {
   const operator = getStatusHistoryOperator(history)
@@ -644,7 +650,7 @@ onBeforeUnmount(() => {
                   </div>
                   <div class="timeline-content">
                     <p v-if="String(history.remark || '').trim()" class="timeline-remark">{{ history.remark }}</p>
-                    <p v-if="getInterviewSummaryText(history.interview)" class="timeline-extra">
+                    <p v-if="shouldShowStatusHistoryInterview(history)" class="timeline-extra">
                       面試資訊：{{ getInterviewSummaryText(history.interview) }}
                     </p>
                     <div class="timeline-meta-row">
