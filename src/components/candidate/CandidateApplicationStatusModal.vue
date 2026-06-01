@@ -44,11 +44,13 @@ const interviewerAvailability = ref(null)
 const interviewerAvailabilityStatus = ref('')
 const interviewerAvailabilityMessage = ref('')
 let availabilityLoadTimer = null
+let availabilityRequestSerial = 0
 
 const pad = (number) => String(number).padStart(2, '0')
 
 const parseDateTime = (value) => {
   if (!value) return null
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : new Date(value.getTime())
   const date = new Date(String(value).replace(' ', 'T'))
   return Number.isNaN(date.getTime()) ? null : date
 }
@@ -124,27 +126,82 @@ const selectedInterviewEndTime = computed(() => {
   return toDateTimeLocalValue(end)
 })
 
+const currentInterviewPreviewItem = computed(() => {
+  if (!isInterviewStatusDraft.value || !interviewScheduledAtDraft.value || !selectedInterviewEndTime.value) return null
+  return {
+    type: 'preview',
+    applicationId: activeApplication.value?.applicationId || 'current',
+    statusHistoryId: Number(editingStatusHistoryId.value || 0),
+    start: interviewScheduledAtDraft.value.replace('T', ' '),
+    end: selectedInterviewEndTime.value.replace('T', ' '),
+    durationMinutes: selectedInterviewDurationMinutes.value,
+    fullName: activeApplication.value?.fullName || '當前候選人',
+    jobPostTitle: activeApplication.value?.jobPostTitle || '',
+  }
+})
+
 const availabilityDateLabel = computed(() => {
   const dateKey = toDateKey(interviewScheduledAtDraft.value)
   return dateKey ? `${dateKey} 空閒時段` : ''
 })
 
+const toAvailabilityDateTime = (value) => toDateTimeLocalValue(value).replace('T', ' ')
+
+const minutesBetweenDates = (start, end) =>
+  Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000))
+
+const splitFreeSlotAroundPreview = (slot, previewItem) => {
+  if (!previewItem) return [{ ...slot, type: 'free' }]
+  const slotStart = parseDateTime(slot?.start)
+  const slotEnd = parseDateTime(slot?.end)
+  const previewStart = parseDateTime(previewItem.start)
+  const previewEnd = parseDateTime(previewItem.end)
+  if (!slotStart || !slotEnd || !previewStart || !previewEnd || previewEnd <= slotStart || previewStart >= slotEnd) {
+    return [{ ...slot, type: 'free' }]
+  }
+
+  const segments = []
+  const beforeEnd = previewStart < slotEnd ? previewStart : slotEnd
+  if (slotStart < beforeEnd) {
+    segments.push({
+      ...slot,
+      type: 'free',
+      start: toAvailabilityDateTime(slotStart),
+      end: toAvailabilityDateTime(beforeEnd),
+      durationMinutes: minutesBetweenDates(slotStart, beforeEnd),
+    })
+  }
+
+  const afterStart = previewEnd > slotStart ? previewEnd : slotStart
+  if (afterStart < slotEnd) {
+    segments.push({
+      ...slot,
+      type: 'free',
+      start: toAvailabilityDateTime(afterStart),
+      end: toAvailabilityDateTime(slotEnd),
+      durationMinutes: minutesBetweenDates(afterStart, slotEnd),
+    })
+  }
+
+  return segments
+}
+
 const availabilityTimelineItems = computed(() => {
-  const items = Array.isArray(interviewerAvailability.value?.items) ? interviewerAvailability.value.items : []
-  if (!interviewScheduledAtDraft.value || !isInterviewStatusDraft.value) return items
-  const start = interviewScheduledAtDraft.value
-  const end = selectedInterviewEndTime.value
-  return [
-    {
-      type: 'preview',
-      start,
-      end,
-      durationMinutes: selectedInterviewDurationMinutes.value,
-      fullName: activeApplication.value?.fullName,
-      jobPostTitle: activeApplication.value?.jobPostTitle,
-    },
-    ...items,
-  ].sort((a, b) => String(a.start || '').localeCompare(String(b.start || '')))
+  const previewItem = currentInterviewPreviewItem.value
+  const freeSlots = Array.isArray(interviewerAvailability.value?.freeSlots)
+    ? interviewerAvailability.value.freeSlots.flatMap((slot) => splitFreeSlotAroundPreview(slot, previewItem))
+    : []
+  const booked = Array.isArray(interviewerAvailability.value?.booked)
+    ? interviewerAvailability.value.booked
+        .filter((slot) => Number(slot.statusHistoryId || 0) !== Number(previewItem?.statusHistoryId || 0))
+        .map((slot) => ({ ...slot, type: 'booked' }))
+    : []
+  const preview = previewItem ? [previewItem] : []
+  return [...freeSlots, ...booked, ...preview].sort((a, b) => {
+    const aTime = parseDateTime(a.start)?.getTime() || 0
+    const bTime = parseDateTime(b.start)?.getTime() || 0
+    return aTime - bTime
+  })
 })
 
 const getUserName = (user) => String(user?.username || user?.email || user?.mail || '').trim() || '--'
@@ -280,6 +337,7 @@ const resetModalState = () => {
   errorMessage.value = ''
   editingStatusHistoryId.value = 0
   resetStatusDraftFields()
+  availabilityRequestSerial += 1
   interviewerAvailability.value = null
   interviewerAvailabilityStatus.value = ''
   interviewerAvailabilityMessage.value = ''
@@ -389,6 +447,8 @@ const clearAvailabilityLoadTimer = () => {
 const loadInterviewerAvailability = async () => {
   const interviewerUserId = Number(interviewerUserIdDraft.value || 0)
   const dateKey = toDateKey(interviewScheduledAtDraft.value)
+  const durationMinutes = selectedInterviewDurationMinutes.value
+  const requestSerial = ++availabilityRequestSerial
   if (!props.modelValue || !isInterviewStatusDraft.value || !interviewerUserId || !dateKey) {
     interviewerAvailability.value = null
     interviewerAvailabilityStatus.value = ''
@@ -406,14 +466,23 @@ const loadInterviewerAvailability = async () => {
     const params = new URLSearchParams({
       interviewerUserId: String(interviewerUserId),
       date: dateKey,
-      durationMinutes: String(selectedInterviewDurationMinutes.value),
+      durationMinutes: String(durationMinutes),
       statusHistoryId: String(editingStatusHistoryId.value || 0),
     })
     const data = await fetchJson(`${apiBaseUrl}/api/schedule/interviewer-availability?${params.toString()}`)
+    if (
+      requestSerial !== availabilityRequestSerial ||
+      Number(interviewerUserIdDraft.value || 0) !== interviewerUserId ||
+      toDateKey(interviewScheduledAtDraft.value) !== dateKey ||
+      selectedInterviewDurationMinutes.value !== durationMinutes
+    ) {
+      return
+    }
     interviewerAvailability.value = data
     interviewerAvailabilityStatus.value = 'success'
     interviewerAvailabilityMessage.value = ''
   } catch (error) {
+    if (requestSerial !== availabilityRequestSerial) return
     interviewerAvailability.value = null
     interviewerAvailabilityStatus.value = 'error'
     interviewerAvailabilityMessage.value = error?.message || '讀取面試官空閒時段失敗'
@@ -476,6 +545,7 @@ watch(
     if (!props.modelValue) return
     if (!isInterviewStatusDraft.value) {
       clearAvailabilityLoadTimer()
+      availabilityRequestSerial += 1
       interviewerAvailability.value = null
       interviewerAvailabilityStatus.value = ''
       interviewerAvailabilityMessage.value = ''
