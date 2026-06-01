@@ -235,7 +235,8 @@ const getInterviewSummaryParts = (item) => {
   const hasInterviewInfo =
     Boolean(interview.scheduledAt || interview.location || interviewerName) ||
     String(interview.status || '').trim() === 'passed' ||
-    String(interview.status || '').trim() === 'failed'
+    String(interview.status || '').trim() === 'failed' ||
+    String(interview.status || '').trim() === 'no_show_or_unreachable'
   const parts = []
   if (interview.scheduledAt) parts.push(formatDateTime(interview.scheduledAt))
   if (hasInterviewInfo && interview.durationMinutes) parts.push(getInterviewDurationLabel(interview.durationMinutes))
@@ -1450,6 +1451,11 @@ onBeforeUnmount(() => {
 .interview-failed {
   color: #b91c1c;
   background: #fee2e2;
+}
+
+.interview-no_show_or_unreachable {
+  color: #9f1239;
+  background: #ffe4e6;
 }
 
 .status-history-popover {

@@ -25,6 +25,7 @@ const REMOVED_SELECTABLE_STATUS_VALUES = new Set([
   'screening_department_rejected',
   'hr_interview_rejected',
   'department_interview_rejected',
+  'no_show_or_unreachable',
 ])
 
 export const CANDIDATE_APPLICATION_STATUS_OPTIONS = CANDIDATE_APPLICATION_STATUS_LABEL_OPTIONS.filter(
@@ -48,6 +49,7 @@ export const INTERVIEW_STATUS_OPTIONS = [
   { value: 'ended', label: '已結束' },
   { value: 'passed', label: '通過' },
   { value: 'failed', label: '不通過' },
+  { value: 'no_show_or_unreachable', label: '面試不出現/聯繫不上' },
 ]
 
 export const INTERVIEW_DURATION_PRESET_OPTIONS = [

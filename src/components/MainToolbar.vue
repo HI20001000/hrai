@@ -286,7 +286,7 @@ onBeforeUnmount(() => {
   left: 1rem;
   z-index: 10000;
   display: flex;
-  width: 272px;
+  width: var(--nav-width);
   min-height: calc(100dvh - 2rem);
   margin-right: 1rem;
   overflow: visible;

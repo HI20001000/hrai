@@ -128,7 +128,7 @@ onUnmounted(() => {
 
 .layout-grid {
   display: grid;
-  grid-template-columns: minmax(240px, 272px) minmax(0, 1fr);
+  grid-template-columns: minmax(220px, var(--nav-width)) minmax(0, 1fr);
   gap: 1rem;
   width: 100%;
   height: calc(100dvh - 2rem);

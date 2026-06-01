@@ -192,7 +192,8 @@ const getInterviewSummaryParts = (interview) => {
   const hasInterviewInfo =
     Boolean(interview?.scheduledAt || interview?.location || interviewerName) ||
     String(interview?.status || '').trim() === 'passed' ||
-    String(interview?.status || '').trim() === 'failed'
+    String(interview?.status || '').trim() === 'failed' ||
+    String(interview?.status || '').trim() === 'no_show_or_unreachable'
   const parts = []
   if (interview?.scheduledAt) parts.push(formatDateTime(interview.scheduledAt))
   if (hasInterviewInfo && interview?.durationMinutes) parts.push(getInterviewDurationLabel(interview.durationMinutes))

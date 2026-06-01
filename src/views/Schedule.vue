@@ -174,6 +174,13 @@ const statusCards = computed(() => {
       description: '面試結果為不通過',
       tone: 'danger',
     },
+    {
+      key: 'noShow',
+      label: '未出現/失聯',
+      value: rows.filter((row) => hasScheduledTime(row) && getNormalizedInterviewStatus(row) === 'no_show_or_unreachable').length,
+      description: '面試結果為不出現或聯繫不上',
+      tone: 'danger',
+    },
   ]
 })
 
@@ -202,6 +209,7 @@ const filteredRelatedApplications = computed(() => {
     }
     if (activeRelatedFilter.value === 'passed') return interviewStatus === 'passed'
     if (activeRelatedFilter.value === 'failed') return interviewStatus === 'failed'
+    if (activeRelatedFilter.value === 'noShow') return interviewStatus === 'no_show_or_unreachable'
     return true
   })
 })
@@ -636,6 +644,11 @@ watch(selectedUserId, async (next, previous) => {
 .interview-failed {
   background: #fee2e2;
   color: #b91c1c;
+}
+
+.interview-no_show_or_unreachable {
+  background: #ffe4e6;
+  color: #9f1239;
 }
 
 .month-controls {

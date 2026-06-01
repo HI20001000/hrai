@@ -452,7 +452,7 @@
 
 @media (max-width: 720px) {
   body {
-    font-size: 14px;
+    font-size: 0.9375rem;
   }
 
   .page-header,

@@ -2311,14 +2311,22 @@ const APPLICATION_STATUS_VALUES = new Set([
 const INTERVIEW_APPLICATION_STATUS_VALUES = new Set(['hr_interview', 'department_interview'])
 const FIRST_INTERVIEW_ARRANGEMENT_VALUES = new Set(['can_invite', 'unsuitable'])
 const INTERVIEW_LOCATION_VALUES = new Set(['zhuhai', 'macau', 'online'])
-const INTERVIEW_STATUS_VALUES = new Set(['not_started', 'in_progress', 'ended', 'passed', 'failed'])
-const TERMINAL_INTERVIEW_STATUS_VALUES = new Set(['passed', 'failed'])
+const INTERVIEW_STATUS_VALUES = new Set([
+  'not_started',
+  'in_progress',
+  'ended',
+  'passed',
+  'failed',
+  'no_show_or_unreachable',
+])
+const TERMINAL_INTERVIEW_STATUS_VALUES = new Set(['passed', 'failed', 'no_show_or_unreachable'])
 const INTERVIEW_STATUS_LABELS = {
   not_started: '未開始',
   in_progress: '進行中',
   ended: '已結束',
   passed: '通過',
   failed: '不通過',
+  no_show_or_unreachable: '面試不出現/聯繫不上',
 }
 const DEFAULT_INTERVIEW_DURATION_MINUTES = 30
 const MIN_INTERVIEW_DURATION_MINUTES = 1
@@ -4916,6 +4924,7 @@ const listScheduleInterviews = async (pool, req, res, url) => {
     ).length,
     passed: scheduledApplications.filter((item) => item.interview.status === 'passed').length,
     failed: scheduledApplications.filter((item) => item.interview.status === 'failed').length,
+    noShowOrUnreachable: scheduledApplications.filter((item) => item.interview.status === 'no_show_or_unreachable').length,
   }
 
   sendJson(res, 200, {
@@ -4993,7 +5002,7 @@ const updateTemporalInterviewHistoryStatuses = async (pool) => {
           LIMIT 1
         )
       WHERE latest.interview_scheduled_at IS NOT NULL
-        AND (latest.interview_status IS NULL OR latest.interview_status NOT IN ('passed', 'failed'))`
+        AND (latest.interview_status IS NULL OR latest.interview_status NOT IN ('passed', 'failed', 'no_show_or_unreachable'))`
   )
 
   const now = new Date()
