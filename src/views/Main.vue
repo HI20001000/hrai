@@ -166,11 +166,13 @@ onUnmounted(() => {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 1rem;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
 
 .settings-dictionary-page :deep(.dictionary-card) {
+  height: 100%;
   min-height: 0;
 }
 

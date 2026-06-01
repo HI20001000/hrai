@@ -1473,6 +1473,7 @@ onMounted(() => {
 
 .dictionary-card {
   grid-template-rows: auto auto auto minmax(0, 1fr);
+  height: 100%;
   overflow: hidden;
 }
 
@@ -1488,9 +1489,8 @@ onMounted(() => {
   flex-direction: column;
   width: 100%;
   max-width: 100%;
-  max-height: 178px;
   margin-bottom: 0.9rem;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .dictionary-create-row input {
@@ -1502,6 +1502,7 @@ onMounted(() => {
   display: grid;
   grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
   gap: 1rem;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -1510,11 +1511,13 @@ onMounted(() => {
 .dictionary-editor {
   padding: 0.9rem;
   min-height: 0;
-  overflow: hidden;
 }
 
 .dictionary-sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
+  overflow: hidden;
 }
 
 .job-list {
@@ -1523,6 +1526,11 @@ onMounted(() => {
   gap: 0.55rem;
   min-height: 0;
   overflow: auto;
+  scrollbar-width: none;
+}
+
+.job-list::-webkit-scrollbar {
+  display: none;
 }
 
 .job-list-item {
@@ -1553,12 +1561,14 @@ onMounted(() => {
 }
 
 .dictionary-editor {
-  display: grid;
-  grid-template-rows: auto minmax(0, 0.9fr) minmax(0, 1.1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
   height: 100%;
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .editor-header {
@@ -1594,16 +1604,14 @@ onMounted(() => {
   gap: 0.85rem;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding-right: 0.25rem;
+  overflow: visible;
 }
 
 .weight-section {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .dictionary-editor > .actions {
@@ -1651,8 +1659,7 @@ onMounted(() => {
 
 .rubric-table-wrap {
   min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow: visible;
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
   background: #ffffff;
