@@ -250,6 +250,12 @@ const getInterviewSummaryText = (item) => {
   return parts.length ? parts.join('｜') : '--'
 }
 
+const isInterviewApplicationStatus = (value) =>
+  ['hr_interview', 'department_interview'].includes(normalizeCandidateApplicationStatus(value, ''))
+
+const shouldShowStatusHistoryInterview = (history = {}) =>
+  isInterviewApplicationStatus(history?.applicationStatus) && getInterviewSummaryParts(history).length > 0
+
 const buildFallbackStatusHistory = (row) => ({
   id: 0,
   applicationStatus: row?.applicationStatus,
@@ -917,7 +923,7 @@ onBeforeUnmount(() => {
             <span class="history-dot" aria-hidden="true"></span>
             <span class="history-main">
               <strong>{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</strong>
-              <em v-if="getInterviewSummaryParts(history).length">
+              <em v-if="shouldShowStatusHistoryInterview(history)">
                 面試資訊：{{ getInterviewSummaryText(history) }}
               </em>
               <span v-if="String(history.remark || '').trim()" class="history-remark">{{ history.remark }}</span>
@@ -1055,7 +1061,7 @@ onBeforeUnmount(() => {
                   <span class="history-dot" aria-hidden="true"></span>
                   <span class="history-main">
                     <strong>{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</strong>
-                    <em v-if="getInterviewSummaryParts(history).length">
+                    <em v-if="shouldShowStatusHistoryInterview(history)">
                       面試資訊：{{ getInterviewSummaryText(history) }}
                     </em>
                     <span v-if="String(history.remark || '').trim()" class="history-remark">{{ history.remark }}</span>
@@ -1152,7 +1158,7 @@ onBeforeUnmount(() => {
                   <span class="history-dot" aria-hidden="true"></span>
                   <span class="history-main">
                     <strong>{{ getCandidateApplicationStatusLabel(history.applicationStatus) }}</strong>
-                    <em v-if="getInterviewSummaryParts(history).length">
+                    <em v-if="shouldShowStatusHistoryInterview(history)">
                       面試資訊：{{ getInterviewSummaryText(history) }}
                     </em>
                     <span v-if="String(history.remark || '').trim()" class="history-remark">{{ history.remark }}</span>
