@@ -1230,6 +1230,7 @@ onMounted(() => {
 
       <section class="dictionary-editor">
         <template v-if="selectedJobTitle && jobDraft">
+          <div class="dictionary-editor-content">
           <div class="editor-header">
             <div>
               <h4>{{ activeJobTitle }}</h4>
@@ -1437,6 +1438,7 @@ onMounted(() => {
               {{ jobDictionarySaving ? '儲存中...' : '儲存整份字典' }}
             </button>
           </div>
+          </div>
         </template>
 
         <p v-else class="empty-dictionary-state">尚未選擇職位。</p>
@@ -1571,11 +1573,20 @@ onMounted(() => {
   scrollbar-gutter: stable;
 }
 
+.dictionary-editor-content {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+}
+
 .editor-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
+  min-width: 0;
 }
 
 .editor-actions {
@@ -1584,6 +1595,12 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 0.75rem;
   flex-wrap: wrap;
+  min-width: 0;
+}
+
+.editor-actions button {
+  max-width: 100%;
+  white-space: normal;
 }
 
 .sr-only {
@@ -1611,6 +1628,7 @@ onMounted(() => {
   display: grid;
   grid-template-rows: auto auto;
   min-height: 0;
+  min-width: 0;
   overflow: visible;
 }
 
@@ -1655,10 +1673,13 @@ onMounted(() => {
   align-items: flex-start;
   gap: 1rem;
   margin-bottom: 0.85rem;
+  min-width: 0;
 }
 
 .rubric-table-wrap {
+  width: 100%;
   min-height: 0;
+  min-width: 0;
   overflow: visible;
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
@@ -1689,20 +1710,12 @@ onMounted(() => {
 }
 
 .rubric-table thead th {
-  position: sticky;
-  top: 0;
   z-index: 3;
   background: #f8fafc;
   color: var(--text-strong);
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.01em;
-}
-
-.rubric-table thead th:first-child,
-.rubric-table tbody th {
-  position: sticky;
-  left: 0;
 }
 
 .rubric-table thead th:first-child {
