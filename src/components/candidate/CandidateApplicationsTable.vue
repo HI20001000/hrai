@@ -1717,7 +1717,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   color: var(--text-base);
   background: var(--surface-soft);
-  font-size: 0.82rem;
+  font-size: 0.92em;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -1735,7 +1735,7 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   color: var(--accent-hover);
   background: rgba(47, 111, 237, 0.08);
-  font-size: 0.9rem;
+  font-size: 0.9em;
   font-weight: 800;
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
 }
@@ -1767,7 +1767,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   color: #ffffff;
   background: var(--load-status-color);
-  font-size: 0.78rem;
+  font-size: 0.78em;
   line-height: 1;
   animation: load-pop 280ms ease both;
 }
@@ -1841,6 +1841,7 @@ onBeforeUnmount(() => {
   width: max-content;
   min-width: 100%;
   table-layout: auto;
+  font-size: 1em;
 }
 
 .application-table th,
@@ -1873,6 +1874,7 @@ onBeforeUnmount(() => {
 .column-title {
   min-width: 0;
   overflow: hidden;
+  font-size: 1em;
   text-overflow: ellipsis;
 }
 
@@ -1985,7 +1987,7 @@ onBeforeUnmount(() => {
   background: rgba(248, 250, 252, 0.96);
   color: var(--text-strong);
   font: inherit;
-  font-size: 0.84rem;
+  font-size: 0.84em;
   font-weight: 700;
 }
 
@@ -2013,7 +2015,7 @@ onBeforeUnmount(() => {
   color: var(--text-base);
   background: transparent;
   text-align: left;
-  font-size: 0.84rem;
+  font-size: 0.84em;
   font-weight: 700;
   cursor: pointer;
   transition:
@@ -2045,7 +2047,7 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   border-radius: 999px;
   color: #ffffff;
-  font-size: 0.72rem;
+  font-size: 0.72em;
   font-weight: 800;
   line-height: 1;
 }
@@ -2067,7 +2069,7 @@ onBeforeUnmount(() => {
   padding: 0.75rem 0.62rem;
   color: var(--text-muted);
   text-align: center;
-  font-size: 0.84rem;
+  font-size: 0.84em;
   font-weight: 700;
 }
 
@@ -2092,7 +2094,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   color: #b42318;
   background: rgba(217, 45, 32, 0.12);
-  font-size: 0.74rem;
+  font-size: 0.74em;
   font-weight: 800;
   letter-spacing: 0.01em;
   cursor: help;
@@ -2107,7 +2109,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   color: #a15c00;
   background: rgba(226, 156, 32, 0.16);
-  font-size: 0.74rem;
+  font-size: 0.74em;
   font-weight: 800;
 }
 
@@ -2133,7 +2135,7 @@ onBeforeUnmount(() => {
   box-shadow:
     0 18px 38px rgba(15, 23, 42, 0.12),
     0 6px 16px rgba(217, 45, 32, 0.08);
-  font-size: 0.76rem;
+  font-size: 0.76em;
   font-weight: 650;
   line-height: 1.45;
   white-space: normal;
@@ -2165,7 +2167,7 @@ onBeforeUnmount(() => {
   min-height: 28px;
   padding: 0.22rem 0.62rem;
   border-radius: 999px;
-  font-size: 0.74rem;
+  font-size: 0.74em;
   font-weight: 700;
   cursor: pointer;
   transition: background-color 180ms ease, border-color 180ms ease, opacity 180ms ease;
@@ -2280,7 +2282,7 @@ th.status-col {
   height: 1.55rem;
   border-radius: 999px;
   color: #ffffff;
-  font-size: 0.72rem;
+  font-size: 0.72em;
   font-weight: 800;
   line-height: 1;
 }
@@ -2394,7 +2396,7 @@ th.status-col {
 
 .row-action-btn {
   color: var(--text-strong);
-  font-size: 0.82rem;
+  font-size: 0.92em;
   font-weight: 700;
   cursor: pointer;
   transition: color 180ms ease, transform 180ms ease;
@@ -2411,7 +2413,7 @@ th.status-col {
   margin-left: 0.5rem;
   padding: 0.18rem 0.5rem;
   border-radius: 999px;
-  font-size: 0.78rem;
+  font-size: 0.78em;
   font-weight: 700;
   line-height: 1.2;
 }
@@ -2515,7 +2517,7 @@ th.status-col {
 
 .status-select-wrap :deep(.app-select-value) {
   color: inherit;
-  font-size: 0.82rem;
+  font-size: 0.92em;
   font-weight: 700;
   line-height: 1.2;
 }
@@ -2539,7 +2541,7 @@ th.status-col {
 }
 
 .status-select-wrap :deep(.app-select-option-label) {
-  font-size: 0.82rem;
+  font-size: 0.92em;
 }
 
 .status-select-wrap :deep(.app-select-check) {
@@ -2552,7 +2554,7 @@ th.status-col {
   gap: 0.42rem;
   padding: 0.32rem 0.72rem;
   border-radius: 999px;
-  font-size: 0.8rem;
+  font-size: 0.9em;
   font-weight: 700;
 }
 
@@ -2640,7 +2642,7 @@ th.status-col {
 .status-history-title {
   margin: 0 0 0.6rem;
   color: var(--text-strong);
-  font-size: 0.86rem;
+  font-size: 0.86em;
   font-weight: 800;
 }
 
@@ -2659,7 +2661,7 @@ th.status-col {
   gap: 0.5rem;
   min-width: 0;
   color: var(--text-base);
-  font-size: 0.82rem;
+  font-size: 0.82em;
   font-weight: 650;
 }
 
@@ -2690,7 +2692,7 @@ th.status-col {
 
 .history-main strong {
   color: var(--text-strong);
-  font-size: 0.83rem;
+  font-size: 0.83em;
   line-height: 1.35;
 }
 
@@ -2703,7 +2705,7 @@ th.status-col {
 .history-operator,
 .history-remark {
   color: var(--text-soft);
-  font-size: 0.76rem;
+  font-size: 0.76em;
   font-style: normal;
   font-weight: 400;
   line-height: 1.35;
@@ -2736,7 +2738,7 @@ th.status-col {
   height: 1.28rem;
   border-radius: 999px;
   color: #ffffff;
-  font-size: 0.68rem;
+  font-size: 0.68em;
   font-weight: 800;
   line-height: 1;
 }
@@ -2747,7 +2749,7 @@ th.status-col {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   color: var(--text-base);
-  font-size: 0.8rem;
+  font-size: 0.8em;
   font-weight: 650;
 }
 
@@ -2785,7 +2787,7 @@ th.status-col {
 
 .pagination-summary {
   color: var(--text-muted);
-  font-size: 0.86rem;
+  font-size: 0.92em;
   font-weight: 600;
 }
 
@@ -2809,7 +2811,7 @@ th.status-col {
   border-radius: 999px;
   color: var(--text-base);
   background: rgba(255, 255, 255, 0.82);
-  font-size: 0.84rem;
+  font-size: 0.92em;
   font-weight: 700;
   cursor: pointer;
   transition:

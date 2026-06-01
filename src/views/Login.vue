@@ -216,7 +216,7 @@ const {
   border-radius: 999px;
   color: var(--accent);
   background: rgba(255, 255, 255, 0.68);
-  font-size: 0.84rem;
+  font-size: 0.84em;
   font-weight: 600;
 }
 
@@ -227,13 +227,13 @@ const {
 
 .hero-copy h1 {
   max-width: 9ch;
-  font-size: clamp(2.6rem, 2rem + 2.2vw, 4.5rem);
+  font-size: clamp(2.6em, 2em + 2.2vw, 4.5em);
   line-height: 0.96;
 }
 
 .hero-copy p {
   max-width: 50ch;
-  font-size: 1rem;
+  font-size: 1em;
   color: var(--text-muted);
 }
 
@@ -260,7 +260,7 @@ const {
 
 .hero-panel p {
   color: var(--text-muted);
-  font-size: 0.92rem;
+  font-size: 0.92em;
 }
 
 .login-panel {
@@ -287,7 +287,7 @@ const {
 }
 
 .panel-header h2 {
-  font-size: 2rem;
+  font-size: 2em;
 }
 
 .auth-tabs {

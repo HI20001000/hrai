@@ -366,7 +366,7 @@ onBeforeUnmount(() => {
   background: rgba(248, 250, 252, 0.96);
   color: var(--text-base);
   font: inherit;
-  font-size: 0.84rem;
+  font-size: 0.84em;
 }
 
 .column-filter-search input:focus,
@@ -394,7 +394,7 @@ onBeforeUnmount(() => {
   color: var(--text-base);
   background: transparent;
   font: inherit;
-  font-size: 0.84rem;
+  font-size: 0.84em;
   font-weight: 720;
   text-align: left;
   cursor: pointer;
@@ -423,7 +423,7 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   border-radius: 999px;
   color: #ffffff;
-  font-size: 0.68rem;
+  font-size: 0.68em;
   font-weight: 800;
 }
 
@@ -444,7 +444,7 @@ onBeforeUnmount(() => {
   padding: 0.75rem 0.62rem;
   color: var(--text-muted);
   text-align: center;
-  font-size: 0.84rem;
+  font-size: 0.84em;
   font-weight: 700;
 }
 
@@ -459,7 +459,7 @@ onBeforeUnmount(() => {
 
 .date-filter-field span {
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: 0.78em;
   font-weight: 800;
 }
 
@@ -477,7 +477,7 @@ onBeforeUnmount(() => {
   color: var(--text-base);
   background: #ffffff;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 0.8em;
   font-weight: 760;
   cursor: pointer;
 }

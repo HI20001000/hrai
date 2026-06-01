@@ -1539,7 +1539,7 @@ const clearBatchQueueLegacy = () => {
 
 .loading-card h4 {
   color: var(--text-strong);
-  font-size: 1rem;
+  font-size: 1em;
 }
 
 .loading-card p,
@@ -1549,7 +1549,7 @@ const clearBatchQueueLegacy = () => {
 .batch-meta,
 .detail-status {
   color: var(--text-muted);
-  font-size: 0.92rem;
+  font-size: 0.92em;
   line-height: 1.5;
   margin: 0;
 }
@@ -1641,7 +1641,7 @@ const clearBatchQueueLegacy = () => {
 .source-error {
   margin: 0;
   color: #dc2626;
-  font-size: 0.86rem;
+  font-size: 0.86em;
   font-weight: 700;
 }
 
@@ -1679,12 +1679,12 @@ const clearBatchQueueLegacy = () => {
   flex: 1 1 260px;
   margin: 0;
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: 0.9em;
   line-height: 1.5;
 }
 
 .batch-percent {
-  font-size: 1.5rem;
+  font-size: 1.5em;
   color: var(--text-strong);
 }
 

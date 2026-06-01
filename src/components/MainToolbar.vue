@@ -308,6 +308,7 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-md);
   backdrop-filter: blur(22px);
   overflow: visible;
+  font-size: 1em;
 }
 
 .brand-heading,
@@ -357,7 +358,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   color: var(--text-strong);
-  font-size: 1.35rem;
+  font-size: 1.2em;
   font-weight: 800;
   line-height: 1.1;
   text-overflow: ellipsis;
@@ -372,7 +373,7 @@ onBeforeUnmount(() => {
 
 .toolbar-user-time time {
   color: var(--text-muted);
-  font-size: 1.05rem;
+  font-size: 0.94em;
   font-weight: 800;
   line-height: 1.14;
   white-space: nowrap;
@@ -385,13 +386,13 @@ onBeforeUnmount(() => {
 .nav-copy strong,
 .mobile-header strong {
   color: var(--text-strong);
-  font-size: 0.95rem;
+  font-size: 0.95em;
 }
 
 .nav-copy span,
 .mobile-header p {
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: 0.82em;
 }
 
 .brand-logo {
@@ -403,9 +404,9 @@ onBeforeUnmount(() => {
 
 .brand-title {
   color: var(--text-strong);
-  font-size: 1.22rem;
+  font-size: 1.08em;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
 }
 
 .mobile-avatar {
@@ -416,7 +417,7 @@ onBeforeUnmount(() => {
   height: 34px;
   border-radius: 12px;
   color: #ffffff;
-  font-size: 0.96rem;
+  font-size: 0.96em;
   font-weight: 700;
 }
 
@@ -429,7 +430,7 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   border-radius: 999px;
   color: #ffffff;
-  font-size: 1.32rem;
+  font-size: 1.17em;
   font-weight: 800;
   line-height: 1;
 }

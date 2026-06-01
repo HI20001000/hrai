@@ -2025,7 +2025,7 @@ onUnmounted(() => {
 .compact-btn {
   min-height: 36px;
   padding: 0.48rem 0.9rem;
-  font-size: 0.84rem;
+  font-size: 0.84em;
 }
 
 .detail-card,
@@ -2141,7 +2141,7 @@ onUnmounted(() => {
   min-height: 26px;
   padding: 0.2rem 0.64rem;
   border-radius: var(--radius-pill);
-  font-size: 0.78rem;
+  font-size: 0.78em;
   font-weight: 800;
 }
 
@@ -2233,13 +2233,13 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 0.75rem;
   color: var(--text-strong);
-  font-size: 0.88rem;
+  font-size: 0.88em;
   font-weight: 700;
 }
 
 .selected-preview-box li span {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: 0.8em;
   font-weight: 600;
 }
 
@@ -2253,7 +2253,7 @@ onUnmounted(() => {
 .status-editor-header h4 {
   margin: 0;
   color: var(--text-strong);
-  font-size: 1rem;
+  font-size: 1em;
 }
 
 .status-editor-actions {
@@ -2325,7 +2325,7 @@ onUnmounted(() => {
   width: 160px;
   color: var(--text-base);
   background: rgba(245, 248, 252, 0.96);
-  font-size: 0.86rem;
+  font-size: 0.86em;
   font-weight: 800;
 }
 
@@ -2398,13 +2398,13 @@ onUnmounted(() => {
 
 .availability-header h4 {
   color: var(--text-strong);
-  font-size: 0.98rem;
+  font-size: 0.98em;
 }
 
 .availability-header p,
 .availability-copy em {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: 0.8em;
   font-style: normal;
 }
 
@@ -2414,7 +2414,7 @@ onUnmounted(() => {
   border-radius: 999px;
   background: #e0f2fe;
   color: #0369a1;
-  font-size: 0.78rem;
+  font-size: 0.78em;
   font-weight: 800;
 }
 
@@ -2512,7 +2512,7 @@ onUnmounted(() => {
 
 .availability-time {
   color: inherit;
-  font-size: 0.78rem;
+  font-size: 0.78em;
   font-weight: 900;
 }
 
@@ -2524,7 +2524,7 @@ onUnmounted(() => {
 
 .availability-copy strong {
   color: var(--text-strong);
-  font-size: 0.86rem;
+  font-size: 0.86em;
 }
 
 .status-history-section {
@@ -2535,7 +2535,7 @@ onUnmounted(() => {
 .status-history-section h4 {
   margin: 0;
   color: var(--text-strong);
-  font-size: 1rem;
+  font-size: 1em;
 }
 
 .timeline-row {
@@ -2599,14 +2599,14 @@ onUnmounted(() => {
 .timeline-operator {
   margin: 0;
   color: var(--text-soft);
-  font-size: 0.82rem;
+  font-size: 0.82em;
   font-weight: 400;
 }
 
 .timeline-remark {
   margin: 0;
   color: var(--text-base);
-  font-size: 0.9rem;
+  font-size: 0.9em;
   font-weight: 650;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -2639,7 +2639,7 @@ onUnmounted(() => {
   height: 1.46rem;
   border-radius: 999px;
   color: #ffffff;
-  font-size: 0.72rem;
+  font-size: 0.72em;
   font-weight: 800;
   line-height: 1;
 }

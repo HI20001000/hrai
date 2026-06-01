@@ -657,7 +657,7 @@ onMounted(async () => {
   min-height: 26px;
   padding: 0.2rem 0.62rem;
   border-radius: var(--radius-pill);
-  font-size: 0.78rem;
+  font-size: 0.78em;
   font-weight: 800;
 }
 

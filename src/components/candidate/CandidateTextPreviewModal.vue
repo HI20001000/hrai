@@ -479,7 +479,7 @@ const saveAllEdits = async () => {
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--text-strong);
-  font-size: 0.92rem;
+  font-size: 0.92em;
   line-height: 1.5;
 }
 
@@ -496,7 +496,7 @@ const saveAllEdits = async () => {
   border-radius: 12px;
   color: var(--accent-hover);
   background: rgba(47, 111, 237, 0.08);
-  font-size: 0.9rem;
+  font-size: 0.9em;
   font-weight: 800;
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
 }
@@ -528,7 +528,7 @@ const saveAllEdits = async () => {
   border-radius: 999px;
   color: #ffffff;
   background: var(--preview-load-color);
-  font-size: 0.78rem;
+  font-size: 0.78em;
   line-height: 1;
   animation: preview-pop 280ms ease both;
 }
@@ -596,7 +596,7 @@ const saveAllEdits = async () => {
 .match-list {
   margin: 0.35rem 0 0;
   color: var(--text-base);
-  font-size: 0.9rem;
+  font-size: 0.9em;
 }
 
 .match-list span {
@@ -612,7 +612,7 @@ const saveAllEdits = async () => {
 .edit-hint {
   margin: 0;
   color: var(--text-base);
-  font-size: 0.88rem;
+  font-size: 0.88em;
 }
 
 .preview-section {
@@ -626,7 +626,7 @@ const saveAllEdits = async () => {
   border-bottom: 1px solid var(--border-subtle);
   background: rgba(244, 248, 252, 0.86);
   color: var(--text-strong);
-  font-size: 0.92rem;
+  font-size: 0.92em;
 }
 
 .project-section {

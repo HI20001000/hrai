@@ -311,7 +311,7 @@ onMounted(() => {
 .role-card h3 {
   margin: 0;
   color: var(--text-strong);
-  font-size: 1rem;
+  font-size: 1em;
 }
 
 .role-card p {
@@ -339,7 +339,7 @@ onMounted(() => {
   border-radius: var(--radius-pill);
   color: var(--accent);
   background: rgba(47, 111, 237, 0.07);
-  font-size: 0.82rem;
+  font-size: 0.82em;
   font-weight: 600;
 }
 
@@ -392,7 +392,7 @@ onMounted(() => {
 .current-user-note {
   display: block;
   margin-top: 0.35rem;
-  font-size: 0.8rem;
+  font-size: 0.8em;
 }
 
 @media (max-width: 1080px) {

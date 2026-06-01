@@ -844,7 +844,7 @@ onBeforeUnmount(() => {
 .compact-btn {
   min-height: 36px;
   padding: 0.48rem 0.9rem;
-  font-size: 0.84rem;
+  font-size: 0.84em;
 }
 
 .status-form-panel,
@@ -871,7 +871,7 @@ onBeforeUnmount(() => {
 .field span,
 .required-mark {
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: 0.82em;
   font-weight: 800;
 }
 
@@ -927,7 +927,7 @@ onBeforeUnmount(() => {
   color: var(--text-base);
   background: rgba(245, 248, 252, 0.96);
   text-align: left;
-  font-size: 0.86rem;
+  font-size: 0.86em;
   font-weight: 800;
 }
 
@@ -1016,13 +1016,13 @@ onBeforeUnmount(() => {
 .availability-header p,
 .availability-copy em {
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: 0.8em;
   font-style: normal;
 }
 
 .timeline-remark {
   color: var(--text-base);
-  font-size: 0.86rem;
+  font-size: 0.86em;
   font-weight: 650;
 }
 
@@ -1044,7 +1044,7 @@ onBeforeUnmount(() => {
   height: 1.28rem;
   border-radius: 999px;
   color: #ffffff;
-  font-size: 0.68rem;
+  font-size: 0.68em;
   font-weight: 800;
 }
 
@@ -1068,7 +1068,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   background: #e0f2fe;
   color: #0369a1;
-  font-size: 0.78rem;
+  font-size: 0.78em;
   font-weight: 800;
 }
 

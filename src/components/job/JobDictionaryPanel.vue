@@ -1460,7 +1460,7 @@ onMounted(() => {
 .rubric-hint {
   margin: 0.25rem 0 0;
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: 0.85em;
 }
 
 .job-list-item strong,
@@ -1713,7 +1713,7 @@ onMounted(() => {
   z-index: 3;
   background: #f8fafc;
   color: var(--text-strong);
-  font-size: 0.78rem;
+  font-size: 0.78em;
   font-weight: 800;
   letter-spacing: 0.01em;
 }
@@ -1758,7 +1758,7 @@ onMounted(() => {
   display: block;
   margin-top: 0.18rem;
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: 0.72em;
   font-weight: 700;
 }
 
@@ -1811,7 +1811,7 @@ onMounted(() => {
   gap: 0.55rem;
   margin-top: 0.55rem;
   color: var(--text-muted);
-  font-size: 0.76rem;
+  font-size: 0.76em;
   font-weight: 800;
 }
 
@@ -1819,7 +1819,7 @@ onMounted(() => {
   height: 34px;
   padding: 0 0.42rem;
   text-align: center;
-  font-size: 0.84rem;
+  font-size: 0.84em;
   font-weight: 850;
 }
 

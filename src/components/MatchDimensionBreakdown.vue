@@ -85,7 +85,7 @@ const rows = computed(() => normalizeDimensionEvaluationsForDisplay(props.evalua
   padding: 0.18rem 0.45rem;
   border-radius: 999px;
   font-weight: 700;
-  font-size: 0.78rem;
+  font-size: 0.78em;
 }
 
 .level-high {

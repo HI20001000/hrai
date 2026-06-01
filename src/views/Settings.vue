@@ -451,7 +451,7 @@ onMounted(() => {
   height: 42px;
   background: rgba(255, 255, 255, 0.82);
   cursor: pointer;
-  font-size: 1.15rem;
+  font-size: 1.15em;
   transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
 }
 
@@ -530,7 +530,7 @@ onMounted(() => {
 }
 
 .preview-label {
-  font-size: 0.9rem;
+  font-size: 0.9em;
 }
 
 .avatar-preview {
@@ -542,7 +542,7 @@ onMounted(() => {
   justify-content: center;
   color: #ffffff;
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: 1.05em;
   border: 1px solid rgba(148, 163, 184, 0.28);
 }
 
@@ -600,7 +600,7 @@ onMounted(() => {
 
 .job-list-item span {
   color: var(--text-muted);
-  font-size: 0.84rem;
+  font-size: 0.84em;
 }
 
 .job-list-item:hover {
@@ -654,7 +654,7 @@ onMounted(() => {
   border-radius: 18px;
   padding: 1rem;
   overflow: auto;
-  font-size: 0.86rem;
+  font-size: 0.86em;
   line-height: 1.45;
 }
 

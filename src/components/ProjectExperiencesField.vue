@@ -357,7 +357,7 @@ const updateProjectField = (groupIndex, projectIndex, fieldKey, value) => {
   border-radius: 999px;
   background: rgba(47, 111, 237, 0.12);
   color: var(--accent);
-  font-size: 0.78rem;
+  font-size: 0.78em;
   font-weight: 700;
 }
 

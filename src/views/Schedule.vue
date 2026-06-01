@@ -474,7 +474,7 @@ watch(selectedUserId, async (next, previous) => {
 
 .user-switcher span {
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: 0.78em;
   font-weight: 800;
 }
 
@@ -524,7 +524,7 @@ watch(selectedUserId, async (next, previous) => {
 
 .status-card strong {
   color: var(--text-strong);
-  font-size: 2rem;
+  font-size: 2em;
 }
 
 .status-card span {
@@ -543,7 +543,7 @@ watch(selectedUserId, async (next, previous) => {
   border-radius: 8px;
   background: rgba(148, 163, 184, 0.12);
   color: var(--text-base);
-  font-size: 0.76rem;
+  font-size: 0.76em;
   font-weight: 800;
 }
 
@@ -614,13 +614,13 @@ watch(selectedUserId, async (next, previous) => {
 
 .task-meta {
   margin-top: 0.3rem !important;
-  font-size: 0.82rem;
+  font-size: 0.82em;
 }
 
 .task-status {
   padding: 0.28rem 0.55rem;
   border-radius: 999px;
-  font-size: 0.78rem;
+  font-size: 0.78em;
   font-weight: 800;
 }
 
@@ -693,7 +693,7 @@ watch(selectedUserId, async (next, previous) => {
 
 .weekday {
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: 0.82em;
   font-weight: 800;
   text-align: center;
 }
@@ -741,7 +741,7 @@ watch(selectedUserId, async (next, previous) => {
   border-radius: 999px;
   background: #fef3c7;
   color: #92400e;
-  font-size: 0.72rem;
+  font-size: 0.72em;
   font-style: normal;
   font-weight: 800;
 }

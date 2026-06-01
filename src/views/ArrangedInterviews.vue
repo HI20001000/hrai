@@ -1276,6 +1276,7 @@ onBeforeUnmount(() => {
   min-width: 100%;
   border-collapse: collapse;
   background: #fff;
+  font-size: 1em;
 }
 
 .interview-table th,
@@ -1283,7 +1284,7 @@ onBeforeUnmount(() => {
   padding: 0.78rem 0.85rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.16);
   color: var(--text-base);
-  font-size: 0.86rem;
+  font-size: 0.86em;
   text-align: left;
   white-space: nowrap;
 }
@@ -1407,7 +1408,7 @@ onBeforeUnmount(() => {
   border: 1px solid transparent;
   border-radius: 999px;
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.82em;
   font-weight: 850;
   cursor: pointer;
   transition:
@@ -1477,7 +1478,7 @@ onBeforeUnmount(() => {
 .status-history-section h4 {
   margin: 0 0 0.6rem;
   color: var(--text-strong);
-  font-size: 0.9rem;
+  font-size: 0.9em;
   font-weight: 850;
 }
 
@@ -1497,7 +1498,7 @@ onBeforeUnmount(() => {
   align-items: start;
   gap: 0.5rem;
   color: var(--text-base);
-  font-size: 0.82rem;
+  font-size: 0.82em;
   font-weight: 650;
 }
 
@@ -1539,7 +1540,7 @@ li.current .history-main strong {
 .history-main em,
 .history-operator {
   color: var(--text-soft);
-  font-size: 0.76rem;
+  font-size: 0.76em;
   font-style: normal;
   font-weight: 400;
   line-height: 1.35;
@@ -1551,7 +1552,7 @@ li.current .history-main strong {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   color: var(--text-base);
-  font-size: 0.8rem;
+  font-size: 0.8em;
   font-weight: 650;
 }
 
@@ -1581,7 +1582,7 @@ li.current .history-main strong {
   height: 1.28rem;
   border-radius: 999px;
   color: #ffffff;
-  font-size: 0.68rem;
+  font-size: 0.68em;
   font-weight: 800;
 }
 
@@ -1659,7 +1660,7 @@ li.current .history-main strong {
 
 .compact-btn {
   padding: 0.42rem 0.7rem;
-  font-size: 0.82rem;
+  font-size: 0.82em;
 }
 
 .status-field-grid {
@@ -1676,7 +1677,7 @@ li.current .history-main strong {
 
 .status-field-grid .field span {
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: 0.82em;
   font-weight: 800;
 }
 

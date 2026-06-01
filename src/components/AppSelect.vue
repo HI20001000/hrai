@@ -394,7 +394,7 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   border-radius: 999px;
   color: #ffffff;
-  font-size: 0.72rem;
+  font-size: 0.72em;
   font-weight: 800;
   line-height: 1;
 }

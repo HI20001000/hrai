@@ -1112,7 +1112,7 @@ onUnmounted(() => {
   border-radius: var(--radius-pill);
   background: var(--surface-soft);
   font-weight: 700;
-  font-size: 0.83rem;
+  font-size: 0.83em;
 }
 
 .preview-card {
@@ -1155,7 +1155,7 @@ onUnmounted(() => {
   border-radius: var(--radius-pill);
   background: rgba(239, 246, 255, 0.82);
   color: var(--accent);
-  font-size: 0.86rem;
+  font-size: 0.86em;
   font-weight: 800;
 }
 

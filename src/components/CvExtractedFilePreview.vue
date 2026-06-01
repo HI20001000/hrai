@@ -82,7 +82,7 @@ const projectExperienceField = computed(() => previewData.value.projectExperienc
   border-bottom: 1px solid var(--border-subtle);
   background: rgba(244, 248, 252, 0.86);
   color: var(--text-strong);
-  font-size: 0.92rem;
+  font-size: 0.92em;
 }
 
 .project-section {
