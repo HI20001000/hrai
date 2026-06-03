@@ -413,37 +413,9 @@ const sanitizeFileName = (name) =>
     .replace(/\s+/g, ' ')
     .trim()
 
-const sanitizeNamePart = (value) => {
-  const normalized = sanitizeFileName(value)
-    .replace(/\./g, '_')
-    .replace(/\s+/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '')
-  return normalized || 'x'
-}
-
-const normalizeIdentityValue = (value, field) => {
-  const text = String(value || '').trim()
-  if (!text) return ''
-
-  if (field === 'fullName' && /^(x|unknown|n\/a|null|none)$/i.test(text)) return ''
-  if (field === 'email' && !/@/.test(text)) return ''
-  if (field === 'phone' && !/\d/.test(text)) return ''
-  return text
-}
-
-const buildDatePart = (value) => {
-  const date = value ? new Date(value) : new Date()
-  if (Number.isNaN(date.getTime())) return 'x'
-  const pad = (num) => String(num).padStart(2, '0')
-  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`
-}
-
-const buildRenamedCandidateCvFileName = ({ fullName = '', createdAt = '', sourceFileName = '' }) => {
-  const ext = path.extname(String(sourceFileName || '')).trim() || '.bin'
-  const namePart = sanitizeNamePart(normalizeIdentityValue(fullName, 'fullName'))
-  const datePart = sanitizeNamePart(buildDatePart(createdAt))
-  return `${namePart}_${datePart}${ext}`
+const buildStoredCandidateCvOriginalFileName = (sourceFileName = '') => {
+  const baseName = path.basename(String(sourceFileName || '').trim())
+  return sanitizeFileName(baseName || 'cv-upload')
 }
 
 const ensureCvStorageDir = () => {
@@ -1930,14 +1902,10 @@ const insertCandidateCv = async (
   fileName,
   mimeType,
   buffer,
-  { fullName = '', createdAt = '', source = '' } = {}
+  { source = '' } = {}
 ) => {
   const normalizedSource = normalizeCvSource(source) || null
-  const renamedFileName = buildRenamedCandidateCvFileName({
-    fullName,
-    createdAt,
-    sourceFileName: fileName,
-  })
+  const originalFileName = buildStoredCandidateCvOriginalFileName(fileName)
   const [versionRows] = await pool.query(
     'SELECT COALESCE(MAX(version_no), 0) AS maxVersion FROM candidate_cvs WHERE candidate_id = ?',
     [candidateId]
@@ -1946,7 +1914,7 @@ const insertCandidateCv = async (
   const fileHash = sha256Buffer(buffer)
   ensureCvStorageDir()
   const storageFileName = sanitizeFileName(
-    `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${renamedFileName}`
+    `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${originalFileName}`
   )
   const storagePath = path.join(CV_STORAGE_DIR, storageFileName)
   fs.writeFileSync(storagePath, buffer)
@@ -1959,7 +1927,7 @@ const insertCandidateCv = async (
       candidateId,
       nextVersion,
       storageFileName,
-      renamedFileName,
+      originalFileName,
       mimeType || 'application/octet-stream',
       buffer.length,
       fileHash,
@@ -1971,7 +1939,7 @@ const insertCandidateCv = async (
     id: result.insertId,
     candidateId,
     versionNo: nextVersion,
-    originalFileName: renamedFileName,
+    originalFileName,
     source: normalizedSource || '',
     size: buffer.length,
     storagePath,

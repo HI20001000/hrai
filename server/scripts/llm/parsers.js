@@ -765,15 +765,20 @@ const NAME_SECTION_HEADERS = new Set([
   '教育背景',
   '自我评价',
   '自我評價',
+  '个人优势',
+  '個人優勢',
   '联系方式',
   '聯絡方式',
 ])
 
 const NON_NAME_KEYWORD_PATTERN =
-  /(简历|簡歷|信息|資訊|资料|資料|技能|专业|專業|项目|項目|经验|經驗|经历|經歷|工作|教育|评价|評價|公司|科技|银行|銀行|岗位|職位|职位|工程师|工程師|开发|開發|数据库|資料庫|数据|數據|分析师|分析師|管理|维护|維護|Oracle|MySQL|Hive|SQL|Python|Java|Linux|Hadoop|MongoDB|HBase|Studio)/i
+  /(简历|簡歷|信息|資訊|资料|資料|优势|優勢|技能|专业|專業|项目|項目|经验|經驗|经历|經歷|工作|教育|评价|評價|公司|科技|银行|銀行|岗位|職位|职位|工程师|工程師|测试|測試|软件|軟件|开发|開發|数据库|資料庫|数据|數據|分析师|分析師|管理|维护|維護|Oracle|MySQL|Hive|SQL|Python|Java|Linux|Hadoop|MongoDB|HBase|Studio)/i
 
 const NON_NAME_SENTENCE_START_PATTERN =
   /^(本人|具备|具備|掌握|熟练|熟練|熟悉|负责|負責|主导|主導|拥有|擁有|参与|參與|了解|学习|學習|致力|能够|能夠|可以|可独立|可獨立|独立|獨立)/
+
+const CONTACT_LINE_PATTERN =
+  /(@|(?:\+?\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?)?\d{3,4}[\s-]?\d{3,4}|电话|電話|手机|手機|邮箱|郵箱|Email|性别|性別|男|女|工作经验|工作經驗|求职意向|求職意向|期望薪资|期望薪資|年龄|年齡|政治面貌)/i
 
 const NAME_TRAILING_LABEL_PATTERN =
   /(?=\s|$|[，,;；|｜()（）]|性别|性別|年龄|年齡|电话|電話|手机|手機|邮箱|郵箱|现居|現居|工作年限|岗位|職位|职位)/
@@ -826,6 +831,19 @@ const pickNameFromCandidateText = (value = '') => {
   return isLikelyCandidateName(text) ? text : ''
 }
 
+const extractNameNearContactLines = (lines = []) => {
+  for (const [index, line] of lines.entries()) {
+    if (!CONTACT_LINE_PATTERN.test(line)) continue
+
+    const startIndex = Math.max(0, index - 12)
+    for (let candidateIndex = index - 1; candidateIndex >= startIndex; candidateIndex -= 1) {
+      const candidate = pickNameFromCandidateText(lines[candidateIndex] || '')
+      if (candidate) return candidate
+    }
+  }
+  return ''
+}
+
 export const extractCandidateNameFromText = (normalized = '') => {
   const lines = String(normalized || '')
     .split('\n')
@@ -847,6 +865,9 @@ export const extractCandidateNameFromText = (normalized = '') => {
       if (nextName) return nextName
     }
   }
+
+  const contactName = extractNameNearContactLines(lines)
+  if (contactName) return contactName
 
   for (const line of lines.slice(0, 8)) {
     const slashMatch = line.match(/^([\p{Script=Han}·]{2,8})\s*\/\s*([A-Za-z][A-Za-z\s'.-]{1,50})$/u)

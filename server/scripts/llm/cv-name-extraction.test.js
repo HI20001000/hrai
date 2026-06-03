@@ -46,6 +46,39 @@ test('extracts candidate name from simple hyphenated BOSS file name', () => {
   )
 })
 
+test('finds names near contact lines when resume starts with job or company text', () => {
+  assert.equal(
+    extractCandidateNameFromText([
+      '诚迈科技（南京）股份有限公司',
+      '测试工程师（项目TE）',
+      '2025.02-2025.05',
+      '梁嘉成',
+      '男',
+      '13226908356',
+      '365173627@qq.com',
+    ].join('\n')),
+    '梁嘉成'
+  )
+
+  assert.equal(
+    extractCandidateNameFromText([
+      '个人优势',
+      '熟悉Oracle、Mysql 等主流关系型数据库的开发与使用',
+      '意向岗位：数据开发工程师',
+      '胡俊光',
+      '年龄：27',
+      '电话：17358829954',
+      '邮箱：hujunguang2lq@163.com',
+    ].join('\n')),
+    '胡俊光'
+  )
+})
+
+test('does not treat resume section titles or job titles as names', () => {
+  assert.equal(isLikelyCandidateName('个人优势'), false)
+  assert.equal(isLikelyCandidateName('软件测试'), false)
+})
+
 test('overrides wrong LLM fullName when CV text contains a high-confidence name', () => {
   const resolved = applyCandidateFullNameResolution(
     {
