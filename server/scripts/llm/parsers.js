@@ -744,22 +744,125 @@ const pickIndustryFromText = (normalized) => {
   return industryKeywords.find((keyword) => normalized.includes(keyword)) || ''
 }
 
-const extractNameFromText = (normalized) => {
-  const explicitMatch =
-    normalized.match(/(?:姓名|Name)\s*[:：]\s*([^\n]+)/i) ||
-    normalized.match(/^([^\n/]{2,40})\s*\/\s*([A-Za-z][A-Za-z\s\-]{2,40})/m)
-  if (explicitMatch?.[1]) return explicitMatch[1].trim()
+const NAME_SECTION_HEADERS = new Set([
+  '个人简历',
+  '個人簡歷',
+  '简历',
+  '簡歷',
+  '基本信息',
+  '基本資料',
+  '个人信息',
+  '個人資訊',
+  '专业技能',
+  '專業技能',
+  '工作经历',
+  '工作經歷',
+  '项目经历',
+  '項目經歷',
+  '项目经验',
+  '教育经历',
+  '教育經歷',
+  '教育背景',
+  '自我评价',
+  '自我評價',
+  '联系方式',
+  '聯絡方式',
+])
 
-  const firstLines = normalized
+const NON_NAME_KEYWORD_PATTERN =
+  /(简历|簡歷|信息|資訊|资料|資料|技能|专业|專業|项目|項目|经验|經驗|经历|經歷|工作|教育|评价|評價|公司|科技|银行|銀行|岗位|職位|职位|工程师|工程師|开发|開發|数据库|資料庫|数据|數據|分析师|分析師|管理|维护|維護|Oracle|MySQL|Hive|SQL|Python|Java|Linux|Hadoop|MongoDB|HBase|Studio)/i
+
+const NON_NAME_SENTENCE_START_PATTERN =
+  /^(本人|具备|具備|掌握|熟练|熟練|熟悉|负责|負責|主导|主導|拥有|擁有|参与|參與|了解|学习|學習|致力|能够|能夠|可以|可独立|可獨立|独立|獨立)/
+
+const NAME_TRAILING_LABEL_PATTERN =
+  /(?=\s|$|[，,;；|｜()（）]|性别|性別|年龄|年齡|电话|電話|手机|手機|邮箱|郵箱|现居|現居|工作年限|岗位|職位|职位)/
+
+const normalizeNameCandidate = (value = '') =>
+  normalizeString(value)
+    .replace(/^[姓名\s:：]+/u, '')
+    .replace(/^Name\s*[:：]?/i, '')
+    .replace(/[【】\[\]]/g, '')
+    .trim()
+
+const compactLabelText = (value = '') => normalizeString(value).replace(/\s+/g, '')
+
+export const isLikelyCandidateName = (value = '') => {
+  const text = normalizeNameCandidate(value)
+  if (!text) return false
+  if (text.length > 40) return false
+  if (/@|\d|[\/\\]|[，,。.;；:：、|｜]/.test(text)) return false
+
+  const compact = compactLabelText(text)
+  if (!compact || NAME_SECTION_HEADERS.has(compact)) return false
+  if (NON_NAME_KEYWORD_PATTERN.test(compact)) return false
+  if (NON_NAME_SENTENCE_START_PATTERN.test(compact)) return false
+
+  if (/^[\p{Script=Han}·]{2,8}$/u.test(compact)) {
+    return !/^·|·$/.test(compact) && !/··/.test(compact)
+  }
+
+  const englishWords = text.split(/[\s-]+/).filter(Boolean)
+  if (englishWords.length >= 2 && englishWords.length <= 5) {
+    return englishWords.every((word) => /^[A-Z][A-Za-z'.]{1,24}$/.test(word))
+  }
+
+  return false
+}
+
+const pickNameFromCandidateText = (value = '') => {
+  const text = normalizeNameCandidate(value)
+  if (!text) return ''
+
+  const slashMatch = text.match(/^([\p{Script=Han}·]{2,8})\s*\/\s*([A-Za-z][A-Za-z\s'.-]{1,50})$/u)
+  if (slashMatch?.[1] && isLikelyCandidateName(slashMatch[1])) return slashMatch[1].trim()
+
+  const chineseMatch = text.match(new RegExp(`^([\\p{Script=Han}·]{2,8})${NAME_TRAILING_LABEL_PATTERN.source}`, 'u'))
+  if (chineseMatch?.[1] && isLikelyCandidateName(chineseMatch[1])) return chineseMatch[1].trim()
+
+  const englishMatch = text.match(new RegExp(`^([A-Z][A-Za-z'.-]+(?:\\s+[A-Z][A-Za-z'.-]+){1,4})${NAME_TRAILING_LABEL_PATTERN.source}`))
+  if (englishMatch?.[1] && isLikelyCandidateName(englishMatch[1])) return englishMatch[1].trim()
+
+  return isLikelyCandidateName(text) ? text : ''
+}
+
+export const extractCandidateNameFromText = (normalized = '') => {
+  const lines = String(normalized || '')
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-    .slice(0, 5)
 
-  return (
-    firstLines.find((line) => /^[\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z\s\-/.]{1,40}$/u.test(line) && !/@/.test(line)) ||
-    ''
-  )
+  for (const [index, line] of lines.entries()) {
+    const inlineMatch = line.match(/^(?:姓名|Name)\s*[:：]\s*(.+)$/i)
+    const inlineName = inlineMatch?.[1] ? pickNameFromCandidateText(inlineMatch[1]) : ''
+    if (inlineName) return inlineName
+
+    const compact = compactLabelText(line)
+    if (compact === '姓名' || /^Name:?$/i.test(line)) {
+      const nextName = pickNameFromCandidateText(lines[index + 1] || '')
+      if (nextName) return nextName
+    }
+    if (compact === '姓' && compactLabelText(lines[index + 1] || '') === '名') {
+      const nextName = pickNameFromCandidateText(lines[index + 2] || '')
+      if (nextName) return nextName
+    }
+  }
+
+  for (const line of lines.slice(0, 8)) {
+    const slashMatch = line.match(/^([\p{Script=Han}·]{2,8})\s*\/\s*([A-Za-z][A-Za-z\s'.-]{1,50})$/u)
+    if (slashMatch?.[1] && isLikelyCandidateName(slashMatch[1])) return slashMatch[1].trim()
+  }
+
+  for (const line of lines.slice(0, 10)) {
+    const name = pickNameFromCandidateText(line)
+    if (name) return name
+  }
+
+  return ''
+}
+
+const extractNameFromText = (normalized) => {
+  return extractCandidateNameFromText(normalized)
 }
 
 const extractTechnicalSkillsFromText = (normalized) => {

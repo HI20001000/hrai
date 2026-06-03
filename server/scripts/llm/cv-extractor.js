@@ -1,6 +1,8 @@
 import { extractCandidateInfoByLlm } from './client.js'
 import {
+  extractCandidateNameFromText,
   extractCandidateInfoByRegexText,
+  isLikelyCandidateName,
   normalizeExtractedFields,
   parseLlmContentToJson,
   validateCvExtractionPayload,
@@ -8,13 +10,24 @@ import {
 import { extractTextFromBuffer } from './text-extractors.js'
 import { HttpError, LlmOutputFormatError } from '../errors.js'
 
-const extractCandidateNameFromFileName = (fileName = '') => {
+export const extractCandidateNameFromFileName = (fileName = '') => {
   const baseName = String(fileName || '')
+    .split(/[\\/]/)
+    .pop()
     .replace(/\.[^.]+$/, '')
     .trim()
+  if (!baseName) return ''
+
+  const candidates = []
   const afterBracket = baseName.includes('】') ? baseName.slice(baseName.lastIndexOf('】') + 1) : ''
-  const match = afterBracket.trim().match(/^([\p{Script=Han}A-Za-z·]{2,24})(?=[_\s（(]|$)/u)
-  return match?.[1]?.trim() || ''
+  if (afterBracket) candidates.push(afterBracket)
+  candidates.push(...baseName.split(/[-_＿\s（()）]+/u))
+
+  for (const rawCandidate of candidates) {
+    const candidate = String(rawCandidate || '').trim()
+    if (isLikelyCandidateName(candidate)) return candidate
+  }
+  return ''
 }
 
 const extractBossMetaFromFileName = (fileName = '') => {
@@ -30,9 +43,42 @@ const extractBossMetaFromFileName = (fileName = '') => {
   return { targetPosition, expectedSalary }
 }
 
+export const resolveCandidateFullName = ({ currentName = '', cvText = '', fileName = '' } = {}) => {
+  const nameFromText = extractCandidateNameFromText(cvText)
+  if (nameFromText) return nameFromText
+
+  const normalizedCurrentName = String(currentName || '').trim()
+  if (isLikelyCandidateName(normalizedCurrentName)) return normalizedCurrentName
+
+  return extractCandidateNameFromFileName(fileName)
+}
+
+export const applyCandidateFullNameResolution = (extraction = {}, cvText = '', fileName = '') => {
+  const extracted = extraction?.extracted || {}
+  const resolvedFullName = resolveCandidateFullName({
+    currentName: extracted.fullName,
+    cvText,
+    fileName,
+  })
+  const missingFields = Array.isArray(extraction?.missingFields) ? extraction.missingFields : []
+  const nextMissingFields = resolvedFullName
+    ? missingFields.filter((field) => field !== 'fullName')
+    : missingFields.includes('fullName')
+      ? missingFields
+      : ['fullName', ...missingFields]
+
+  return {
+    ...extraction,
+    extracted: {
+      ...extracted,
+      fullName: resolvedFullName,
+    },
+    missingFields: nextMissingFields,
+  }
+}
+
 const buildRegexFallbackExtraction = (cvText, fileName) => {
   const fallback = extractCandidateInfoByRegexText(cvText)
-  const nameFromFileName = extractCandidateNameFromFileName(fileName)
   const fileMeta = extractBossMetaFromFileName(fileName)
   const fallbackExtracted = fallback.extracted || {}
   const fallbackProfile = fallbackExtracted.profile || {}
@@ -49,7 +95,7 @@ const buildRegexFallbackExtraction = (cvText, fileName) => {
   const extracted = {
     ...fallbackExtracted,
     profile: nextProfile,
-    fullName: nameFromFileName || fallbackExtracted.fullName || '',
+    fullName: fallbackExtracted.fullName || '',
   }
   const missingFields = Array.isArray(fallback.missingFields)
     ? fallback.missingFields.filter((field) => {
@@ -59,12 +105,12 @@ const buildRegexFallbackExtraction = (cvText, fileName) => {
         return true
       })
     : []
-  return {
+  return applyCandidateFullNameResolution({
     ...fallback,
     extracted,
     missingFields,
     llmJson: null,
-  }
+  }, cvText, fileName)
 }
 
 export const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType = '') => {
@@ -105,7 +151,11 @@ export const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType
       throw new LlmOutputFormatError(`CV extraction output schema mismatch: ${error?.message || error}`)
     }
 
-    const normalized = normalizeExtractedFields(parsed, { sourceText: cvText })
+    const normalized = applyCandidateFullNameResolution(
+      normalizeExtractedFields(parsed, { sourceText: cvText }),
+      cvText,
+      fileName
+    )
     return {
       ...normalized,
       llmJson: parsed,
