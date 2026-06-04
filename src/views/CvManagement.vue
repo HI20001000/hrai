@@ -6,6 +6,7 @@ import MatchDimensionBreakdown from '../components/MatchDimensionBreakdown.vue'
 import CandidateApplicationsTable from '../components/candidate/CandidateApplicationsTable.vue'
 import CandidateApplicationStatusModal from '../components/candidate/CandidateApplicationStatusModal.vue'
 import CandidateCvUploadModal from '../components/candidate/CandidateCvUploadModal.vue'
+import { getClientLocalDateText, withAuthHeaders } from '../scripts/authState.js'
 import {
   CANDIDATE_APPLICATION_STATUS_OPTIONS,
   INTERVIEW_DURATION_PRESET_OPTIONS,
@@ -79,7 +80,7 @@ function createEmptyProjectTransferForm() {
   return {
     projectId: '',
     projectRole: '',
-    startDate: new Date().toISOString().slice(0, 10),
+    startDate: getClientLocalDateText(),
     remark: '',
   }
 }
@@ -138,24 +139,6 @@ const applyInterviewDurationDraft = (minutes) => {
   const normalized = normalizeInterviewDurationMinutes(minutes)
   interviewDurationMinutesDraft.value = String(normalized)
   interviewDurationModeDraft.value = getDurationMode(normalized)
-}
-
-const parseJsonSafe = (value) => {
-  try {
-    return JSON.parse(value)
-  } catch {
-    return null
-  }
-}
-
-const withAuthHeaders = (headers = {}) => {
-  const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
-  const token = String(auth?.token || '').trim()
-  const date = new Date()
-  const pad = (value) => String(value).padStart(2, '0')
-  const clientTime = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-  const baseHeaders = { ...headers, 'X-HRAI-Client-Time': clientTime }
-  return token ? { ...baseHeaders, Authorization: `Bearer ${token}` } : baseHeaders
 }
 
 const withAuthOptions = (options = {}) => ({
@@ -1111,7 +1094,7 @@ const openProjectTransferModal = async (row) => {
   projectTransferForm.value = {
     projectId: '',
     projectRole: String(row?.matchedPosition || row?.targetPosition || '').trim(),
-    startDate: new Date().toISOString().slice(0, 10),
+    startDate: getClientLocalDateText(),
     remark: '',
   }
   isProjectTransferModalOpen.value = true

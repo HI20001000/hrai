@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import AppSelect from '../components/AppSelect.vue'
 import { normalizeSearchText } from '../scripts/searchNormalize.js'
+import { getClientLocalDateText, withAuthHeaders } from '../scripts/authState.js'
 
 const activeView = ref('manage')
 const pageMessage = ref('')
@@ -127,7 +128,10 @@ const clearFeedback = () => {
 }
 
 const fetchJson = async (endpoint, options = {}) => {
-  const response = await fetch(endpoint, options)
+  const response = await fetch(endpoint, {
+    ...options,
+    headers: withAuthHeaders(options.headers || {}),
+  })
   const data = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(data.message || 'Request failed')
   return data
@@ -417,7 +421,7 @@ const removeAssignment = async (row) => {
     await fetchJson(`${apiBaseUrl}/api/project-personnel-assignments/${assignmentId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endDate: new Date().toISOString().slice(0, 10) }),
+      body: JSON.stringify({ endDate: getClientLocalDateText() }),
     })
     await selectProject(selectedProject.value.id)
     pageMessage.value = '人員已移出項目'
@@ -435,7 +439,7 @@ const beginTransfer = (row) => {
   transferForm.value = {
     targetProjectId: firstTarget,
     projectRole: row.projectRole || '',
-    transferDate: new Date().toISOString().slice(0, 10),
+    transferDate: getClientLocalDateText(),
     remark: '',
   }
 }

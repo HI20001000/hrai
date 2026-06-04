@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { apiBaseUrl } from '../scripts/apiBaseUrl.js'
 import AppSelect from '../components/AppSelect.vue'
+import { getClientLocalDateText, withAuthHeaders } from '../scripts/authState.js'
 
 const pageMessage = ref('')
 const pageError = ref('')
@@ -51,7 +52,7 @@ function createEmptyProjectForm() {
   return {
     projectId: '',
     projectRole: '',
-    startDate: new Date().toISOString().slice(0, 10),
+    startDate: getClientLocalDateText(),
     remark: '',
   }
 }
@@ -105,7 +106,10 @@ const toQueryString = (params) => {
 }
 
 const fetchJson = async (endpoint, options = {}) => {
-  const response = await fetch(endpoint, options)
+  const response = await fetch(endpoint, {
+    ...options,
+    headers: withAuthHeaders(options.headers || {}),
+  })
   const data = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(data.message || 'Request failed')
   return data

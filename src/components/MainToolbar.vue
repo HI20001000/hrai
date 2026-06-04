@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import titleLogoUrl from '../assets/web_icon.png'
+import { getClientLocalDateTimeHeader } from '../scripts/authState.js'
 
 const props = defineProps({
   activePage: {
@@ -76,13 +77,15 @@ const displayAvatarBgColor = computed(() => {
 })
 
 const updateCurrentTime = () => {
-  const date = new Date()
+  const systemTime = getClientLocalDateTimeHeader()
+  const [datePart = '', timePart = ''] = systemTime.split(' ')
+  const [hoursText = '0', minutesText = '0', secondsText = '0'] = timePart.split(':')
   const pad = (value) => String(value).padStart(2, '0')
-  const hours24 = date.getHours()
+  const hours24 = Number(hoursText || 0)
   const period = hours24 >= 12 ? 'PM' : 'AM'
   const hours12 = hours24 % 12 || 12
-  currentTimeText.value = `${pad(hours12)}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${period}`
-  currentDateText.value = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+  currentTimeText.value = `${pad(hours12)}:${pad(minutesText)}:${pad(secondsText)} ${period}`
+  currentDateText.value = datePart
 }
 
 const selectPage = (key) => {

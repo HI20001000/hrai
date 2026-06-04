@@ -1,6 +1,7 @@
 import mysql from 'mysql2/promise'
 
 const getDbName = () => process.env.HRAI_DATABASE || process.env.MYSQL_DATABASE || 'hrai'
+const getDbTimezone = () => process.env.HRAI_MYSQL_TIMEZONE || process.env.MYSQL_TIMEZONE || '+08:00'
 
 const baseConfig = () => ({
   host: process.env.MYSQL_HOST || '127.0.0.1',
@@ -26,6 +27,8 @@ export const createDatabasePool = () => {
     ...baseConfig(),
     database,
     connectionLimit: 5,
+    timezone: getDbTimezone(),
+    dateStrings: true,
   })
 }
 

@@ -996,10 +996,11 @@ const createJobPost = async (pool, req, res) => {
   }
 
   const snapshot = buildJobSnapshot(jobKey, dictionaryJob)
+  const requestTimestamp = getRequestLocalDateTime(req)
   const [result] = await pool.query(
-    `INSERT INTO job_posts (title, job_key, job_snapshot_json, status)
-     VALUES (?, ?, ?, ?)`,
-    [title, jobKey, stringifyJson(snapshot), status]
+    `INSERT INTO job_posts (title, job_key, job_snapshot_json, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [title, jobKey, stringifyJson(snapshot), status, requestTimestamp, requestTimestamp]
   )
 
   sendJson(res, 201, {
@@ -1069,10 +1070,11 @@ const updateJobPost = async (pool, req, res, jobPostId) => {
   const snapshot = dictionaryJob
     ? buildJobSnapshot(jobKey, dictionaryJob)
     : existing.jobSnapshot || buildJobSnapshot(jobKey, { jobKey, title })
+  const requestTimestamp = getRequestLocalDateTime(req)
 
   await pool.query(
-    'UPDATE job_posts SET title = ?, job_key = ?, job_snapshot_json = ?, status = ? WHERE id = ?',
-    [title, jobKey, stringifyJson(snapshot), status, jobPostId]
+    'UPDATE job_posts SET title = ?, job_key = ?, job_snapshot_json = ?, status = ?, updated_at = ? WHERE id = ?',
+    [title, jobKey, stringifyJson(snapshot), status, requestTimestamp, jobPostId]
   )
   const updated = await getJobPostById(pool, jobPostId)
   sendJson(res, 200, { message: 'Job post updated', jobPost: updated })
@@ -1830,9 +1832,10 @@ const createCandidate = async (pool, req, res) => {
     return
   }
 
+  const requestTimestamp = getRequestLocalDateTime(req)
   const [result] = await pool.query(
-    'INSERT INTO candidates (full_name, email, phone) VALUES (?, ?, ?)',
-    [fullName, email, phone]
+    'INSERT INTO candidates (full_name, email, phone, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+    [fullName, email, phone, requestTimestamp, requestTimestamp]
   )
 
   sendJson(res, 201, {
@@ -1852,10 +1855,12 @@ const completeCandidateProfile = async (pool, req, res, candidateId) => {
     return
   }
 
-  await pool.query('UPDATE candidates SET full_name = ?, email = ?, phone = ? WHERE id = ?', [
+  const requestTimestamp = getRequestLocalDateTime(req)
+  await pool.query('UPDATE candidates SET full_name = ?, email = ?, phone = ?, updated_at = ? WHERE id = ?', [
     fullName,
     email,
     phone,
+    requestTimestamp,
     candidateId,
   ])
 
@@ -1902,9 +1907,10 @@ const insertCandidateCv = async (
   fileName,
   mimeType,
   buffer,
-  { source = '' } = {}
+  { source = '', uploadedAtSql = '' } = {}
 ) => {
   const normalizedSource = normalizeCvSource(source) || null
+  const uploadedAt = normalizeClientLocalDateTime(uploadedAtSql) || formatDateTimeForPayload(new Date())
   const originalFileName = buildStoredCandidateCvOriginalFileName(fileName)
   const [versionRows] = await pool.query(
     'SELECT COALESCE(MAX(version_no), 0) AS maxVersion FROM candidate_cvs WHERE candidate_id = ?',
@@ -1921,8 +1927,8 @@ const insertCandidateCv = async (
 
   const [result] = await pool.query(
     `INSERT INTO candidate_cvs
-      (candidate_id, version_no, storage_provider, storage_key, original_filename, mime_type, file_size, sha256, source)
-     VALUES (?, ?, 'local', ?, ?, ?, ?, ?, ?)`,
+      (candidate_id, version_no, storage_provider, storage_key, original_filename, mime_type, file_size, sha256, source, uploaded_at)
+     VALUES (?, ?, 'local', ?, ?, ?, ?, ?, ?, ?)`,
     [
       candidateId,
       nextVersion,
@@ -1932,6 +1938,7 @@ const insertCandidateCv = async (
       buffer.length,
       fileHash,
       normalizedSource,
+      uploadedAt,
     ]
   )
 
@@ -2584,6 +2591,8 @@ const normalizeClientLocalDateTime = (value) => {
 const getRequestLocalDateTime = (req) =>
   normalizeClientLocalDateTime(req?.headers?.['x-hrai-client-time']) || formatDateTimeForPayload(new Date())
 
+const getRequestLocalDate = (req) => getRequestLocalDateTime(req).slice(0, 10)
+
 const resolveInterviewInput = (value = {}, fallback = {}) => {
   const source = value && typeof value === 'object' ? value : {}
   const scheduledAt = Object.prototype.hasOwnProperty.call(source, 'scheduledAt')
@@ -3042,10 +3051,15 @@ const findPersonnelByIdentity = async (pool, { email = '', phone = '' } = {}) =>
   return null
 }
 
-const createOrUpdatePersonnelForProject = async (pool, payload, { requireIdentity = false } = {}) => {
+const createOrUpdatePersonnelForProject = async (
+  pool,
+  payload,
+  { requireIdentity = false, updatedAtSql = '' } = {}
+) => {
   const existing = payload.personnelId
     ? await getPersonnelById(pool, payload.personnelId)
     : await findPersonnelByIdentity(pool, { email: payload.email, phone: payload.phone })
+  const personnelTimestamp = normalizeClientLocalDateTime(updatedAtSql) || formatDateTimeForPayload(new Date())
 
   if (payload.personnelId && !existing) {
     throw new HttpError(404, 'Personnel not found')
@@ -3078,7 +3092,7 @@ const createOrUpdatePersonnelForProject = async (pool, payload, { requireIdentit
     await pool.query(
       `UPDATE personnel
         SET full_name = ?, department = ?, team = ?, title = ?, email = ?, phone = ?,
-            manager_personnel_id = ?, status = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+            manager_personnel_id = ?, status = ?, remark = ?, updated_at = ?
        WHERE id = ?`,
       [
         nextPayload.fullName,
@@ -3090,6 +3104,7 @@ const createOrUpdatePersonnelForProject = async (pool, payload, { requireIdentit
         nextPayload.managerPersonnelId,
         nextPayload.status,
         nextPayload.remark || null,
+        personnelTimestamp,
         existing.id,
       ]
     )
@@ -3098,8 +3113,8 @@ const createOrUpdatePersonnelForProject = async (pool, payload, { requireIdentit
 
   const [result] = await pool.query(
     `INSERT INTO personnel
-      (full_name, department, team, title, email, phone, manager_personnel_id, status, remark)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+      (full_name, department, team, title, email, phone, manager_personnel_id, status, remark, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
     [
       nextPayload.fullName,
       nextPayload.department || null,
@@ -3109,6 +3124,8 @@ const createOrUpdatePersonnelForProject = async (pool, payload, { requireIdentit
       nextPayload.phone || null,
       nextPayload.managerPersonnelId,
       nextPayload.remark || null,
+      personnelTimestamp,
+      personnelTimestamp,
     ]
   )
 
@@ -3255,11 +3272,13 @@ const insertProjectMovement = async (pool, {
   projectRole = '',
   source = 'manual',
   remark = '',
+  createdAtSql = '',
 } = {}) => {
+  const movementTimestamp = normalizeClientLocalDateTime(createdAtSql) || formatDateTimeForPayload(new Date())
   await pool.query(
     `INSERT INTO project_personnel_movements
-      (assignment_id, personnel_id, from_project_id, to_project_id, movement_type, movement_date, project_role, source, remark)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (assignment_id, personnel_id, from_project_id, to_project_id, movement_type, movement_date, project_role, source, remark, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       assignmentId || null,
       personnelId,
@@ -3270,6 +3289,7 @@ const insertProjectMovement = async (pool, {
       normalizeText(projectRole) || null,
       normalizeAssignmentSource(source),
       normalizeRemark(remark) || null,
+      movementTimestamp,
     ]
   )
 }
@@ -3280,9 +3300,10 @@ const upsertProjectAssignment = async (
   personnelId,
   payload,
   movementType = 'joined',
-  { recordMovement = true } = {}
+  { recordMovement = true, updatedAtSql = '' } = {}
 ) => {
   assertDateRange(payload.startDate, payload.endDate, 'assignment')
+  const assignmentTimestamp = normalizeClientLocalDateTime(updatedAtSql) || formatDateTimeForPayload(new Date())
 
   const [existingRows] = await pool.query(
     'SELECT id FROM project_personnel_assignments WHERE project_id = ? AND personnel_id = ? LIMIT 1',
@@ -3295,7 +3316,7 @@ const upsertProjectAssignment = async (
     await pool.query(
       `UPDATE project_personnel_assignments
         SET project_role = ?, start_date = ?, end_date = ?, source = ?, status = ?, remark = ?,
-            updated_at = CURRENT_TIMESTAMP
+            updated_at = ?
        WHERE id = ?`,
       [
         payload.projectRole || null,
@@ -3304,6 +3325,7 @@ const upsertProjectAssignment = async (
         payload.source,
         status,
         payload.remark || null,
+        assignmentTimestamp,
         existingId,
       ]
     )
@@ -3318,6 +3340,7 @@ const upsertProjectAssignment = async (
         projectRole: payload.projectRole,
         source: payload.source,
         remark: payload.remark,
+        createdAtSql: assignmentTimestamp,
       })
     }
     return { assignment, action: 'updated' }
@@ -3325,8 +3348,8 @@ const upsertProjectAssignment = async (
 
   const [result] = await pool.query(
     `INSERT INTO project_personnel_assignments
-      (project_id, personnel_id, project_role, start_date, end_date, source, status, remark)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      (project_id, personnel_id, project_role, start_date, end_date, source, status, remark, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       projectId,
       personnelId,
@@ -3336,6 +3359,8 @@ const upsertProjectAssignment = async (
       payload.source,
       status,
       payload.remark || null,
+      assignmentTimestamp,
+      assignmentTimestamp,
     ]
   )
   const assignmentId = Number(result.insertId)
@@ -3350,6 +3375,7 @@ const upsertProjectAssignment = async (
       projectRole: payload.projectRole,
       source: payload.source,
       remark: payload.remark,
+      createdAtSql: assignmentTimestamp,
     })
   }
   return { assignment, action: 'created' }
@@ -3534,10 +3560,14 @@ const findCandidateByIdentity = async (pool, { email = '', phone = '' } = {}) =>
   return null
 }
 
-const findOrCreateCandidateForApplication = async (pool, { fullName = '', email = '', phone = '' } = {}) => {
+const findOrCreateCandidateForApplication = async (
+  pool,
+  { fullName = '', email = '', phone = '', createdAtSql = '' } = {}
+) => {
   const normalizedName = normalizeText(fullName) || 'x'
   const normalizedEmail = normalizeText(email).toLowerCase() || null
   const normalizedPhone = normalizeText(phone) || null
+  const candidateTimestamp = normalizeClientLocalDateTime(createdAtSql) || formatDateTimeForPayload(new Date())
   const existing = await findCandidateByIdentity(pool, {
     email: normalizedEmail,
     phone: normalizedPhone,
@@ -3545,15 +3575,15 @@ const findOrCreateCandidateForApplication = async (pool, { fullName = '', email 
 
   if (!existing) {
     const [result] = await pool.query(
-      'INSERT INTO candidates (full_name, email, phone) VALUES (?, ?, ?)',
-      [normalizedName, normalizedEmail, normalizedPhone]
+      'INSERT INTO candidates (full_name, email, phone, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      [normalizedName, normalizedEmail, normalizedPhone, candidateTimestamp, candidateTimestamp]
     )
     return {
       id: Number(result.insertId),
       fullName: normalizedName,
       email: normalizedEmail,
       phone: normalizedPhone,
-      createdAt: new Date(),
+      createdAt: candidateTimestamp,
     }
   }
 
@@ -3561,8 +3591,8 @@ const findOrCreateCandidateForApplication = async (pool, { fullName = '', email 
   const nextEmail = normalizedEmail || normalizeText(existing.email).toLowerCase() || null
   const nextPhone = normalizedPhone || normalizeText(existing.phone) || null
   await pool.query(
-    'UPDATE candidates SET full_name = ?, email = ?, phone = ? WHERE id = ?',
-    [nextName, nextEmail, nextPhone, Number(existing.id)]
+    'UPDATE candidates SET full_name = ?, email = ?, phone = ?, updated_at = ? WHERE id = ?',
+    [nextName, nextEmail, nextPhone, candidateTimestamp, Number(existing.id)]
   )
 
   return {
@@ -3580,13 +3610,14 @@ const createJobPostApplication = async (
   candidateId,
   candidateCvId,
   match = null,
-  { ownerUserId = null } = {}
+  { ownerUserId = null, createdAtSql = '' } = {}
 ) => {
   const normalizedOwnerUserId = Number(ownerUserId || 0) || null
+  const applicationTimestamp = normalizeClientLocalDateTime(createdAtSql) || formatDateTimeForPayload(new Date())
   const [result] = await pool.query(
     `INSERT INTO job_post_applications
-      (job_post_id, candidate_id, candidate_cv_id, application_status, owner_user_id, matched_score, matched_level, matched_position)
-     VALUES (?, ?, ?, 'screening', ?, ?, ?, ?)`,
+      (job_post_id, candidate_id, candidate_cv_id, application_status, owner_user_id, matched_score, matched_level, matched_position, created_at, updated_at)
+     VALUES (?, ?, ?, 'screening', ?, ?, ?, ?, ?, ?)`,
     [
       jobPostId,
       candidateId,
@@ -3595,6 +3626,8 @@ const createJobPostApplication = async (
       match ? Number(match.matchScore || 0) : null,
       match ? normalizeText(match.matchLevel) || null : null,
       match ? normalizeText(match.matchedPosition || match.jobTitle) || null : null,
+      applicationTimestamp,
+      applicationTimestamp,
     ]
   )
   const applicationId = Number(result.insertId)
@@ -3602,19 +3635,21 @@ const createJobPostApplication = async (
     applicationStatus: 'screening',
     firstInterviewArrangement: '',
     remark: '',
-  }, { operatorUserId: normalizedOwnerUserId })
+  }, { operatorUserId: normalizedOwnerUserId, updatedAtSql: applicationTimestamp })
   return applicationId
 }
 
-const updateJobPostApplicationMatch = async (pool, applicationId, match = null) => {
+const updateJobPostApplicationMatch = async (pool, applicationId, match = null, { updatedAtSql = '' } = {}) => {
+  const matchUpdatedAt = normalizeClientLocalDateTime(updatedAtSql) || formatDateTimeForPayload(new Date())
   await pool.query(
     `UPDATE job_post_applications
-      SET matched_score = ?, matched_level = ?, matched_position = ?, updated_at = CURRENT_TIMESTAMP
+      SET matched_score = ?, matched_level = ?, matched_position = ?, updated_at = ?
      WHERE id = ?`,
     [
       match ? Number(match.matchScore || 0) : null,
       match ? normalizeText(match.matchLevel) || null : null,
       match ? normalizeText(match.matchedPosition || match.jobTitle) || null : null,
+      matchUpdatedAt,
       applicationId,
     ]
   )
@@ -3641,15 +3676,22 @@ const getApplicationContextByCandidateCvId = async (pool, candidateCvId) => {
   }
 }
 
-const replaceCandidateCvJobMatches = async (pool, candidateId, candidateCvId, matches = []) => {
+const replaceCandidateCvJobMatches = async (
+  pool,
+  candidateId,
+  candidateCvId,
+  matches = [],
+  { createdAtSql = '' } = {}
+) => {
   await pool.query('DELETE FROM candidate_cv_job_matches WHERE candidate_cv_id = ?', [candidateCvId])
   if (!Array.isArray(matches) || !matches.length) return
 
+  const matchTimestamp = normalizeClientLocalDateTime(createdAtSql) || formatDateTimeForPayload(new Date())
   for (const [index, match] of matches.entries()) {
     await pool.query(
       `INSERT INTO candidate_cv_job_matches
-        (candidate_id, candidate_cv_id, job_key, job_title, rank_no, match_score, match_level, reason_summary, strengths_json, gaps_json, raw_llm_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (candidate_id, candidate_cv_id, job_key, job_title, rank_no, match_score, match_level, reason_summary, strengths_json, gaps_json, raw_llm_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         candidateId,
         candidateCvId,
@@ -3662,6 +3704,7 @@ const replaceCandidateCvJobMatches = async (pool, candidateId, candidateCvId, ma
         stringifyJson(normalizeList(match.strengths, 10)),
         stringifyJson(normalizeList(match.gaps, 10)),
         stringifyJson(match),
+        matchTimestamp,
       ]
     )
   }
@@ -3820,18 +3863,21 @@ const attachMatchReportToExtractedPayload = (payload = {}, match = null) => {
   return nextPayload
 }
 
-const runCandidateCvMatching = async (pool, candidateId, candidateCvId, extracted) => {
+const runCandidateCvMatching = async (pool, candidateId, candidateCvId, extracted, { createdAtSql = '' } = {}) => {
   const matches = await matchCandidateToJobs(extracted, getJobDictionary())
-  await replaceCandidateCvJobMatches(pool, candidateId, candidateCvId, matches)
+  await replaceCandidateCvJobMatches(pool, candidateId, candidateCvId, matches, { createdAtSql })
   return matches
 }
 
-const runJobPostApplicationMatching = async (pool, { applicationId = null, candidateId, candidateCvId, extracted, jobSnapshot }) => {
+const runJobPostApplicationMatching = async (
+  pool,
+  { applicationId = null, candidateId, candidateCvId, extracted, jobSnapshot, updatedAtSql = '' }
+) => {
   const match = await matchCandidateToJobPost(extracted, resolveCurrentJobSnapshot(jobSnapshot))
   const matches = match ? [{ ...match, rankNo: 1 }] : []
-  await replaceCandidateCvJobMatches(pool, candidateId, candidateCvId, matches)
+  await replaceCandidateCvJobMatches(pool, candidateId, candidateCvId, matches, { createdAtSql: updatedAtSql })
   if (applicationId) {
-    await updateJobPostApplicationMatch(pool, applicationId, match)
+    await updateJobPostApplicationMatch(pool, applicationId, match, { updatedAtSql })
   }
   return match
 }
@@ -4145,6 +4191,7 @@ const intakeCv = async (pool, req, res, jobPostId = null) => {
     return
   }
   const operatorUserId = await getRequestOperatorUserId(pool, req)
+  const requestTimestamp = getRequestLocalDateTime(req)
   const parsed = await parseCachedCvExtraction(cached)
   const extraction = parsed?.extraction || {}
   const cvText = parsed?.cvText || ''
@@ -4165,18 +4212,21 @@ const intakeCv = async (pool, req, res, jobPostId = null) => {
     fullName: derivedName,
     email: derivedEmail,
     phone: derivedPhone,
+    createdAtSql: requestTimestamp,
   })
   const candidateId = Number(candidate.id)
   const cv = await insertCandidateCv(pool, candidateId, fileName, mimeType, buffer, {
     fullName: candidate.fullName || derivedName,
     createdAt: candidate.createdAt || new Date(),
     source,
+    uploadedAtSql: requestTimestamp,
   })
   const targetPosition = Array.isArray(finalExtracted?.profile?.targetPosition)
     ? finalExtracted.profile.targetPosition.join(', ')
     : ''
   const applicationId = await createJobPostApplication(pool, jobPostId, candidateId, cv.id, null, {
     ownerUserId: operatorUserId,
+    createdAtSql: requestTimestamp,
   })
   const match = await runJobPostApplicationMatching(pool, {
     applicationId,
@@ -4184,6 +4234,7 @@ const intakeCv = async (pool, req, res, jobPostId = null) => {
     candidateCvId: cv.id,
     extracted: finalExtracted,
     jobSnapshot: jobPost.jobSnapshot,
+    updatedAtSql: requestTimestamp,
   })
   const extractedPayload = attachMatchReportToExtractedPayload(
     {
@@ -4240,6 +4291,8 @@ const uploadCandidateCv = async (pool, req, res, candidateId) => {
   const fileName = body?.fileName
   const contentBase64 = body?.contentBase64
   const mimeType = body?.mimeType || 'application/octet-stream'
+  const source = resolveCvSource(body?.source, fileName)
+  const requestTimestamp = getRequestLocalDateTime(req)
 
   if (!fileName || !contentBase64) {
     sendJson(res, 400, { message: 'fileName and contentBase64 are required' })
@@ -4266,6 +4319,7 @@ const uploadCandidateCv = async (pool, req, res, candidateId) => {
     fullName: candidate.fullName || '',
     createdAt: candidate.createdAt || '',
     source,
+    uploadedAtSql: requestTimestamp,
   })
   const cvText = await extractTextFromBuffer(buffer, fileName, mimeType)
   await insertCandidateCvExtraction(pool, candidateId, cv.id, {
@@ -4323,24 +4377,27 @@ const intakeCandidateCvToJobPost = async (pool, req, res, candidateId, jobPostId
   const nextFullName = normalizeText(finalExtracted.fullName) || candidate.fullName || 'x'
   const nextEmail = normalizeEmailIdentity(finalExtracted.email) || candidate.email || null
   const nextPhone = normalizeText(finalExtracted.phone) || candidate.phone || null
+  const operatorUserId = await getRequestOperatorUserId(pool, req)
+  const requestTimestamp = getRequestLocalDateTime(req)
 
   await pool.query(
-    'UPDATE candidates SET full_name = ?, email = ?, phone = ? WHERE id = ?',
-    [nextFullName, nextEmail, nextPhone, Number(candidateId)]
+    'UPDATE candidates SET full_name = ?, email = ?, phone = ?, updated_at = ? WHERE id = ?',
+    [nextFullName, nextEmail, nextPhone, requestTimestamp, Number(candidateId)]
   )
 
   const cv = await insertCandidateCv(pool, Number(candidateId), fileName, mimeType, buffer, {
     fullName: nextFullName,
     createdAt: candidate.createdAt || new Date(),
     source,
+    uploadedAtSql: requestTimestamp,
   })
 
   const targetPosition = Array.isArray(finalExtracted?.profile?.targetPosition)
     ? finalExtracted.profile.targetPosition.join(', ')
     : ''
-  const operatorUserId = await getRequestOperatorUserId(pool, req)
   const applicationId = await createJobPostApplication(pool, Number(jobPostId), Number(candidateId), cv.id, null, {
     ownerUserId: operatorUserId,
+    createdAtSql: requestTimestamp,
   })
   const match = await runJobPostApplicationMatching(pool, {
     applicationId,
@@ -4348,6 +4405,7 @@ const intakeCandidateCvToJobPost = async (pool, req, res, candidateId, jobPostId
     candidateCvId: cv.id,
     extracted: finalExtracted,
     jobSnapshot: jobPost.jobSnapshot,
+    updatedAtSql: requestTimestamp,
   })
 
   const extractedPayload = attachMatchReportToExtractedPayload(
@@ -5432,9 +5490,10 @@ const updateCandidateCvExtractedField = async (pool, req, res, candidateCvId) =>
   const fullName = normalizeText(payload.extracted.fullName)
   const email = normalizeText(payload.extracted.email)
   const phone = normalizeText(payload.extracted.phone)
+  const requestTimestamp = getRequestLocalDateTime(req)
   await pool.query(
-    'UPDATE candidates SET full_name = ?, email = ?, phone = ? WHERE id = ?',
-    [fullName || 'x', email || null, phone || null, Number(row.candidateId)]
+    'UPDATE candidates SET full_name = ?, email = ?, phone = ?, updated_at = ? WHERE id = ?',
+    [fullName || 'x', email || null, phone || null, requestTimestamp, Number(row.candidateId)]
   )
   const applicationContext = await getApplicationContextByCandidateCvId(pool, candidateCvId)
   const match = applicationContext?.jobSnapshot
@@ -5444,6 +5503,7 @@ const updateCandidateCvExtractedField = async (pool, req, res, candidateCvId) =>
       candidateCvId,
       extracted: payload.extracted,
       jobSnapshot: applicationContext.jobSnapshot,
+      updatedAtSql: requestTimestamp,
     })
     : null
   const finalPayload = attachMatchReportToExtractedPayload(payload, match)
@@ -5529,9 +5589,10 @@ const updateCandidateCvExtractedFields = async (pool, req, res, candidateCvId) =
   const fullName = normalizeText(payload.extracted.fullName)
   const email = normalizeText(payload.extracted.email)
   const phone = normalizeText(payload.extracted.phone)
+  const requestTimestamp = getRequestLocalDateTime(req)
   await pool.query(
-    'UPDATE candidates SET full_name = ?, email = ?, phone = ? WHERE id = ?',
-    [fullName || 'x', email || null, phone || null, Number(row.candidateId)]
+    'UPDATE candidates SET full_name = ?, email = ?, phone = ?, updated_at = ? WHERE id = ?',
+    [fullName || 'x', email || null, phone || null, requestTimestamp, Number(row.candidateId)]
   )
   const applicationContext = await getApplicationContextByCandidateCvId(pool, candidateCvId)
   const match = applicationContext?.jobSnapshot
@@ -5541,6 +5602,7 @@ const updateCandidateCvExtractedFields = async (pool, req, res, candidateCvId) =
       candidateCvId,
       extracted: payload.extracted,
       jobSnapshot: applicationContext.jobSnapshot,
+      updatedAtSql: requestTimestamp,
     })
     : null
   const finalPayload = attachMatchReportToExtractedPayload(payload, match)
@@ -5737,10 +5799,11 @@ const createProject = async (pool, req, res) => {
     return
   }
 
+  const requestTimestamp = getRequestLocalDateTime(req)
   const [result] = await pool.query(
     `INSERT INTO projects
-      (project_name, status, owner_personnel_id, start_date, end_date, remark)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+      (project_name, status, owner_personnel_id, start_date, end_date, remark, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       payload.projectName,
       payload.status,
@@ -5748,6 +5811,8 @@ const createProject = async (pool, req, res) => {
       payload.startDate,
       payload.endDate,
       payload.remark || null,
+      requestTimestamp,
+      requestTimestamp,
     ]
   )
   const project = await getProjectById(pool, Number(result.insertId))
@@ -5782,10 +5847,11 @@ const updateProject = async (pool, req, res, projectId) => {
     return
   }
 
+  const requestTimestamp = getRequestLocalDateTime(req)
   await pool.query(
     `UPDATE projects
       SET project_name = ?, status = ?, owner_personnel_id = ?, start_date = ?, end_date = ?,
-          remark = ?, updated_at = CURRENT_TIMESTAMP
+          remark = ?, updated_at = ?
      WHERE id = ?`,
     [
       payload.projectName,
@@ -5794,6 +5860,7 @@ const updateProject = async (pool, req, res, projectId) => {
       payload.startDate,
       payload.endDate,
       payload.remark || null,
+      requestTimestamp,
       projectId,
     ]
   )
@@ -5821,8 +5888,16 @@ const addProjectPersonnel = async (pool, req, res, projectId) => {
   }
 
   const payload = normalizeProjectAssignmentPayload(await parseBody(req), 'manual')
-  const personnel = await createOrUpdatePersonnelForProject(pool, payload)
-  const { assignment, action } = await upsertProjectAssignment(pool, projectId, Number(personnel.id), payload, 'joined')
+  const requestTimestamp = getRequestLocalDateTime(req)
+  const personnel = await createOrUpdatePersonnelForProject(pool, payload, { updatedAtSql: requestTimestamp })
+  const { assignment, action } = await upsertProjectAssignment(
+    pool,
+    projectId,
+    Number(personnel.id),
+    payload,
+    'joined',
+    { updatedAtSql: requestTimestamp }
+  )
   sendJson(res, action === 'created' ? 201 : 200, {
     message: action === 'created' ? 'Project personnel added' : 'Project personnel updated',
     personnel,
@@ -5849,10 +5924,11 @@ const updateProjectPersonnelAssignment = async (pool, req, res, assignmentId) =>
   }, existing.source)
   assertDateRange(payload.startDate, payload.endDate, 'assignment')
 
+  const requestTimestamp = getRequestLocalDateTime(req)
   await pool.query(
     `UPDATE project_personnel_assignments
       SET project_role = ?, start_date = ?, end_date = ?, source = ?, status = ?, remark = ?,
-          updated_at = CURRENT_TIMESTAMP
+          updated_at = ?
      WHERE id = ?`,
     [
       payload.projectRole || null,
@@ -5861,6 +5937,7 @@ const updateProjectPersonnelAssignment = async (pool, req, res, assignmentId) =>
       payload.source,
       payload.status,
       payload.remark || null,
+      requestTimestamp,
       assignmentId,
     ]
   )
@@ -5876,6 +5953,7 @@ const updateProjectPersonnelAssignment = async (pool, req, res, assignmentId) =>
     projectRole: payload.projectRole,
     source: payload.source,
     remark: payload.remark,
+    createdAtSql: requestTimestamp,
   })
 
   sendJson(res, 200, { message: 'Project assignment updated', assignment })
@@ -5889,13 +5967,14 @@ const removeProjectPersonnelAssignment = async (pool, req, res, assignmentId) =>
   }
 
   const body = await parseBody(req).catch(() => ({}))
-  const endDate = normalizeDateInput(body?.endDate || existing.endDate || getTodayDateText(), 'endDate')
+  const requestTimestamp = getRequestLocalDateTime(req)
+  const endDate = normalizeDateInput(body?.endDate || existing.endDate || getRequestLocalDate(req), 'endDate')
   const remark = normalizeRemark(body?.remark || existing.remark)
   await pool.query(
     `UPDATE project_personnel_assignments
-      SET status = 'removed', end_date = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+      SET status = 'removed', end_date = ?, remark = ?, updated_at = ?
      WHERE id = ?`,
-    [endDate, remark || null, assignmentId]
+    [endDate, remark || null, requestTimestamp, assignmentId]
   )
   const assignment = await getProjectAssignmentById(pool, assignmentId)
   await insertProjectMovement(pool, {
@@ -5907,6 +5986,7 @@ const removeProjectPersonnelAssignment = async (pool, req, res, assignmentId) =>
     projectRole: existing.projectRole,
     source: existing.source,
     remark,
+    createdAtSql: requestTimestamp,
   })
   sendJson(res, 200, { message: 'Project personnel removed', assignment })
 }
@@ -5934,7 +6014,8 @@ const transferProjectPersonnelAssignment = async (pool, req, res, assignmentId) 
     return
   }
 
-  const transferDate = normalizeDateInput(body?.transferDate || body?.startDate || getTodayDateText(), 'transferDate')
+  const requestTimestamp = getRequestLocalDateTime(req)
+  const transferDate = normalizeDateInput(body?.transferDate || body?.startDate || getRequestLocalDate(req), 'transferDate')
   const targetPayload = normalizeProjectAssignmentPayload({
     projectRole: body?.projectRole || existing.projectRole,
     startDate: body?.startDate || transferDate,
@@ -5946,9 +6027,9 @@ const transferProjectPersonnelAssignment = async (pool, req, res, assignmentId) 
 
   await pool.query(
     `UPDATE project_personnel_assignments
-      SET status = 'transferred', end_date = ?, updated_at = CURRENT_TIMESTAMP
+      SET status = 'transferred', end_date = ?, updated_at = ?
      WHERE id = ?`,
-    [transferDate, assignmentId]
+    [transferDate, requestTimestamp, assignmentId]
   )
 
   const { assignment: targetAssignment } = await upsertProjectAssignment(
@@ -5957,7 +6038,7 @@ const transferProjectPersonnelAssignment = async (pool, req, res, assignmentId) 
     existing.personnelId,
     targetPayload,
     'transferred',
-    { recordMovement: false }
+    { recordMovement: false, updatedAtSql: requestTimestamp }
   )
 
   await insertProjectMovement(pool, {
@@ -5970,6 +6051,7 @@ const transferProjectPersonnelAssignment = async (pool, req, res, assignmentId) 
     projectRole: targetPayload.projectRole,
     source: targetPayload.source,
     remark: targetPayload.remark,
+    createdAtSql: requestTimestamp,
   })
 
   const sourceAssignment = await getProjectAssignmentById(pool, assignmentId)
@@ -6016,6 +6098,7 @@ const importProjectPersonnelCsv = async (pool, req, res, projectId) => {
     return
   }
 
+  const requestTimestamp = getRequestLocalDateTime(req)
   let personnelRows = await listPersonnelRows(pool)
   const summary = {
     total: 0,
@@ -6046,8 +6129,18 @@ const importProjectPersonnelCsv = async (pool, req, res, projectId) => {
         source: 'csv',
         status: 'active',
       }, 'csv')
-      const personnel = await createOrUpdatePersonnelForProject(pool, payload, { requireIdentity: true })
-      const { action } = await upsertProjectAssignment(pool, projectId, Number(personnel.id), payload, 'joined')
+      const personnel = await createOrUpdatePersonnelForProject(pool, payload, {
+        requireIdentity: true,
+        updatedAtSql: requestTimestamp,
+      })
+      const { action } = await upsertProjectAssignment(
+        pool,
+        projectId,
+        Number(personnel.id),
+        payload,
+        'joined',
+        { updatedAtSql: requestTimestamp }
+      )
       if (action === 'created') summary.createdCount += 1
       else summary.updatedCount += 1
       personnelRows = [
@@ -6120,20 +6213,28 @@ const addProjectPersonnelFromApplication = async (pool, req, res) => {
     return
   }
 
+  const requestTimestamp = getRequestLocalDateTime(req)
   const payload = normalizeProjectAssignmentPayload({
     fullName: application.fullName,
     email: application.email,
     phone: application.phone,
     title: application.matchedPosition || application.targetPosition || '',
     projectRole: body?.projectRole || application.matchedPosition || application.targetPosition || '',
-    startDate: body?.startDate || getTodayDateText(),
+    startDate: body?.startDate || getRequestLocalDate(req),
     endDate: body?.endDate || null,
     source: 'candidate',
     status: 'active',
     remark: body?.remark || '',
   }, 'candidate')
-  const personnel = await createOrUpdatePersonnelForProject(pool, payload)
-  const { assignment, action } = await upsertProjectAssignment(pool, projectId, Number(personnel.id), payload, 'joined')
+  const personnel = await createOrUpdatePersonnelForProject(pool, payload, { updatedAtSql: requestTimestamp })
+  const { assignment, action } = await upsertProjectAssignment(
+    pool,
+    projectId,
+    Number(personnel.id),
+    payload,
+    'joined',
+    { updatedAtSql: requestTimestamp }
+  )
   sendJson(res, action === 'created' ? 201 : 200, {
     message: action === 'created' ? 'Candidate added to project personnel' : 'Project personnel updated from candidate',
     personnel,
@@ -6173,10 +6274,11 @@ const createPersonnel = async (pool, req, res) => {
   }
 
   await ensurePersonnelManagerIsValid(pool, null, payload.managerPersonnelId)
+  const requestTimestamp = getRequestLocalDateTime(req)
   const [result] = await pool.query(
     `INSERT INTO personnel
-      (full_name, department, team, title, email, phone, manager_personnel_id, status, remark)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (full_name, department, team, title, email, phone, manager_personnel_id, status, remark, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       payload.fullName,
       payload.department || null,
@@ -6187,6 +6289,8 @@ const createPersonnel = async (pool, req, res) => {
       payload.managerPersonnelId,
       payload.status,
       payload.remark || null,
+      requestTimestamp,
+      requestTimestamp,
     ]
   )
 
@@ -6209,10 +6313,11 @@ const updatePersonnel = async (pool, req, res, personnelId) => {
   }
 
   await ensurePersonnelManagerIsValid(pool, personnelId, payload.managerPersonnelId)
+  const requestTimestamp = getRequestLocalDateTime(req)
   await pool.query(
     `UPDATE personnel
       SET full_name = ?, department = ?, team = ?, title = ?, email = ?, phone = ?,
-          manager_personnel_id = ?, status = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+          manager_personnel_id = ?, status = ?, remark = ?, updated_at = ?
      WHERE id = ?`,
     [
       payload.fullName,
@@ -6224,6 +6329,7 @@ const updatePersonnel = async (pool, req, res, personnelId) => {
       payload.managerPersonnelId,
       payload.status,
       payload.remark || null,
+      requestTimestamp,
       personnelId,
     ]
   )
@@ -6278,10 +6384,11 @@ const createCandidateBlacklist = async (pool, req, res) => {
   }
 
   await ensureCandidateBlacklistUniqueness(pool, payload)
+  const requestTimestamp = getRequestLocalDateTime(req)
   const [result] = await pool.query(
     `INSERT INTO candidate_blacklist
-      (display_name, phone, normalized_phone, email, normalized_email, reason, status, remark)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      (display_name, phone, normalized_phone, email, normalized_email, reason, status, remark, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       payload.displayName || null,
       payload.phone || null,
@@ -6291,6 +6398,8 @@ const createCandidateBlacklist = async (pool, req, res) => {
       payload.reason,
       payload.status,
       payload.remark || null,
+      requestTimestamp,
+      requestTimestamp,
     ]
   )
 
@@ -6317,10 +6426,11 @@ const updateCandidateBlacklist = async (pool, req, res, blacklistId) => {
   }
 
   await ensureCandidateBlacklistUniqueness(pool, payload, blacklistId)
+  const requestTimestamp = getRequestLocalDateTime(req)
   await pool.query(
     `UPDATE candidate_blacklist
       SET display_name = ?, phone = ?, normalized_phone = ?, email = ?, normalized_email = ?,
-          reason = ?, status = ?, remark = ?, updated_at = CURRENT_TIMESTAMP
+          reason = ?, status = ?, remark = ?, updated_at = ?
      WHERE id = ?`,
     [
       payload.displayName || null,
@@ -6331,6 +6441,7 @@ const updateCandidateBlacklist = async (pool, req, res, blacklistId) => {
       payload.reason,
       payload.status,
       payload.remark || null,
+      requestTimestamp,
       blacklistId,
     ]
   )

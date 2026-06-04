@@ -1,6 +1,7 @@
 ﻿<script setup>
 import { computed, ref, watch } from 'vue'
 import { apiBaseUrl } from '../../scripts/apiBaseUrl.js'
+import { withAuthHeaders } from '../../scripts/authState.js'
 import ProjectExperiencesField from '../ProjectExperiencesField.vue'
 import MatchDimensionBreakdown from '../MatchDimensionBreakdown.vue'
 import { parseJsonObject } from '../../scripts/cvExtractedPreview.js'
@@ -240,7 +241,7 @@ const saveAllEdits = async () => {
 
     const batchResponse = await fetch(`${apiBaseUrl}/api/candidate-cvs/${props.candidateCvId}/extracted-fields`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ updates }),
     })
     const batchData = await batchResponse.json()
@@ -254,7 +255,7 @@ const saveAllEdits = async () => {
       for (const [fieldKey, value] of Object.entries(updates)) {
         const response = await fetch(`${apiBaseUrl}/api/candidate-cvs/${props.candidateCvId}/extracted-field`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ fieldKey, value }),
         })
         const data = await response.json()

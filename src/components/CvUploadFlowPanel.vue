@@ -5,6 +5,7 @@ import CvExtractedFilePreview from './CvExtractedFilePreview.vue'
 import MatchDimensionBreakdown from './MatchDimensionBreakdown.vue'
 import ProjectExperiencesField from './ProjectExperiencesField.vue'
 import AppSelect from './AppSelect.vue'
+import { withAuthHeaders } from '../scripts/authState.js'
 import { CV_SOURCE_OPTIONS, detectCvSourceFromFileName, normalizeCvSource } from '../scripts/cvSource.js'
 import {
   EDITABLE_EXTRACTED_FIELDS,
@@ -386,20 +387,6 @@ const parseJsonResponse = async (response) => {
   }
 }
 
-const parseJsonSafe = (value) => {
-  try {
-    return JSON.parse(String(value || '{}'))
-  } catch {
-    return null
-  }
-}
-
-const getAuthHeaders = (headers = {}) => {
-  const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
-  const token = String(auth?.token || '').trim()
-  return token ? { ...headers, Authorization: `Bearer ${token}` } : { ...headers }
-}
-
 const requestCache = async (file) => {
   const endpoint = getScopedEndpoint('/cv/cache')
   if (!endpoint) throw new Error('請先選擇有效的職位')
@@ -407,7 +394,7 @@ const requestCache = async (file) => {
   const contentBase64 = await fileToBase64(file)
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       fileName: file.name,
       mimeType: file.type || 'application/octet-stream',
@@ -426,7 +413,7 @@ const requestParse = async (cacheId) => {
 
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ cacheId }),
   })
 
@@ -447,7 +434,7 @@ const requestIntake = async (cacheId, editedExtracted = null, source = '') => {
 
   const response = await fetch(endpoint, {
     method: 'POST',
-    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   })
 

@@ -13,6 +13,7 @@ import {
 } from '../../scripts/candidateApplicationStatus.js'
 import { normalizeSearchText } from '../../scripts/searchNormalize.js'
 import { CV_SOURCE_OPTIONS, normalizeCvSource } from '../../scripts/cvSource.js'
+import { withAuthHeaders } from '../../scripts/authState.js'
 import CandidateTextPreviewModal from './CandidateTextPreviewModal.vue'
 
 const props = defineProps({
@@ -375,16 +376,6 @@ const attachPreviewSource = (text, source) => {
   const parsed = parseJsonSafe(text)
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return String(text || '')
   return JSON.stringify({ ...parsed, source: parsed.source || normalizedSource }, null, 2)
-}
-
-const withAuthHeaders = (headers = {}) => {
-  const auth = parseJsonSafe(window.localStorage.getItem('innerai_auth'))
-  const token = String(auth?.token || '').trim()
-  const date = new Date()
-  const pad = (value) => String(value).padStart(2, '0')
-  const clientTime = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-  const baseHeaders = { ...headers, 'X-HRAI-Client-Time': clientTime }
-  return token ? { ...baseHeaders, Authorization: `Bearer ${token}` } : baseHeaders
 }
 
 const getStatusHistoryOperator = (history) => history?.operatorUser || history?.operator || null
