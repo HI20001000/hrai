@@ -21,10 +21,11 @@ export const extractCandidateNameFromFileName = (fileName = '') => {
   const candidates = []
   const afterBracket = baseName.includes('】') ? baseName.slice(baseName.lastIndexOf('】') + 1) : ''
   if (afterBracket) candidates.push(afterBracket)
+  if (afterBracket) candidates.push(...afterBracket.split(/[-_＿\s（()）]+/u))
   candidates.push(...baseName.split(/[-_＿\s（()）]+/u))
 
   for (const rawCandidate of candidates) {
-    const candidate = String(rawCandidate || '').trim()
+    const candidate = String(rawCandidate || '').replace(/[【】\[\]]/g, '').trim()
     if (isLikelyCandidateName(candidate)) return candidate
   }
   return ''

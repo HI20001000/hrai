@@ -44,6 +44,14 @@ test('extracts candidate name from simple hyphenated BOSS file name', () => {
     extractCandidateNameFromFileName('丁洁-数据库开发工程师-10年以上-Boss-20260602.pdf'),
     '丁洁'
   )
+  assert.equal(
+    extractCandidateNameFromFileName('【中级软件测试工程师_珠海 8-10K】张文辉 25年应届生.pdf'),
+    '张文辉'
+  )
+  assert.equal(
+    extractCandidateNameFromFileName('【中级软件测试工程师_珠海 8-10K】赵海洋 1年 -- 應屆 實習1年.pdf'),
+    '赵海洋'
+  )
 })
 
 test('finds names near contact lines when resume starts with job or company text', () => {
@@ -77,6 +85,53 @@ test('finds names near contact lines when resume starts with job or company text
 test('does not treat resume section titles or job titles as names', () => {
   assert.equal(isLikelyCandidateName('个人优势'), false)
   assert.equal(isLikelyCandidateName('软件测试'), false)
+  assert.equal(isLikelyCandidateName('大专'), false)
+  assert.equal(isLikelyCandidateName('求职'), false)
+})
+
+test('ignores education dates while finding names near contact lines', () => {
+  assert.equal(
+    extractCandidateNameFromText([
+      '广东科学技术职业学院',
+      '大专',
+      '软件测试技术',
+      '2022-2025',
+      '珠海金山软件园',
+      '软件测试',
+      '2024.07-至今',
+      '张健伟',
+      '男 | 21岁',
+      '19924670292',
+      '2927432638@qq.com',
+    ].join('\n')),
+    '张健伟'
+  )
+})
+
+test('does not truncate job-seeking labels into names', () => {
+  assert.equal(
+    extractCandidateNameFromText([
+      '张文辉',
+      '求职岗位：自动化测试、运维',
+      '男',
+      '汉族',
+      '13580095425',
+      '1870194282@qq.com',
+    ].join('\n')),
+    '张文辉'
+  )
+
+  assert.equal(
+    extractCandidateNameFromText([
+      '赵海洋',
+      '求职岗位：软件测试工程师',
+      '性别：男',
+      '年龄：22',
+      '邮箱：2034115904@qq.com',
+      '电话：18103982195（微信同号）',
+    ].join('\n')),
+    '赵海洋'
+  )
 })
 
 test('overrides wrong LLM fullName when CV text contains a high-confidence name', () => {
