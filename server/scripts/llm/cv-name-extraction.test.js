@@ -151,6 +151,42 @@ test('overrides wrong LLM fullName when CV text contains a high-confidence name'
   assert.equal(resolved.missingFields.includes('fullName'), false)
 })
 
+test('keeps credible AI fullName when LLM extraction succeeds', () => {
+  const resolved = applyCandidateFullNameResolution(
+    {
+      extracted: {
+        fullName: '张文辉',
+        profile: {},
+      },
+      missingFields: [],
+    },
+    '赵海洋\n电话：18103982195',
+    '【中级软件测试工程师_珠海 8-10K】赵海洋 1年 -- 應屆 實習1年.pdf',
+    { preferCurrentName: true }
+  )
+
+  assert.equal(resolved.extracted.fullName, '张文辉')
+  assert.equal(resolved.missingFields.includes('fullName'), false)
+})
+
+test('falls back when AI fullName is not credible', () => {
+  const resolved = applyCandidateFullNameResolution(
+    {
+      extracted: {
+        fullName: '求职',
+        profile: {},
+      },
+      missingFields: [],
+    },
+    '赵海洋\n求职岗位：软件测试工程师\n电话：18103982195',
+    '【中级软件测试工程师_珠海 8-10K】赵海洋 1年 -- 應屆 實習1年.pdf',
+    { preferCurrentName: true }
+  )
+
+  assert.equal(resolved.extracted.fullName, '赵海洋')
+  assert.equal(resolved.missingFields.includes('fullName'), false)
+})
+
 test('uses file name when current extracted fullName is not credible and text has no name', () => {
   const resolved = applyCandidateFullNameResolution(
     {

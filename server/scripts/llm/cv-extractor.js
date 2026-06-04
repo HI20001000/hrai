@@ -44,22 +44,35 @@ const extractBossMetaFromFileName = (fileName = '') => {
   return { targetPosition, expectedSalary }
 }
 
-export const resolveCandidateFullName = ({ currentName = '', cvText = '', fileName = '' } = {}) => {
+export const resolveCandidateFullName = ({
+  currentName = '',
+  cvText = '',
+  fileName = '',
+  preferCurrentName = false,
+} = {}) => {
+  const normalizedCurrentName = String(currentName || '').trim()
+  if (preferCurrentName && isLikelyCandidateName(normalizedCurrentName)) return normalizedCurrentName
+
   const nameFromText = extractCandidateNameFromText(cvText)
   if (nameFromText) return nameFromText
 
-  const normalizedCurrentName = String(currentName || '').trim()
   if (isLikelyCandidateName(normalizedCurrentName)) return normalizedCurrentName
 
   return extractCandidateNameFromFileName(fileName)
 }
 
-export const applyCandidateFullNameResolution = (extraction = {}, cvText = '', fileName = '') => {
+export const applyCandidateFullNameResolution = (
+  extraction = {},
+  cvText = '',
+  fileName = '',
+  { preferCurrentName = false } = {}
+) => {
   const extracted = extraction?.extracted || {}
   const resolvedFullName = resolveCandidateFullName({
     currentName: extracted.fullName,
     cvText,
     fileName,
+    preferCurrentName,
   })
   const missingFields = Array.isArray(extraction?.missingFields) ? extraction.missingFields : []
   const nextMissingFields = resolvedFullName
@@ -155,7 +168,8 @@ export const extractCandidateInfoFromCv = async (buffer, fileName = '', mimeType
     const normalized = applyCandidateFullNameResolution(
       normalizeExtractedFields(parsed, { sourceText: cvText }),
       cvText,
-      fileName
+      fileName,
+      { preferCurrentName: true }
     )
     return {
       ...normalized,
